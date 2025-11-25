@@ -718,7 +718,7 @@ internal struct SimpleNarrowPhaseCallbacks : INarrowPhaseCallbacks
 
     public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
     {
-        pairMaterial.FrictionCoefficient = 0.5f;
+        pairMaterial.FrictionCoefficient = 1.5f;
         pairMaterial.MaximumRecoveryVelocity = 10f;
         pairMaterial.SpringSettings = new SpringSettings(30, 0.1f);
         return true;
