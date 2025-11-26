@@ -3,6 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using ImGuiNET;
+using EngineVec2 = Engine.Math.Vector2;
+using EngineVec4 = Engine.Math.Vector4;
+using Engine.Graphics;
+using Engine.Editor.Graphs;
+using Engine.Editor.Graphs.Nodes;
 
 namespace Engine.Editor;
 
@@ -14,17 +19,19 @@ public class MaterialEditorWindow
     private readonly List<NodeConnection> _connections = new List<NodeConnection>();
     private readonly Dictionary<string, string[]> _nodePalette = new Dictionary<string, string[]>
     {
-        { "Inputs", new[] { "Texture Sample", "Constant3Vector", "Constant4Vector", "Scalar Parameter" } },
+        { "Inputs", new[] { "Texture Sample", "Vector 3", "Vector 4", "Scalar Parameter", "TexCoord" } },
         { "Math", new[] { "Multiply", "Add", "Lerp", "Power" } },
-        { "Utility", new[] { "Mask", "Clamp", "Time", "Panner" } },
+        { "Utility", new[] { "Mask", "Clamp", "Time", "Delta Time", "Panner" } },
+        { "Conversion", new[] { "To Vector 3", "To Vector 4", "From Vector 3", "From Vector 4", "To Scalar", "To Vector 2" } },
         { "Material", new[] { "Material Attributes", "Material Output" } }
     };
-    private static readonly Vector4 NodeColorTexCoord = new Vector4(0.74f, 0.18f, 0.12f, 1f);
-    private static readonly Vector4 NodeColorTexture = new Vector4(0.1f, 0.42f, 0.66f, 1f);
-    private static readonly Vector4 NodeColorMultiply = new Vector4(0.24f, 0.48f, 0.23f, 1f);
-    private static readonly Vector4 NodeColorLerp = new Vector4(0.18f, 0.35f, 0.45f, 1f);
-    private static readonly Vector4 NodeColorUtility = new Vector4(0.27f, 0.37f, 0.6f, 1f);
-    private static readonly Vector4 NodeColorOutput = new Vector4(0.18f, 0.18f, 0.18f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorTexCoord = new System.Numerics.Vector4(0.74f, 0.18f, 0.12f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorTexture = new System.Numerics.Vector4(0.1f, 0.42f, 0.66f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorMultiply = new System.Numerics.Vector4(0.24f, 0.48f, 0.23f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorLerp = new System.Numerics.Vector4(0.18f, 0.35f, 0.45f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorUtility = new System.Numerics.Vector4(0.27f, 0.37f, 0.6f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorOutput = new System.Numerics.Vector4(0.18f, 0.18f, 0.18f, 1f);
+    private static readonly System.Numerics.Vector4 NodeColorConstant = new System.Numerics.Vector4(0.3f, 0.7f, 0.4f, 0.95f);
 
     private Vector2 _canvasOffset = new Vector2(120f, 120f);
     private float _canvasZoom = 1.0f;
@@ -38,6 +45,8 @@ public class MaterialEditorWindow
     private int? _selectedConnectionIndex;
     private int? _hoveredConnectionIndex;
     private int? _contextConnectionIndex;
+    private string? _pendingNodeType;
+    private Vector2 _pendingNodePosition;
 
     public bool Visible { get; set; }
 
@@ -52,6 +61,10 @@ public class MaterialEditorWindow
         if (!Visible)
             return;
 
+        var io = ImGui.GetIO();
+        TimeNode.UpdateTime(io.DeltaTime);
+        DeltaTimeNode.UpdateDeltaTime(io.DeltaTime);
+
         bool visible = Visible;
         ImGui.SetNextWindowSize(new Vector2(1100f, 640f), ImGuiCond.FirstUseEver);
 
@@ -60,9 +73,47 @@ public class MaterialEditorWindow
             Visible = visible;
             DrawToolbar();
             DrawBody();
+            HandleKeyboardInput();
         }
 
         ImGui.End();
+    }
+
+    private void HandleKeyboardInput()
+    {
+        var io = ImGui.GetIO();
+        if (ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows) && !ImGui.IsAnyItemActive())
+        {
+            if (ImGui.IsKeyPressed(ImGuiKey.Delete))
+            {
+                if (_selectedConnectionIndex.HasValue)
+                {
+                    int idx = _selectedConnectionIndex.Value;
+                    if (idx >= 0 && idx < _connections.Count)
+                    {
+                        _connections.RemoveAt(idx);
+                    }
+                    _selectedConnectionIndex = null;
+                    _contextConnectionIndex = null;
+                }
+                else if (_selectedNodeId.HasValue)
+                {
+                    DeleteSelectedNode();
+                }
+            }
+        }
+    }
+
+    private void DeleteSelectedNode()
+    {
+        if (!_selectedNodeId.HasValue)
+            return;
+
+        int nodeId = _selectedNodeId.Value;
+        _connections.RemoveAll(c => c.OutputNodeId == nodeId || c.InputNodeId == nodeId);
+        _nodes.RemoveAll(n => n.Id == nodeId);
+        _selectedNodeId = null;
+        _draggingNodeId = null;
     }
 
     private void DrawToolbar()
@@ -80,7 +131,7 @@ public class MaterialEditorWindow
         ImGui.EndDisabled();
 
         ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.85f, 1f), "Node-based authoring preview");
+        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.85f, 1f), "Node-based material editor");
 
         ImGui.Separator();
     }
@@ -88,15 +139,22 @@ public class MaterialEditorWindow
     private void DrawBody()
     {
         float sidebarWidth = 260f;
+        float inspectorWidth = 280f;
 
         ImGui.BeginChild("MaterialSidebar", new Vector2(sidebarWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         DrawSidebar();
         ImGui.EndChild();
 
+        ImGui.SameLine();
+
+        ImGui.BeginChild("MaterialGraphArea", new Vector2(-inspectorWidth, 0f), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        DrawGraphArea();
+        ImGui.EndChild();
+
             ImGui.SameLine();
 
-        ImGui.BeginChild("MaterialGraphArea", Vector2.Zero, ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-        DrawGraphArea();
+        ImGui.BeginChild("MaterialInspector", new Vector2(inspectorWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+        DrawInspector();
         ImGui.EndChild();
     }
 
@@ -127,30 +185,196 @@ public class MaterialEditorWindow
             {
                 foreach (var label in entry.Value)
                 {
-                    ImGui.BulletText(label);
+                    if (ImGui.Selectable(label, false, ImGuiSelectableFlags.DontClosePopups))
+                    {
+                        var io = ImGui.GetIO();
+                        Vector2 canvasSize = ImGui.GetContentRegionAvail();
+                        Vector2 centerPos = new Vector2(canvasSize.X * 0.5f, canvasSize.Y * 0.5f);
+                        Vector2 graphPos = (centerPos - _canvasOffset) / _canvasZoom;
+                        CreateNodeFromType(label, graphPos);
+                    }
+
+                    if (ImGui.BeginDragDropSource(ImGuiDragDropFlags.None))
+                    {
+                        unsafe
+                        {
+                            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(label);
+                            fixed (byte* ptr = bytes)
+                            {
+                                ImGui.SetDragDropPayload("NODE_TYPE", (nint)ptr, (uint)bytes.Length, ImGuiCond.Once);
+                            }
+                        }
+                        ImGui.Text(label);
+                        ImGui.EndDragDropSource();
+                    }
                 }
                 ImGui.TreePop();
             }
         }
 
         ImGui.Spacing();
-        ImGui.Text("Preview");
         ImGui.Separator();
-        Vector2 previewSize = new Vector2(220f, 160f);
+        ImGui.Text("Material Preview");
+        ImGui.Separator();
+        DrawMaterialPreview();
+    }
+
+    private void DrawMaterialPreview()
+    {
+        Vector2 previewSize = new Vector2(240f, 200f);
         Vector2 cursor = ImGui.GetCursorScreenPos();
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        
         drawList.AddRectFilled(cursor, cursor + previewSize, ImGui.GetColorU32(new Vector4(0.12f, 0.12f, 0.16f, 1f)), 6f);
-        drawList.AddRect(cursor, cursor + previewSize, ImGui.GetColorU32(new Vector4(0.25f, 0.25f, 0.35f, 1f)), 6f);
-        drawList.AddText(cursor + new Vector2(10f, 10f), ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.9f)), "Material Preview");
-        drawList.AddCircleFilled(cursor + new Vector2(110f, 90f), 60f, ImGui.GetColorU32(new Vector4(0.93f, 0.62f, 0.25f, 0.9f)));
-        drawList.AddCircleFilled(cursor + new Vector2(130f, 70f), 30f, ImGui.GetColorU32(new Vector4(1f, 0.92f, 0.74f, 0.8f)));
+        
+        float checkerSize = 16f;
+        for (int y = 0; y < (int)(previewSize.Y / checkerSize); y++)
+        {
+            for (int x = 0; x < (int)(previewSize.X / checkerSize); x++)
+            {
+                bool isLight = (x + y) % 2 == 0;
+                Vector2 checkPos = cursor + new Vector2(x * checkerSize, y * checkerSize);
+                drawList.AddRectFilled(checkPos, checkPos + new Vector2(checkerSize, checkerSize), 
+                    ImGui.GetColorU32(isLight ? new Vector4(0.15f, 0.15f, 0.18f, 1f) : new Vector4(0.1f, 0.1f, 0.12f, 1f)));
+            }
+        }
+        
+        drawList.AddRect(cursor, cursor + previewSize, ImGui.GetColorU32(new Vector4(0.25f, 0.25f, 0.35f, 1f)), 6f, ImDrawFlags.None, 2f);
+        
+        MaterialData? materialData = EvaluateMaterial();
+        Vector4 baseColor;
+        float roughness = 0.5f;
+        
+        if (materialData != null)
+        {
+            baseColor = new Vector4(materialData.DiffuseColor.X, materialData.DiffuseColor.Y, materialData.DiffuseColor.Z, materialData.DiffuseColor.W);
+            roughness = materialData.Roughness;
+            
+            if (baseColor.W < 0.01f)
+            {
+                baseColor.W = 1.0f;
+            }
+            
+            if (baseColor.X < 0.01f && baseColor.Y < 0.01f && baseColor.Z < 0.01f)
+            {
+                baseColor = new Vector4(0.8f, 0.6f, 0.4f, 1.0f);
+            }
+        }
+        else
+        {
+            baseColor = new Vector4(0.8f, 0.6f, 0.4f, 1.0f);
+        }
+        
+        Vector2 center = cursor + new Vector2(previewSize.X * 0.5f, previewSize.Y * 0.5f);
+        float radius = 70f;
+            
+            Vector2[] lightDirs = new Vector2[]
+            {
+                new Vector2(0.3f, -0.7f),
+                new Vector2(-0.5f, -0.3f),
+                new Vector2(0.2f, 0.5f)
+            };
+            float[] lightIntensities = new float[] { 0.6f, 0.2f, 0.15f };
+            for (int y = 0; y < 150; y++)
+            {
+                for (int x = 0; x < 150; x++)
+                {
+                    Vector2 pixelPos = new Vector2(x / 150f * previewSize.X, y / 150f * previewSize.Y);
+                    Vector2 worldPos = cursor + pixelPos;
+                    Vector2 toCenter = worldPos - center;
+                    float dist = Vector2.Distance(Vector2.Zero, toCenter);
+                    
+                    float borderWidth = 2.0f;
+                    float edgeAlpha = 1.0f;
+                    
+                    if (dist > radius - borderWidth && dist <= radius)
+                    {
+                        float edgeDist = (radius - dist) / borderWidth;
+                        edgeAlpha = System.Math.Clamp(edgeDist, 0f, 1f);
+                    }
+                    else if (dist > radius)
+                    {
+                        edgeAlpha = 0f;
+                    }
+                    
+                    if (dist < radius)
+                    {
+                        Vector2 normal = toCenter / radius;
+                        
+                        float totalLighting = 0.3f;
+                        for (int i = 0; i < lightDirs.Length; i++)
+                        {
+                            float dot = System.MathF.Max(0f, Vector2.Dot(normal, lightDirs[i]));
+                            totalLighting += dot * lightIntensities[i];
+                        }
+                        Vector2 viewDir = new Vector2(0f, 0f);
+                        Vector2 reflectDir = normal * 2f * Vector2.Dot(normal, lightDirs[0]) - lightDirs[0];
+                        float specular = System.MathF.Pow(System.MathF.Max(0f, Vector2.Dot(reflectDir, viewDir)), 32f) * 0.3f;
+                        totalLighting += specular;
+                        
+                        totalLighting = System.Math.Clamp(totalLighting, 0f, 1f);
+                        
+                        Vector4 litColor = new Vector4(
+                            baseColor.X * totalLighting,
+                            baseColor.Y * totalLighting,
+                            baseColor.Z * totalLighting,
+                            baseColor.W * edgeAlpha);
+                        
+                        drawList.AddRectFilled(worldPos, worldPos + new Vector2(1.6f, 1.6f), ImGui.GetColorU32(litColor));
+                    }
+                }
+            }
+            
+        for (int i = 0; i < 3; i++)
+        {
+            float alpha = 0.2f * (1f - i * 0.3f);
+            float thickness = 1.5f - i * 0.3f;
+            if (thickness > 0.1f)
+            {
+                drawList.AddCircle(center, radius - i * 0.5f, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, alpha)), 128, thickness);
+            }
+        }
+        
+        Vector2 infoPos = cursor + new Vector2(8f, previewSize.Y - 50f);
+        drawList.AddRectFilled(infoPos - new Vector2(4f, 4f), infoPos + new Vector2(220f, 42f), 
+            ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.6f)), 4f);
+        
+        string roughnessText = $"Roughness: {roughness:F2}";
+        drawList.AddText(infoPos, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.9f)), roughnessText);
         ImGui.Dummy(previewSize);
+    }
+
+    private void DrawInspector()
+    {
+        ImGui.Text("Node Inspector");
+            ImGui.Separator();
+
+        if (!_selectedNodeId.HasValue)
+        {
+            ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "No node selected");
+            ImGui.Spacing();
+            ImGui.TextWrapped("Select a node to edit its properties");
+            return;
+        }
+
+        GraphNode? node = GetNode(_selectedNodeId.Value);
+        if (node == null)
+        {
+            ImGui.TextColored(new Vector4(0.9f, 0.3f, 0.3f, 1f), "Node not found");
+            return;
+        }
+
+        ImGui.Text(node.Title);
+        if (!string.IsNullOrEmpty(node.Subtitle))
+        {
+            ImGui.TextDisabled(node.Subtitle);
+        }
 
         ImGui.Spacing();
-        ImGui.Text("Status");
         ImGui.Separator();
-        ImGui.TextColored(new Vector4(0.6f, 0.85f, 0.6f, 1f), "Visual prototype mode");
-        ImGui.TextWrapped("Interact with the graph canvas to pan/zoom. Node logic will be implemented later.");
+        ImGui.Spacing();
+
+        node.DrawInspector();
     }
 
     private void DrawGraphArea()
@@ -170,10 +394,28 @@ public class MaterialEditorWindow
         drawList.AddRectFilled(canvasPos, canvasEnd, ImGui.GetColorU32(_theme.CanvasBackground));
         drawList.AddRect(canvasPos, canvasEnd, ImGui.GetColorU32(_theme.CanvasBorder));
 
+        if (ImGui.BeginDragDropTarget())
+        {
+            unsafe
+            {
+                var payload = ImGui.AcceptDragDropPayload("NODE_TYPE");
+                if (payload.NativePtr != null && payload.IsDelivery())
+                {
+                    byte* data = (byte*)payload.Data;
+                    string nodeType = System.Text.Encoding.UTF8.GetString(data, (int)payload.DataSize);
+                    var io = ImGui.GetIO();
+                    Vector2 graphPos = (io.MousePos - canvasPos - _canvasOffset) / _canvasZoom;
+                    CreateNodeFromType(nodeType, graphPos);
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+
         GraphDrawCache cache = BuildGraphDrawCache(canvasPos);
         bool changed = false;
         changed |= HandlePinInteractions(cache);
         changed |= HandleNodeDragging(cache, canvasPos);
+        HandleNodeContextMenu(cache);
         if (changed)
         {
             cache = BuildGraphDrawCache(canvasPos);
@@ -188,6 +430,33 @@ public class MaterialEditorWindow
         if (canvasHovered && _draggingNodeId == null && !_activeLink.HasValue)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        }
+    }
+
+    private void HandleNodeContextMenu(GraphDrawCache cache)
+    {
+        var io = ImGui.GetIO();
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && !_hoveredPin.HasValue && _contextConnectionIndex == null)
+        {
+            for (int i = cache.NodeStates.Count - 1; i >= 0; --i)
+            {
+                var state = cache.NodeStates[i];
+                if (ContainsPoint(state.Min, state.Max, io.MousePos))
+                {
+                    _selectedNodeId = state.Node.Id;
+                    break;
+                }
+            }
+        }
+
+        if (_selectedNodeId.HasValue && ImGui.BeginPopupContextWindow("NodeContextMenu"))
+        {
+            if (ImGui.MenuItem("Delete"))
+            {
+                DeleteSelectedNode();
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
         }
     }
 
@@ -212,18 +481,18 @@ public class MaterialEditorWindow
 
     private void DrawCanvasGrid(ImDrawListPtr drawList, Vector2 canvasPos, Vector2 canvasSize)
     {
-        float tileSize = 64f * _canvasZoom;
+        float tileSize = 64f;
         if (tileSize < 24f) tileSize = 24f;
 
         float tileOffsetX = 0f;
         float tileOffsetY = 0f;
 
-        for (float x = 0f; x < canvasSize.X; x += tileSize)
+        for (float x = tileOffsetX; x < canvasSize.X; x += tileSize)
         {
-            for (float y = 0f; y < canvasSize.Y; y += tileSize)
+            for (float y = tileOffsetY; y < canvasSize.Y; y += tileSize)
             {
-                int tileX = (int)System.MathF.Floor((x + tileOffsetX) / tileSize);
-                int tileY = (int)System.MathF.Floor((y + tileOffsetY) / tileSize);
+                int tileX = (int)System.MathF.Floor(x / tileSize);
+                int tileY = (int)System.MathF.Floor(y / tileSize);
                 bool dark = ((tileX + tileY) & 1) == 0;
                 uint color = ImGui.GetColorU32(dark ? _theme.GridTileDark : _theme.GridTileLight);
                 Vector2 min = canvasPos + new Vector2(x, y);
@@ -242,15 +511,15 @@ public class MaterialEditorWindow
         float offsetX = 0f;
         float offsetY = 0f;
 
-        for (float x = 0f; x < canvasSize.X; x += minorStep)
+        for (float x = offsetX; x < canvasSize.X; x += minorStep)
         {
-            uint color = System.MathF.Abs(((x + offsetX) % majorStep)) < 0.1f ? majorColor : minorColor;
+            uint color = System.MathF.Abs((x % majorStep)) < 0.1f ? majorColor : minorColor;
             drawList.AddLine(new Vector2(canvasPos.X + x, canvasPos.Y), new Vector2(canvasPos.X + x, canvasPos.Y + canvasSize.Y), color);
         }
 
-        for (float y = 0f; y < canvasSize.Y; y += minorStep)
+        for (float y = offsetY; y < canvasSize.Y; y += minorStep)
         {
-            uint color = System.MathF.Abs(((y + offsetY) % majorStep)) < 0.1f ? majorColor : minorColor;
+            uint color = System.MathF.Abs((y % majorStep)) < 0.1f ? majorColor : minorColor;
             drawList.AddLine(new Vector2(canvasPos.X, canvasPos.Y + y), new Vector2(canvasPos.X + canvasSize.X, canvasPos.Y + y), color);
         }
     }
@@ -275,17 +544,17 @@ public class MaterialEditorWindow
 
             Vector2 titleSize = ImGui.CalcTextSize(node.Title ?? string.Empty);
             Vector2 subtitleSize = node.Subtitle != null ? ImGui.CalcTextSize(node.Subtitle) : Vector2.Zero;
-            float headerNeeded = 12f * _canvasZoom + titleSize.Y + (subtitleSize.Y > 0 ? 4f * _canvasZoom + subtitleSize.Y : 0f);
+            float headerNeeded = 6f * _canvasZoom + titleSize.Y + (subtitleSize.Y > 0 ? 4f * _canvasZoom + subtitleSize.Y : 0f);
             float headerHeight = System.MathF.Max(30f * _canvasZoom, headerNeeded);
-            float bodyTop = nodeMin.Y + headerHeight;
-            float bodyBottom = nodeMax.Y - 8f * _canvasZoom;
+            float bodyTop = nodeMin.Y + headerHeight + 2f * _canvasZoom;
+            float bodyBottom = nodeMax.Y - 4.5f * _canvasZoom;
             float bodyHeight = System.MathF.Max(bodyBottom - bodyTop, 12f * _canvasZoom);
 
             float pinOffset = 8f * _canvasZoom;
             float pinRowHeight = 24f * _canvasZoom;
-            float pinRowSpacing = 3f * _canvasZoom;
+            float pinRowSpacing = 4f * _canvasZoom;
             float pinTopPadding = 2f * _canvasZoom;
-            float pinBottomPadding = 4f * _canvasZoom;
+            float pinBottomPadding = 8f * _canvasZoom;
             int maxPins = System.Math.Max(node.InputPins.Count, node.OutputPins.Count);
             float requiredBody = maxPins > 0
                 ? pinTopPadding + maxPins * pinRowHeight + (maxPins - 1) * pinRowSpacing + pinBottomPadding
@@ -346,6 +615,19 @@ public class MaterialEditorWindow
 
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_activeLink.HasValue && !_hoveredPin.HasValue)
         {
+            bool clickInInspector = false;
+            
+            if (ImGui.IsAnyItemActive() || ImGui.IsAnyItemHovered())
+            {
+                Vector2 windowPos = ImGui.GetWindowPos();
+                Vector2 windowSize = ImGui.GetWindowSize();
+                float inspectorWidth = 280f;
+                if (io.MousePos.X >= windowPos.X + windowSize.X - inspectorWidth)
+                {
+                    clickInInspector = true;
+                }
+            }
+
             bool clickedNode = false;
             for (int i = cache.NodeStates.Count - 1; i >= 0; --i)
             {
@@ -362,7 +644,7 @@ public class MaterialEditorWindow
                 }
             }
 
-            if (!clickedNode)
+            if (!clickedNode && !clickInInspector)
             {
                 _selectedNodeId = null;
             }
@@ -456,12 +738,9 @@ public class MaterialEditorWindow
             drawList.AddRectFilled(min + shadowOffset, max + shadowOffset, shadowColor, rounding + 4f);
 
             Vector4 headerColor = state.Node.HeaderColor;
-            Vector4 bodyTopColor = LerpColor(_theme.NodeBodyTop, headerColor, 0.35f);
-            Vector4 bodyBottomColor = LerpColor(_theme.NodeBodyBottom, headerColor, 0.15f);
+            Vector4 bodyColor = _theme.NodeBodyBottom;
 
-            Vector2 bodyMin = new Vector2(min.X, state.BodyTop);
-            drawList.AddRectFilled(bodyMin, max, ImGui.GetColorU32(bodyBottomColor), rounding, ImDrawFlags.RoundCornersBottom);
-
+            drawList.AddRectFilled(min, max, ImGui.GetColorU32(bodyColor), rounding);
             drawList.AddRectFilled(min, new Vector2(max.X, min.Y + state.HeaderHeight), ImGui.GetColorU32(headerColor), rounding, ImDrawFlags.RoundCornersTop);
 
             bool isSelected = _selectedNodeId == state.Node.Id;
@@ -470,14 +749,11 @@ public class MaterialEditorWindow
             float borderThickness = isSelected ? 2.4f * _canvasZoom : 1.2f * _canvasZoom;
             drawList.AddRect(min, max, borderColor, rounding, ImDrawFlags.None, borderThickness);
 
-            Vector2 titleSizeLocal = ImGui.CalcTextSize(state.Node.Title ?? string.Empty);
-            Vector2 titlePos = min + new Vector2(14f * _canvasZoom, 6f * _canvasZoom);
-            drawList.AddText(titlePos, ImGui.GetColorU32(_theme.NodeTitle), state.Node.Title);
+            drawList.AddText(min + new Vector2(14f * _canvasZoom, 8f * _canvasZoom), ImGui.GetColorU32(_theme.NodeTitle), state.Node.Title);
 
             if (!string.IsNullOrEmpty(state.Node.Subtitle))
             {
-                Vector2 subtitlePos = new Vector2(titlePos.X, titlePos.Y + titleSizeLocal.Y + 4f * _canvasZoom);
-                drawList.AddText(subtitlePos, ImGui.GetColorU32(_theme.NodeSubtitle), state.Node.Subtitle);
+                drawList.AddText(min + new Vector2(14f * _canvasZoom, state.HeaderHeight - 16f * _canvasZoom), ImGui.GetColorU32(_theme.NodeSubtitle), state.Node.Subtitle);
             }
 
             DrawNodePins(drawList, state);
@@ -557,6 +833,70 @@ public class MaterialEditorWindow
         }
     }
 
+    private void UpdateConnectionHover(Dictionary<(int nodeId, PinDirection direction, int index), Vector2> pinCenters)
+    {
+        var io = ImGui.GetIO();
+        _hoveredConnectionIndex = null;
+
+        float closestDist = 20f * _canvasZoom;
+        for (int i = 0; i < _connections.Count; i++)
+        {
+            var conn = _connections[i];
+            if (!pinCenters.TryGetValue((conn.OutputNodeId, PinDirection.Output, conn.OutputIndex), out var start))
+                continue;
+            if (!pinCenters.TryGetValue((conn.InputNodeId, PinDirection.Input, conn.InputIndex), out var end))
+                continue;
+
+            float dist = DistanceToBezier(io.MousePos, start, end);
+            if (dist < closestDist)
+            {
+                closestDist = dist;
+                _hoveredConnectionIndex = i;
+            }
+        }
+
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && _hoveredConnectionIndex.HasValue && !_activeLink.HasValue && !_hoveredPin.HasValue)
+        {
+            _selectedConnectionIndex = _hoveredConnectionIndex;
+        }
+
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && _hoveredConnectionIndex.HasValue)
+        {
+            _contextConnectionIndex = _hoveredConnectionIndex;
+            _selectedConnectionIndex = _hoveredConnectionIndex;
+        }
+    }
+
+    private float DistanceToBezier(Vector2 point, Vector2 start, Vector2 end)
+    {
+        float distance = System.MathF.Max(System.MathF.Abs(end.X - start.X), 40f);
+        Vector2 controlOffset = new Vector2(distance * 0.5f, 0f);
+        Vector2 control1 = start + controlOffset;
+        Vector2 control2 = end - controlOffset;
+
+        float minDist = float.MaxValue;
+        for (int i = 0; i <= 32; i++)
+        {
+            float t = i / 32f;
+            Vector2 bezierPoint = BezierPoint(start, control1, control2, end, t);
+            float dist = Vector2.Distance(point, bezierPoint);
+            if (dist < minDist)
+                minDist = dist;
+        }
+        return minDist;
+    }
+
+    private Vector2 BezierPoint(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+    {
+        float u = 1f - t;
+        float tt = t * t;
+        float uu = u * u;
+        float uuu = uu * u;
+        float ttt = tt * t;
+
+        return uuu * p0 + 3f * uu * t * p1 + 3f * u * tt * p2 + ttt * p3;
+    }
+
     private void DrawConnections(ImDrawListPtr drawList, Dictionary<(int nodeId, PinDirection direction, int index), Vector2> pinCenters)
     {
         for (int i = 0; i < _connections.Count; i++)
@@ -572,17 +912,36 @@ public class MaterialEditorWindow
             Vector2 control1 = start + controlOffset;
             Vector2 control2 = end - controlOffset;
 
-            bool isSelected = _selectedConnectionIndex.HasValue && _selectedConnectionIndex.Value == i;
-            Vector4 baseThemeColor = isSelected && _theme.OverrideLinkColor ? _theme.LinkSelectedColor : _theme.LinkColor;
-            Vector4 connectionColor = _theme.OverrideLinkColor ? baseThemeColor : connection.Color;
-            Vector4 glowThemeColor = isSelected && _theme.OverrideLinkColor ? _theme.LinkSelectedGlowColor : _theme.LinkGlowColor;
-            Vector4 glowColorVec = _theme.OverrideLinkColor ? glowThemeColor : new Vector4(connectionColor.X, connectionColor.Y, connectionColor.Z, connectionColor.W * 0.35f);
+            bool isSelected = _selectedConnectionIndex == i;
+            bool isHovered = _hoveredConnectionIndex == i;
+            Vector4 connectionColor = (isSelected || isHovered) && _theme.OverrideLinkColor
+                ? _theme.LinkSelectedColor
+                : _theme.OverrideLinkColor ? _theme.LinkColor : connection.Color;
+            Vector4 glowColorVec = (isSelected || isHovered) && _theme.OverrideLinkColor
+                ? _theme.LinkSelectedGlowColor
+                : _theme.OverrideLinkColor ? _theme.LinkGlowColor : new Vector4(connectionColor.X, connectionColor.Y, connectionColor.Z, connectionColor.W * 0.35f);
             uint glowColor = ImGui.GetColorU32(glowColorVec);
             uint baseColor = ImGui.GetColorU32(connectionColor);
 
             drawList.AddBezierCubic(start, control1, control2, end, glowColor, 5.5f * _canvasZoom);
             drawList.AddBezierCubic(start, control1, control2, end, baseColor, 3f * _canvasZoom);
             drawList.AddCircleFilled(end, 4f * _canvasZoom, baseColor);
+        }
+
+        if (_contextConnectionIndex.HasValue && ImGui.BeginPopupContextWindow("ConnectionContextMenu"))
+        {
+            if (ImGui.MenuItem("Delete"))
+            {
+                int idx = _contextConnectionIndex.Value;
+                if (idx >= 0 && idx < _connections.Count)
+                {
+                    _connections.RemoveAt(idx);
+                }
+                _contextConnectionIndex = null;
+                _selectedConnectionIndex = null;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
         }
     }
 
@@ -608,62 +967,11 @@ public class MaterialEditorWindow
         Vector2 control1 = start + controlOffset;
         Vector2 control2 = end - controlOffset;
 
-        Vector4 lineColor = _theme.OverrideLinkColor ? _theme.LinkSelectedColor : color;
-        Vector4 glowColorVec = _theme.OverrideLinkColor ? _theme.LinkSelectedGlowColor : new Vector4(lineColor.X, lineColor.Y, lineColor.Z, lineColor.W * 0.35f);
+        Vector4 lineColor = _theme.OverrideLinkColor ? _theme.LinkColor : color;
+        Vector4 glowColorVec = _theme.OverrideLinkColor ? _theme.LinkGlowColor : new Vector4(lineColor.X, lineColor.Y, lineColor.Z, lineColor.W * 0.35f);
 
         drawList.AddBezierCubic(start, control1, control2, end, ImGui.GetColorU32(glowColorVec), 5f * _canvasZoom);
         drawList.AddBezierCubic(start, control1, control2, end, ImGui.GetColorU32(lineColor), 2.8f * _canvasZoom);
-    }
-
-    private void UpdateConnectionHover(Dictionary<(int nodeId, PinDirection direction, int index), Vector2> pinCenters)
-    {
-        _hoveredConnectionIndex = null;
-        var io = ImGui.GetIO();
-        Vector2 mouse = io.MousePos;
-        float bestDist = 30f * _canvasZoom;
-
-        for (int i = 0; i < _connections.Count; i++)
-        {
-            var connection = _connections[i];
-            if (!pinCenters.TryGetValue((connection.OutputNodeId, PinDirection.Output, connection.OutputIndex), out var start))
-                continue;
-            if (!pinCenters.TryGetValue((connection.InputNodeId, PinDirection.Input, connection.InputIndex), out var end))
-                continue;
-
-            float distance = EstimateDistanceToConnection(mouse, start, end);
-            if (distance < bestDist)
-            {
-                bestDist = distance;
-                _hoveredConnectionIndex = i;
-            }
-        }
-
-        if (_hoveredConnectionIndex.HasValue)
-        {
-            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            {
-                _selectedConnectionIndex = _hoveredConnectionIndex;
-            }
-            if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-            {
-                _contextConnectionIndex = _hoveredConnectionIndex;
-                ImGui.OpenPopup("ConnectionContext");
-            }
-        }
-
-        if (ImGui.BeginPopup("ConnectionContext"))
-        {
-            if (ImGui.MenuItem("Delete") && _contextConnectionIndex.HasValue && _contextConnectionIndex.Value >= 0 && _contextConnectionIndex.Value < _connections.Count)
-            {
-                _connections.RemoveAt(_contextConnectionIndex.Value);
-                if (_selectedConnectionIndex.HasValue && _selectedConnectionIndex.Value == _contextConnectionIndex.Value)
-                {
-                    _selectedConnectionIndex = null;
-                }
-                _contextConnectionIndex = null;
-            }
-            ImGui.EndPopup();
-        }
     }
 
     private bool TryCreateConnection((int nodeId, PinDirection direction, int pinIndex) outputRef, (int nodeId, PinDirection direction, int pinIndex) inputRef)
@@ -684,31 +992,19 @@ public class MaterialEditorWindow
         if (inputRef.pinIndex < 0 || inputRef.pinIndex >= inputNode.InputPins.Count)
             return false;
 
+        NodeValueKind outputKind = outputNode.OutputPins[outputRef.pinIndex].Kind;
+        NodeValueKind inputKind = inputNode.InputPins[inputRef.pinIndex].Kind;
+        
+        if (outputKind != inputKind)
+        {
+            return false;
+        }
+
         _connections.RemoveAll(c => c.InputNodeId == inputRef.nodeId && c.InputIndex == inputRef.pinIndex);
 
         Vector4 color = ResolvePinColor(outputNode.OutputPins[outputRef.pinIndex].Kind);
         _connections.Add(new NodeConnection(outputRef.nodeId, outputRef.pinIndex, inputRef.nodeId, inputRef.pinIndex, color));
         return true;
-    }
-
-    private static float EstimateDistanceToConnection(Vector2 point, Vector2 start, Vector2 end)
-    {
-        float distance = DistancePointToSegment(point, start, end);
-        return distance;
-    }
-
-    private static float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b)
-    {
-        Vector2 ab = b - a;
-        float abLenSq = ab.X * ab.X + ab.Y * ab.Y;
-        if (abLenSq <= float.Epsilon)
-            return Vector2.Distance(p, a);
-
-        float t = ((p.X - a.X) * ab.X + (p.Y - a.Y) * ab.Y) / abLenSq;
-        if (t < 0f) t = 0f;
-        else if (t > 1f) t = 1f;
-        Vector2 closest = new Vector2(a.X + ab.X * t, a.Y + ab.Y * t);
-        return Vector2.Distance(p, closest);
     }
 
     private GraphNode? GetNode(int id)
@@ -737,25 +1033,52 @@ public class MaterialEditorWindow
         return point.X >= min.X && point.X <= max.X && point.Y >= min.Y && point.Y <= max.Y;
     }
 
-    private Vector4 ResolvePinColor(NodeValueKind kind)
+    private System.Numerics.Vector4 ResolvePinColor(NodeValueKind kind)
     {
         return kind switch
         {
-            NodeValueKind.Color => new Vector4(0.94f, 0.54f, 0.2f, 1f),
-            NodeValueKind.Scalar => new Vector4(0.95f, 0.82f, 0.32f, 1f),
-            NodeValueKind.UV => new Vector4(0.35f, 0.76f, 0.93f, 1f),
-            NodeValueKind.Normal => new Vector4(0.4f, 0.5f, 0.95f, 1f),
-            NodeValueKind.Vector => new Vector4(0.55f, 0.9f, 0.68f, 1f),
-            NodeValueKind.Emission => new Vector4(0.95f, 0.42f, 0.72f, 1f),
-            _ => new Vector4(0.8f, 0.8f, 0.8f, 1f)
+            NodeValueKind.Color => new System.Numerics.Vector4(0.94f, 0.54f, 0.2f, 1f),
+            NodeValueKind.Scalar => new System.Numerics.Vector4(0.95f, 0.82f, 0.32f, 1f),
+            NodeValueKind.UV => new System.Numerics.Vector4(0.35f, 0.76f, 0.93f, 1f),
+            NodeValueKind.Normal => new System.Numerics.Vector4(0.4f, 0.5f, 0.95f, 1f),
+            NodeValueKind.Vector => new System.Numerics.Vector4(0.55f, 0.9f, 0.68f, 1f),
+            NodeValueKind.Emission => new System.Numerics.Vector4(0.95f, 0.42f, 0.72f, 1f),
+            _ => new System.Numerics.Vector4(0.8f, 0.8f, 0.8f, 1f)
         };
     }
 
-    private GraphNode CreateNode(string title, string? subtitle, Vector2 position, Vector2 size, Vector4 headerColor, IEnumerable<(string, NodeValueKind)> inputs, IEnumerable<(string, NodeValueKind)> outputs)
+    private void CreateNodeFromType(string nodeType, Vector2 position)
     {
-        var node = new GraphNode(_nextNodeId++, title, subtitle, position, size, headerColor, inputs, outputs);
-        _nodes.Add(node);
-        return node;
+        GraphNode? node = nodeType switch
+        {
+            "TexCoord" => new TexCoordNode(_nextNodeId++, position),
+            "Texture Sample" => new TextureSampleNode(_nextNodeId++, position),
+            "Vector 3" => new Vector3Node(_nextNodeId++, position),
+            "Vector 4" => new Vector4Node(_nextNodeId++, position),
+            "Scalar Parameter" => new ScalarParameterNode(_nextNodeId++, position),
+            "To Vector 3" => new ToVector3Node(_nextNodeId++, position),
+            "To Vector 4" => new ToVector4Node(_nextNodeId++, position),
+            "From Vector 3" => new FromVector3Node(_nextNodeId++, position),
+            "From Vector 4" => new FromVector4Node(_nextNodeId++, position),
+            "To Scalar" => new ToScalarNode(_nextNodeId++, position),
+            "To Vector 2" => new ToVector2Node(_nextNodeId++, position),
+            "Multiply" => new MultiplyNode(_nextNodeId++, position),
+            "Add" => new AddNode(_nextNodeId++, position),
+            "Lerp" => new LerpNode(_nextNodeId++, position),
+            "Power" => new PowerNode(_nextNodeId++, position),
+            "Mask" => new MaskNode(_nextNodeId++, position),
+            "Clamp" => new ClampNode(_nextNodeId++, position),
+            "Time" => new TimeNode(_nextNodeId++, position),
+            "Delta Time" => new DeltaTimeNode(_nextNodeId++, position),
+            "Panner" => new PannerNode(_nextNodeId++, position),
+            "Material Output" => new MaterialOutputNode(_nextNodeId++, position),
+            _ => null
+        };
+
+        if (node != null)
+        {
+            _nodes.Add(node);
+        }
     }
 
     private void AddConnection(GraphNode outputNode, int outputIndex, GraphNode inputNode, int inputIndex, NodeValueKind kind)
@@ -772,148 +1095,14 @@ public class MaterialEditorWindow
         _connections.Clear();
         _nextNodeId = 1;
 
-        var texCoord = CreateNode(
-            "TexCoord[0]",
-            "UV Source",
-            new Vector2(40f, 280f),
-            new Vector2(160f, 110f),
-            NodeColorTexCoord,
-            inputs: Array.Empty<(string, NodeValueKind)>(),
-            outputs: new[] { ("UV", NodeValueKind.UV) });
+        var constantColor = new Vector4Node(_nextNodeId++, new Vector2(200f, 200f));
+        constantColor.Color = new EngineVec4(0.8f, 0.6f, 0.4f, 1.0f);
+        _nodes.Add(constantColor);
 
-        var macroVariation = CreateNode(
-            "Macro Texture Variation",
-            "Output Blend",
-            new Vector2(230f, 20f),
-            new Vector2(240f, 180f),
-            NodeColorMultiply,
-            inputs: new[] { ("Input A", NodeValueKind.Color), ("Input B", NodeValueKind.Color) },
-            outputs: new[] { ("Output 1", NodeValueKind.Color), ("Output 2", NodeValueKind.Color), ("Output 3", NodeValueKind.Color) });
+        var materialOutput = new MaterialOutputNode(_nextNodeId++, new Vector2(500f, 200f));
+        _nodes.Add(materialOutput);
 
-        var woodTexture = CreateNode(
-            "Texture Sample",
-            "Walnut_BaseColor",
-            new Vector2(260f, 200f),
-            new Vector2(230f, 190f),
-            NodeColorTexture,
-            inputs: new[] { ("UVs", NodeValueKind.UV) },
-            outputs: new[] { ("RGB", NodeValueKind.Color), ("Alpha", NodeValueKind.Scalar) });
-
-        var roughnessTexture = CreateNode(
-            "Texture Sample",
-            "Walnut_Roughness",
-            new Vector2(260f, 400f),
-            new Vector2(230f, 190f),
-            NodeColorTexture,
-            inputs: new[] { ("UVs", NodeValueKind.UV) },
-            outputs: new[] { ("RGB", NodeValueKind.Color), ("Alpha", NodeValueKind.Scalar) });
-
-        var normalTexture = CreateNode(
-            "Texture Sample",
-            "Walnut_Normal",
-            new Vector2(260f, 600f),
-            new Vector2(230f, 190f),
-            NodeColorTexture,
-            inputs: new[] { ("UVs", NodeValueKind.UV) },
-            outputs: new[] { ("RGB", NodeValueKind.Vector) });
-
-        var multiplyMacro = CreateNode(
-            "Multiply",
-            "Macro Blend",
-            new Vector2(520f, 80f),
-            new Vector2(220f, 150f),
-            NodeColorMultiply,
-            inputs: new[] { ("A", NodeValueKind.Color), ("B", NodeValueKind.Color) },
-            outputs: new[] { ("Result", NodeValueKind.Color) });
-
-        var lerpHigh = CreateNode(
-            "Lerp (0.8,1.2)",
-            "Surface Variation",
-            new Vector2(760f, 60f),
-            new Vector2(240f, 170f),
-            NodeColorLerp,
-            inputs: new[] { ("A", NodeValueKind.Color), ("B", NodeValueKind.Color), ("Alpha", NodeValueKind.Scalar) },
-            outputs: new[] { ("Result", NodeValueKind.Color) });
-
-        var multiplySurface = CreateNode(
-            "Multiply",
-            "Surface Mix",
-            new Vector2(1020f, 120f),
-            new Vector2(220f, 160f),
-            NodeColorMultiply,
-            inputs: new[] { ("A", NodeValueKind.Color), ("B", NodeValueKind.Color) },
-            outputs: new[] { ("Result", NodeValueKind.Color) });
-
-        var alphaOffset = CreateNode(
-            "AlphaOffset",
-            "Adjust Roughness",
-            new Vector2(560f, 360f),
-            new Vector2(220f, 150f),
-            NodeColorUtility,
-            inputs: new[] { ("Alpha", NodeValueKind.Scalar), ("Offset", NodeValueKind.Scalar) },
-            outputs: new[] { ("Result", NodeValueKind.Scalar) });
-
-        var lerpRough = CreateNode(
-            "Lerp (0.2)",
-            "Roughness Mix",
-            new Vector2(810f, 340f),
-            new Vector2(230f, 150f),
-            NodeColorLerp,
-            inputs: new[] { ("A", NodeValueKind.Scalar), ("B", NodeValueKind.Scalar), ("Alpha", NodeValueKind.Scalar) },
-            outputs: new[] { ("Result", NodeValueKind.Scalar) });
-
-        var multiplyNormal = CreateNode(
-            "Multiply (×2)",
-            "Normal Boost",
-            new Vector2(640f, 580f),
-            new Vector2(220f, 160f),
-            NodeColorMultiply,
-            inputs: new[] { ("A", NodeValueKind.Vector), ("B", NodeValueKind.Vector) },
-            outputs: new[] { ("Result", NodeValueKind.Vector) });
-
-        var materialOutput = CreateNode(
-            "M_Wood_Floor_Walnut_Worn",
-            "Material Output",
-            new Vector2(1160f, 220f),
-            new Vector2(260f, 320f),
-            NodeColorOutput,
-            inputs: new[]
-            {
-                ("Base Color", NodeValueKind.Color),
-                ("Metallic", NodeValueKind.Scalar),
-                ("Specular", NodeValueKind.Scalar),
-                ("Roughness", NodeValueKind.Scalar),
-                ("Normal", NodeValueKind.Normal),
-                ("Ambient Occlusion", NodeValueKind.Scalar)
-            },
-            outputs: Array.Empty<(string, NodeValueKind)>());
-
-        AddConnection(texCoord, 0, woodTexture, 0, NodeValueKind.UV);
-        AddConnection(texCoord, 0, roughnessTexture, 0, NodeValueKind.UV);
-        AddConnection(texCoord, 0, normalTexture, 0, NodeValueKind.UV);
-
-        AddConnection(woodTexture, 0, multiplyMacro, 0, NodeValueKind.Color);
-        AddConnection(macroVariation, 0, multiplyMacro, 1, NodeValueKind.Color);
-
-        AddConnection(multiplyMacro, 0, lerpHigh, 0, NodeValueKind.Color);
-        AddConnection(macroVariation, 1, lerpHigh, 1, NodeValueKind.Color);
-        AddConnection(macroVariation, 2, lerpHigh, 2, NodeValueKind.Scalar);
-
-        AddConnection(lerpHigh, 0, multiplySurface, 0, NodeValueKind.Color);
-        AddConnection(macroVariation, 0, multiplySurface, 1, NodeValueKind.Color);
-
-        AddConnection(multiplySurface, 0, materialOutput, 0, NodeValueKind.Color);
-
-        AddConnection(roughnessTexture, 1, alphaOffset, 0, NodeValueKind.Scalar);
-        AddConnection(macroVariation, 1, alphaOffset, 1, NodeValueKind.Scalar);
-        AddConnection(alphaOffset, 0, lerpRough, 0, NodeValueKind.Scalar);
-        AddConnection(macroVariation, 2, lerpRough, 1, NodeValueKind.Scalar);
-        AddConnection(roughnessTexture, 0, lerpRough, 2, NodeValueKind.Scalar);
-        AddConnection(lerpRough, 0, materialOutput, 3, NodeValueKind.Scalar);
-
-        AddConnection(normalTexture, 0, multiplyNormal, 0, NodeValueKind.Vector);
-        AddConnection(macroVariation, 0, multiplyNormal, 1, NodeValueKind.Vector);
-        AddConnection(multiplyNormal, 0, materialOutput, 4, NodeValueKind.Normal);
+        AddConnection(constantColor, 0, materialOutput, 0, NodeValueKind.Color);
     }
 
     private static float Mod(float x, float m)
@@ -929,69 +1118,9 @@ public class MaterialEditorWindow
         Output
     }
 
-    private enum NodeValueKind
-    {
-        Color,
-        Scalar,
-        UV,
-        Normal,
-        Vector,
-        Emission
-    }
 
-    private sealed class GraphNode
-    {
-        public GraphNode(int id, string title, string? subtitle, Vector2 position, Vector2 size, Vector4 headerColor, IEnumerable<(string label, NodeValueKind kind)> inputs, IEnumerable<(string label, NodeValueKind kind)> outputs)
-        {
-            Id = id;
-            Title = title;
-            Subtitle = subtitle;
-            Position = position;
-            Size = size;
-            HeaderColor = headerColor;
-            InputPins = new List<NodePin>();
-            OutputPins = new List<NodePin>();
 
-            if (inputs != null)
-            {
-                foreach (var (label, kind) in inputs)
-                {
-                    InputPins.Add(new NodePin(label, kind));
-                }
-            }
-
-            if (outputs != null)
-            {
-                foreach (var (label, kind) in outputs)
-                {
-                    OutputPins.Add(new NodePin(label, kind));
-                }
-            }
-        }
-
-        public int Id { get; }
-        public string Title { get; }
-        public string? Subtitle { get; }
-        public Vector2 Position { get; set; }
-        public Vector2 Size { get; set; }
-        public Vector4 HeaderColor { get; }
-        public List<NodePin> InputPins { get; }
-        public List<NodePin> OutputPins { get; }
-    }
-
-    private sealed class NodePin
-    {
-        public NodePin(string label, NodeValueKind kind)
-        {
-            Label = label;
-            Kind = kind;
-        }
-
-        public string Label { get; }
-        public NodeValueKind Kind { get; }
-    }
-
-    private sealed record NodeConnection(int OutputNodeId, int OutputIndex, int InputNodeId, int InputIndex, Vector4 Color);
+    private sealed record NodeConnection(int OutputNodeId, int OutputIndex, int InputNodeId, int InputIndex, System.Numerics.Vector4 Color);
 
     private sealed class NodeDrawState
     {
@@ -1106,8 +1235,107 @@ public class MaterialEditorWindow
         }
     }
 
-    private static Vector4 LerpColor(Vector4 a, Vector4 b, float t)
+    private static EngineVec4 LerpColor(EngineVec4 a, EngineVec4 b, float t)
     {
         return a + (b - a) * t;
+    }
+
+    private static System.Numerics.Vector4 LerpColor(System.Numerics.Vector4 a, System.Numerics.Vector4 b, float t)
+    {
+        return a + (b - a) * t;
+    }
+
+    private object? EvaluateNodeOutput(GraphNode node, int outputIndex, NodeEvaluationContext context)
+    {
+        if (context.Cache.TryGetValue((node.Id, outputIndex), out var cached))
+        {
+            return cached;
+        }
+
+        object? result = node.EvaluateOutput(outputIndex, context);
+
+        if (result != null)
+        {
+            context.Cache[(node.Id, outputIndex)] = result;
+        }
+
+        return result;
+    }
+
+    private T? GetInputValue<T>(GraphNode node, int inputIndex, NodeEvaluationContext context)
+    {
+        if (inputIndex < 0 || inputIndex >= node.InputPins.Count)
+            return default;
+
+        foreach (var conn in _connections)
+        {
+            if (conn.InputNodeId == node.Id && conn.InputIndex == inputIndex)
+            {
+                GraphNode? sourceNode = GetNode(conn.OutputNodeId);
+                if (sourceNode != null)
+                {
+                    object? value = EvaluateNodeOutput(sourceNode, conn.OutputIndex, context);
+                    if (value is T t)
+                    {
+                        return t;
+                    }
+                }
+            }
+        }
+
+        return default;
+    }
+
+    public MaterialData? EvaluateMaterial()
+    {
+        var context = new NodeEvaluationContext();
+        context.GetInputValueFunc = (nodeId, inputIndex, type) => 
+        {
+            GraphNode? node = GetNode(nodeId);
+            if (node == null) return null;
+            
+            foreach (var conn in _connections)
+            {
+                if (conn.InputNodeId == nodeId && conn.InputIndex == inputIndex)
+                {
+                    GraphNode? sourceNode = GetNode(conn.OutputNodeId);
+                    if (sourceNode != null)
+                    {
+                        object? value = EvaluateNodeOutput(sourceNode, conn.OutputIndex, context);
+                        if (value != null && type.IsAssignableFrom(value.GetType()))
+                        {
+                            return value;
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+
+        GraphNode? materialOutput = _nodes.Find(n => n.Title.Contains("Material Output"));
+        if (materialOutput == null)
+            return null;
+
+        var materialData = new MaterialData();
+
+        if (materialOutput.InputPins.Count > 0)
+        {
+            EngineVec4? baseColor = GetInputValue<EngineVec4>(materialOutput, 0, context);
+            if (baseColor.HasValue)
+            {
+                materialData.DiffuseColor = baseColor.Value;
+            }
+        }
+
+        if (materialOutput.InputPins.Count > 3)
+        {
+            float? roughness = GetInputValue<float>(materialOutput, 3, context);
+            if (roughness.HasValue)
+            {
+                materialData.Roughness = System.Math.Clamp(roughness.Value, 0f, 1f);
+            }
+        }
+
+        return materialData;
     }
 }

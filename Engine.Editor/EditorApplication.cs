@@ -9,6 +9,7 @@ using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using Engine.Core;
+using Engine.Content;
 using Engine.Graphics;
 using Engine.Math;
 using Engine.Physics;
@@ -32,6 +33,7 @@ public class EditorApplication : IDisposable
     private ViewportWindow _viewport;
     private SettingsWindow _settings;
     private MaterialEditorWindow _materialEditor;
+    private FileBrowserWindow? _fileBrowser;
     private Shader? _defaultShader;
     private Skybox? _skybox;
     private ShadowRenderer? _shadowRenderer;
@@ -669,6 +671,11 @@ void main()
         _profiler.Render();
         _settings.Render();
         _materialEditor.Render();
+        
+        if (_fileBrowser != null && _fileBrowser.Show())
+        {
+            OnModelFileSelected();
+        }
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
@@ -788,6 +795,10 @@ void main()
                 {
                     _materialEditor.Visible = !_materialEditor.Visible;
                 }
+                if (ImGui.MenuItem("Model Loader"))
+                {
+                    LoadModel();
+                }
                 ImGui.EndMenu();
             }
 
@@ -874,6 +885,53 @@ void main()
                 }
                 _selectedObject = null;
             }
+        }
+    }
+
+    private void LoadModel()
+    {
+        if (_currentScene == null)
+        {
+            Logger.Warning("No scene loaded. Please create or load a scene first.");
+            return;
+        }
+
+        var extensions = new[] { "obj", "fbx", "dae", "3ds", "blend", "x", "md2", "md3", "ply", "stl", "gltf", "glb" };
+        _fileBrowser = new FileBrowserWindow("Load 3D Model", extensions);
+        _fileBrowser.Visible = true;
+        _fileBrowser.Reset();
+    }
+
+    private void OnModelFileSelected()
+    {
+        if (_fileBrowser == null || _fileBrowser.SelectedFilePath == null || _currentScene == null)
+            return;
+
+        try
+        {
+            var mesh = ModelLoader.LoadMesh(_fileBrowser.SelectedFilePath);
+            if (mesh != null)
+            {
+                var fileName = Path.GetFileNameWithoutExtension(_fileBrowser.SelectedFilePath);
+                var gameObject = _currentScene.CreateGameObject(fileName);
+                var renderer = gameObject.AddComponent<MeshRenderer>();
+                renderer.Mesh = mesh;
+                renderer.SetDefaultShader(_defaultShader!);
+                
+                Logger.Info($"Successfully loaded model: {fileName}");
+            }
+            else
+            {
+                Logger.Error($"Failed to load model from: {_fileBrowser.SelectedFilePath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Error loading model: {ex.Message}");
+        }
+        finally
+        {
+            _fileBrowser = null;
         }
     }
 
