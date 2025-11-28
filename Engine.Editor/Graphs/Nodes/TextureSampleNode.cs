@@ -61,13 +61,35 @@ public class TextureSampleNode : GraphNode
     {
         ImGui.Text("Texture");
         ImGui.Separator();
-        string? texturePath = TexturePath ?? "";
-        byte[] buffer = System.Text.Encoding.UTF8.GetBytes(texturePath + "\0");
-        if (ImGui.InputText("Path", buffer, 256))
+        string texturePath = TexturePath ?? "";
+        byte[] buffer = new byte[512];
+        if (texturePath.Length > 0)
         {
-            TexturePath = System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0');
-            if (string.IsNullOrEmpty(TexturePath))
+            byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(texturePath);
+            int copyLength = System.Math.Min(pathBytes.Length, buffer.Length - 1);
+            System.Array.Copy(pathBytes, buffer, copyLength);
+            buffer[copyLength] = 0;
+        }
+        else
+        {
+            buffer[0] = 0;
+        }
+        
+        if (ImGui.InputText("Path", buffer, (uint)buffer.Length))
+        {
+            int nullIndex = System.Array.IndexOf<byte>(buffer, 0);
+            if (nullIndex >= 0)
+        {
+                TexturePath = System.Text.Encoding.UTF8.GetString(buffer, 0, nullIndex).Trim();
+                if (string.IsNullOrWhiteSpace(TexturePath))
+                    TexturePath = null;
+            }
+            else
+            {
+                TexturePath = System.Text.Encoding.UTF8.GetString(buffer).Trim();
+                if (string.IsNullOrWhiteSpace(TexturePath))
                 TexturePath = null;
+            }
         }
 
         ImGui.Spacing();

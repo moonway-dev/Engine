@@ -105,6 +105,8 @@ public class EditorApplication : IDisposable
         _imguiController = new ImGuiController(_window!.Size.X, _window.Size.Y);
         _isRunning = true;
 
+        Input.Initialize(_window);
+
         CreateDefaultShader();
         CreateDefaultScene();
         
@@ -624,11 +626,15 @@ void main()
             return;
 
         _profiler.BeginFrame();
+        Input.Update();
 
         if (_window.KeyboardState.IsKeyPressed(Keys.Escape))
             _window.Close();
 
-        _cameraController?.Update(_window, (float)e.Time);
+        bool viewportHovered = _viewport != null && _viewport.IsHovered;
+        bool isCapturing = _cameraController != null && _cameraController.IsCapturing;
+        bool canControlCamera = viewportHovered || isCapturing;
+        _cameraController?.Update(_window, (float)e.Time, canControlCamera);
 
         if (_playMode == PlayMode.Playing)
         {

@@ -20,6 +20,9 @@ public class ViewportWindow
     private int _width = 1920;
     private int _height = 1080;
     private int _msaaSamples = 0;
+    private bool _isHovered = false;
+
+    public bool IsHovered => _isHovered;
 
     public ViewportWindow(EditorApplication editor)
     {
@@ -140,6 +143,7 @@ public class ViewportWindow
     {
         if (ImGui.Begin("Viewport"))
         {
+            _isHovered = ImGui.IsWindowHovered();
             var viewportSize = ImGui.GetContentRegionAvail();
             if (viewportSize.X > 0 && viewportSize.Y > 0)
             {

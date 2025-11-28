@@ -41,9 +41,6 @@ namespace Engine.Editor
         private int GLVersion;
         private bool CompatibilityProfile;
 
-        /// <summary>
-        /// Constructs a new ImGuiController.
-        /// </summary>
         public ImGuiController(int width, int height)
         {
             _windowWidth = width;
@@ -248,9 +245,6 @@ void main()
             CheckGLError("End of ImGui setup");
         }
 
-        /// <summary>
-        /// Recreates the device texture used to render text.
-        /// </summary>
         public void RecreateFontDeviceTexture()
         {
             ImGuiIOPtr io = ImGui.GetIO();
@@ -279,7 +273,6 @@ void main()
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
 
-            // Restore state
             GL.BindTexture(TextureTarget.Texture2D, prevTexture2D);
             GL.ActiveTexture((TextureUnit)prevActiveTexture);
 
@@ -288,9 +281,6 @@ void main()
             io.Fonts.ClearTexData();
         }
 
-        /// <summary>
-        /// Renders the ImGui draw list data.
-        /// </summary>
         public void Render()
         {
             if (_frameBegun)
@@ -301,9 +291,6 @@ void main()
             }
         }
 
-        /// <summary>
-        /// Updates ImGui input and IO configuration state.
-        /// </summary>
         public void Update(GameWindow wnd, float deltaSeconds)
         {
             if (_frameBegun)
@@ -318,10 +305,6 @@ void main()
             ImGui.NewFrame();
         }
 
-        /// <summary>
-        /// Sets per-frame data based on the associated window.
-        /// This is called by Update(float).
-        /// </summary>
         private void SetPerFrameImGuiData(float deltaSeconds)
         {
             ImGuiIOPtr io = ImGui.GetIO();
@@ -348,7 +331,7 @@ void main()
             io.MouseDown[4] = MouseState[MouseButton.Button5];
 
             var screenPoint = new Vector2i((int)MouseState.X, (int)MouseState.Y);
-            var point = screenPoint;//wnd.PointToClient(screenPoint);
+            var point = screenPoint;
             io.MousePos = new System.Numerics.Vector2(point.X, point.Y);
 
             foreach (Keys key in Enum.GetValues(typeof(Keys)))
@@ -392,7 +375,6 @@ void main()
                 return;
             }
 
-            // Get intial state.
             int prevVAO = GL.GetInteger(GetPName.VertexArrayBinding);
             int prevArrayBuffer = GL.GetInteger(GetPName.ArrayBufferBinding);
             int prevProgram = GL.GetInteger(GetPName.CurrentProgram);
@@ -436,9 +418,7 @@ void main()
                 GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
             }
 
-            // Bind the element buffer (thru the VAO) so that we can resize it.
             GL.BindVertexArray(_vertexArray);
-            // Bind the vertex buffer so that we can resize it.
             GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
             for (int i = 0; i < draw_data.CmdListsCount; i++)
             {
@@ -451,8 +431,6 @@ void main()
 
                     GL.BufferData(BufferTarget.ArrayBuffer, newSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
                     _vertexBufferSize = newSize;
-
-                    //Console.WriteLine($"Resized dear imgui vertex buffer to new size {_vertexBufferSize}");
                 }
 
                 int indexSize = cmd_list.IdxBuffer.Size * sizeof(ushort);
@@ -461,15 +439,12 @@ void main()
                     int newSize = (int)System.Math.Max(_indexBufferSize * 1.5f, indexSize);
                     GL.BufferData(BufferTarget.ElementArrayBuffer, newSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
                     _indexBufferSize = newSize;
-
-                    //Console.WriteLine($"Resized dear imgui index buffer to new size {_indexBufferSize}");
                 }
             }
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             GL.Viewport(0, 0, _windowWidth, _windowHeight);
 
-            // Setup orthographic projection matrix into our constant buffer
             ImGuiIOPtr io = ImGui.GetIO();
             Matrix4 mvp = Matrix4.CreateOrthographicOffCenter(
                 0.0f,
@@ -496,7 +471,6 @@ void main()
             GL.Disable(EnableCap.CullFace);
             GL.Disable(EnableCap.DepthTest);
 
-            // Render command lists
             for (int n = 0; n < draw_data.CmdListsCount; n++)
             {
                 ImDrawListPtr cmd_list = draw_data.CmdLists[n];
@@ -520,7 +494,6 @@ void main()
                         GL.BindTexture(TextureTarget.Texture2D, (int)pcmd.TextureId);
                         CheckGLError("Texture");
 
-                        // We do _windowHeight - (int)clip.W instead of (int)clip.Y because gl has flipped Y when it comes to these coordinates
                         var clip = pcmd.ClipRect;
                         GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
                         CheckGLError("Scissor");
@@ -541,7 +514,6 @@ void main()
             GL.Disable(EnableCap.Blend);
             GL.Disable(EnableCap.ScissorTest);
 
-            // Reset state
             GL.BindTexture(TextureTarget.Texture2D, prevTexture2D);
             GL.ActiveTexture((TextureUnit)prevActiveTexture);
             GL.UseProgram(prevProgram);
@@ -569,9 +541,6 @@ void main()
             }
         }
 
-        /// <summary>
-        /// Frees all graphics resources used by the renderer.
-        /// </summary>
         public void Dispose()
         {
             GL.DeleteVertexArray(_vertexArray);

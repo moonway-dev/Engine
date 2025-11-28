@@ -2,6 +2,7 @@ using System;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+using Engine.Core;
 using Engine.Graphics;
 using Engine.Math;
 
@@ -14,9 +15,9 @@ public class FreeLookCameraController
     private float _pitch = 0.0f;
     private float _movementSpeed = 5.0f;
     private float _rotationSensitivity = 0.1f;
+    private float _zoomSensitivity = 0.3f;
+    private float _speedScrollSensitivity = 2.0f;
     private bool _firstMouse = true;
-    private float _lastMouseX = 0.0f;
-    private float _lastMouseY = 0.0f;
     private bool _mouseCaptured = false;
 
     public float MovementSpeed
@@ -36,16 +37,26 @@ public class FreeLookCameraController
         _camera = camera;
     }
 
-    public void Update(GameWindow window, float deltaTime)
+    public bool IsCapturing => _mouseCaptured;
+
+    private const int RightMouseButton = 1;
+
+    public void Update(GameWindow window, float deltaTime, bool canCaptureMouse = true)
     {
-        if (!_mouseCaptured && window.MouseState.IsButtonPressed(MouseButton.Right))
+        if (!canCaptureMouse && !_mouseCaptured)
+        {
+            return;
+        }
+
+        if (!_mouseCaptured && canCaptureMouse && Input.GetMouseButtonDown(RightMouseButton))
         {
             _mouseCaptured = true;
             window.CursorState = CursorState.Grabbed;
             _firstMouse = true;
+            Input.OverrideMousePosition(Input.MousePosition);
         }
 
-        if (_mouseCaptured && window.MouseState.IsButtonReleased(MouseButton.Right))
+        if (_mouseCaptured && Input.GetMouseButtonUp(RightMouseButton))
         {
             _mouseCaptured = false;
             window.CursorState = CursorState.Normal;
@@ -53,32 +64,34 @@ public class FreeLookCameraController
 
         if (_mouseCaptured)
         {
-            ProcessMouseMovement(window);
-            ProcessKeyboardInput(window, deltaTime);
+            ApplyScrollSpeed();
+            ProcessMouseMovement();
+            ProcessKeyboardInput(deltaTime);
         }
     }
 
-    private void ProcessMouseMovement(GameWindow window)
+    private void ProcessMouseMovement()
     {
-        var mouseState = window.MouseState;
+        var mouseDelta = Input.MouseDelta;
 
         if (_firstMouse)
         {
-            _lastMouseX = mouseState.X;
-            _lastMouseY = mouseState.Y;
             _firstMouse = false;
+            return;
         }
 
-        float xOffset = _lastMouseX - mouseState.X;
-        float yOffset = _lastMouseY - mouseState.Y;
+        bool altHeld = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
 
-        _lastMouseX = mouseState.X;
-        _lastMouseY = mouseState.Y;
+        float xOffset = mouseDelta.X * _rotationSensitivity;
+        float yOffset = mouseDelta.Y * _rotationSensitivity;
 
-        xOffset *= _rotationSensitivity;
-        yOffset *= _rotationSensitivity;
+        if (altHeld)
+        {
+            AdjustFieldOfView(yOffset);
+            return;
+        }
 
-        _yaw += xOffset;
+        _yaw -= xOffset;
         _pitch += yOffset;
 
         if (_pitch > 89.0f)
@@ -94,30 +107,49 @@ public class FreeLookCameraController
         _camera.Rotation = yawRotation * pitchRotation;
     }
 
-    private void ProcessKeyboardInput(GameWindow window, float deltaTime)
+    private void AdjustFieldOfView(float mouseYOffset)
     {
-        var keyboardState = window.KeyboardState;
-        float velocity = _movementSpeed * deltaTime;
+        float fovDegrees = _camera.FOV * (180f / MathF.PI);
+        fovDegrees -= mouseYOffset * _zoomSensitivity;
+        fovDegrees = System.Math.Clamp(fovDegrees, 25f, 120f);
+        _camera.FOV = fovDegrees * (MathF.PI / 180f);
+    }
+
+    private void ProcessKeyboardInput(float deltaTime)
+    {
+        bool shiftHeld = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        float speedMultiplier = shiftHeld ? 2.0f : 1.0f;
+        float velocity = _movementSpeed * speedMultiplier * deltaTime;
 
         Vector3 position = _camera.Position;
         Vector3 forward = _camera.Forward;
         Vector3 right = _camera.Right;
         Vector3 up = _camera.Up;
 
-        if (keyboardState.IsKeyDown(Keys.W))
+        if (Input.GetKey(KeyCode.W))
             position += forward * velocity;
-        if (keyboardState.IsKeyDown(Keys.S))
+        if (Input.GetKey(KeyCode.S))
             position -= forward * velocity;
-        if (keyboardState.IsKeyDown(Keys.A))
+        if (Input.GetKey(KeyCode.A))
             position -= right * velocity;
-        if (keyboardState.IsKeyDown(Keys.D))
+        if (Input.GetKey(KeyCode.D))
             position += right * velocity;
-        if (keyboardState.IsKeyDown(Keys.Q))
+        if (Input.GetKey(KeyCode.Q))
             position -= up * velocity;
-        if (keyboardState.IsKeyDown(Keys.E))
+        if (Input.GetKey(KeyCode.E))
             position += up * velocity;
 
         _camera.Position = position;
+    }
+
+    private void ApplyScrollSpeed()
+    {
+        float scroll = Input.ScrollDelta;
+        if (MathF.Abs(scroll) < 0.0001f)
+            return;
+
+        _movementSpeed += scroll * _speedScrollSensitivity;
+        _movementSpeed = System.Math.Clamp(_movementSpeed, 0.5f, 100f);
     }
 }
 

@@ -3,9 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using ImGuiNET;
+using OpenTK.Graphics.OpenGL4;
 using EngineVec2 = Engine.Math.Vector2;
 using EngineVec4 = Engine.Math.Vector4;
+using EngineVec3 = Engine.Math.Vector3;
+using EngineMatrix4 = Engine.Math.Matrix4;
+using NVector2 = System.Numerics.Vector2;
+using NVector4 = System.Numerics.Vector4;
 using Engine.Graphics;
+using Engine.Renderer;
 using Engine.Editor.Graphs;
 using Engine.Editor.Graphs.Nodes;
 
@@ -21,7 +27,7 @@ public class MaterialEditorWindow
     {
         { "Inputs", new[] { "Texture Sample", "Vector 3", "Vector 4", "Scalar Parameter", "TexCoord" } },
         { "Math", new[] { "Multiply", "Add", "Lerp", "Power" } },
-        { "Utility", new[] { "Mask", "Clamp", "Time", "Delta Time", "Panner" } },
+        { "Utility", new[] { "Mask", "Clamp", "Time", "Delta Time", "Panner", "Hue Shift", "Rotator" } },
         { "Conversion", new[] { "To Vector 3", "To Vector 4", "From Vector 3", "From Vector 4", "To Scalar", "To Vector 2" } },
         { "Material", new[] { "Material Attributes", "Material Output" } }
     };
@@ -33,20 +39,30 @@ public class MaterialEditorWindow
     private static readonly System.Numerics.Vector4 NodeColorOutput = new System.Numerics.Vector4(0.18f, 0.18f, 0.18f, 1f);
     private static readonly System.Numerics.Vector4 NodeColorConstant = new System.Numerics.Vector4(0.3f, 0.7f, 0.4f, 0.95f);
 
-    private Vector2 _canvasOffset = new Vector2(120f, 120f);
+    private NVector2 _canvasOffset = new NVector2(120f, 120f);
     private float _canvasZoom = 1.0f;
     private int _nextNodeId = 1;
     private int? _selectedNodeId;
     private int? _draggingNodeId;
-    private Vector2 _draggingNodeOffset;
+    private NVector2 _draggingNodeOffset;
     private (int nodeId, PinDirection direction, int pinIndex)? _hoveredPin;
     private (int nodeId, PinDirection direction, int pinIndex)? _activeLink;
-    private Vector2 _activeLinkMousePos;
+    private NVector2 _activeLinkMousePos;
     private int? _selectedConnectionIndex;
     private int? _hoveredConnectionIndex;
     private int? _contextConnectionIndex;
     private string? _pendingNodeType;
-    private Vector2 _pendingNodePosition;
+    private NVector2 _pendingNodePosition;
+    
+    private uint _previewFramebuffer;
+    private uint _previewTexture;
+    private uint _previewDepthBuffer;
+    private int _previewWidth = 240;
+    private int _previewHeight = 200;
+    private Mesh? _previewSphere;
+    private Camera? _previewCamera;
+    private float _previewRotation = 0f;
+    private FXAA? _previewFXAA;
 
     public bool Visible { get; set; }
 
@@ -54,6 +70,42 @@ public class MaterialEditorWindow
     {
         _editor = editor;
         InitializeDemoGraph();
+        InitializePreview();
+    }
+    
+    private void InitializePreview()
+    {
+        _previewSphere = Primitives.CreateSphere(1.0f, 32);
+        _previewCamera = new Camera();
+        _previewCamera.Position = new EngineVec3(0f, 0f, 3f);
+        _previewCamera.LookAt(EngineVec3.Zero, EngineVec3.Up);
+        _previewCamera.AspectRatio = (float)_previewWidth / _previewHeight;
+        _previewCamera.FOV = 45f * System.MathF.PI / 180f;
+        
+        CreatePreviewFramebuffer();
+        _previewFXAA = new FXAA(_previewWidth, _previewHeight);
+    }
+    
+    private void CreatePreviewFramebuffer()
+    {
+        _previewFramebuffer = (uint)GL.GenFramebuffer();
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _previewFramebuffer);
+        
+        _previewTexture = (uint)GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, _previewTexture);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, _previewWidth, _previewHeight, 0, OpenTK.Graphics.OpenGL4.PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _previewTexture, 0);
+        
+        _previewDepthBuffer = (uint)GL.GenRenderbuffer();
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _previewDepthBuffer);
+        GL.RenderbufferStorage(RenderbufferTarget.Renderbuffer, RenderbufferStorage.Depth24Stencil8, _previewWidth, _previewHeight);
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthStencilAttachment, RenderbufferTarget.Renderbuffer, _previewDepthBuffer);
+        
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        GL.BindTexture(TextureTarget.Texture2D, 0);
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, 0);
     }
 
     public void Render()
@@ -242,105 +294,73 @@ public class MaterialEditorWindow
         drawList.AddRect(cursor, cursor + previewSize, ImGui.GetColorU32(new Vector4(0.25f, 0.25f, 0.35f, 1f)), 6f, ImDrawFlags.None, 2f);
         
         MaterialData? materialData = EvaluateMaterial();
-        Vector4 baseColor;
-        float roughness = 0.5f;
         
-        if (materialData != null)
+        if (_previewSphere != null && _previewCamera != null && _editor.DefaultShader != null)
         {
-            baseColor = new Vector4(materialData.DiffuseColor.X, materialData.DiffuseColor.Y, materialData.DiffuseColor.Z, materialData.DiffuseColor.W);
-            roughness = materialData.Roughness;
+            _previewRotation += 0.5f * ImGui.GetIO().DeltaTime;
             
-            if (baseColor.W < 0.01f)
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, _previewFramebuffer);
+            GL.Viewport(0, 0, _previewWidth, _previewHeight);
+            GL.ClearColor(0.12f, 0.12f, 0.16f, 1.0f);
+            GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+            GL.Enable(EnableCap.DepthTest);
+            
+            EngineMatrix4 rotation = EngineMatrix4.CreateRotationY(_previewRotation);
+            EngineMatrix4 model = rotation;
+            EngineMatrix4 view = _previewCamera.ViewMatrix;
+            EngineMatrix4 projection = _previewCamera.ProjectionMatrix;
+            EngineMatrix4 mvp = projection * view * model;
+            
+            _editor.DefaultShader.Use();
+            _editor.DefaultShader.SetMatrix4("uModel", model);
+            _editor.DefaultShader.SetMatrix4("uView", view);
+            _editor.DefaultShader.SetMatrix4("uMVP", mvp);
+            _editor.DefaultShader.SetInt("uUseTexture", 0);
+            
+            if (materialData != null)
             {
-                baseColor.W = 1.0f;
+                EngineVec4 color = materialData.DiffuseColor;
+                _editor.DefaultShader.SetVector4("uColor", color);
+            }
+            else
+            {
+                _editor.DefaultShader.SetVector4("uColor", new EngineVec4(0.8f, 0.6f, 0.4f, 1.0f));
             }
             
-            if (baseColor.X < 0.01f && baseColor.Y < 0.01f && baseColor.Z < 0.01f)
+            _previewSphere.Draw();
+            
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+
+            uint finalTexture = _previewTexture;
+            if (_previewFXAA == null)
             {
-                baseColor = new Vector4(0.8f, 0.6f, 0.4f, 1.0f);
+                _previewFXAA = new FXAA(_previewWidth, _previewHeight);
             }
+            else
+            {
+                _previewFXAA.Resize(_previewWidth, _previewHeight);
+            }
+
+            _previewFXAA.Render(_previewTexture);
+            finalTexture = _previewFXAA.Texture;
+            
+            ImGui.SetCursorScreenPos(cursor);
+            ImGui.Image((IntPtr)finalTexture, previewSize, new NVector2(0, 1), new NVector2(1, 0));
         }
         else
         {
-            baseColor = new Vector4(0.8f, 0.6f, 0.4f, 1.0f);
+            drawList.AddText(cursor + new NVector2(10f, 10f), ImGui.GetColorU32(new NVector4(1f, 1f, 1f, 0.9f)), "No Material");
         }
         
-        Vector2 center = cursor + new Vector2(previewSize.X * 0.5f, previewSize.Y * 0.5f);
-        float radius = 70f;
-            
-            Vector2[] lightDirs = new Vector2[]
-            {
-                new Vector2(0.3f, -0.7f),
-                new Vector2(-0.5f, -0.3f),
-                new Vector2(0.2f, 0.5f)
-            };
-            float[] lightIntensities = new float[] { 0.6f, 0.2f, 0.15f };
-            for (int y = 0; y < 150; y++)
-            {
-                for (int x = 0; x < 150; x++)
-                {
-                    Vector2 pixelPos = new Vector2(x / 150f * previewSize.X, y / 150f * previewSize.Y);
-                    Vector2 worldPos = cursor + pixelPos;
-                    Vector2 toCenter = worldPos - center;
-                    float dist = Vector2.Distance(Vector2.Zero, toCenter);
-                    
-                    float borderWidth = 2.0f;
-                    float edgeAlpha = 1.0f;
-                    
-                    if (dist > radius - borderWidth && dist <= radius)
-                    {
-                        float edgeDist = (radius - dist) / borderWidth;
-                        edgeAlpha = System.Math.Clamp(edgeDist, 0f, 1f);
-                    }
-                    else if (dist > radius)
-                    {
-                        edgeAlpha = 0f;
-                    }
-                    
-                    if (dist < radius)
-                    {
-                        Vector2 normal = toCenter / radius;
-                        
-                        float totalLighting = 0.3f;
-                        for (int i = 0; i < lightDirs.Length; i++)
-                        {
-                            float dot = System.MathF.Max(0f, Vector2.Dot(normal, lightDirs[i]));
-                            totalLighting += dot * lightIntensities[i];
-                        }
-                        Vector2 viewDir = new Vector2(0f, 0f);
-                        Vector2 reflectDir = normal * 2f * Vector2.Dot(normal, lightDirs[0]) - lightDirs[0];
-                        float specular = System.MathF.Pow(System.MathF.Max(0f, Vector2.Dot(reflectDir, viewDir)), 32f) * 0.3f;
-                        totalLighting += specular;
-                        
-                        totalLighting = System.Math.Clamp(totalLighting, 0f, 1f);
-                        
-                        Vector4 litColor = new Vector4(
-                            baseColor.X * totalLighting,
-                            baseColor.Y * totalLighting,
-                            baseColor.Z * totalLighting,
-                            baseColor.W * edgeAlpha);
-                        
-                        drawList.AddRectFilled(worldPos, worldPos + new Vector2(1.6f, 1.6f), ImGui.GetColorU32(litColor));
-                    }
-                }
-            }
-            
-        for (int i = 0; i < 3; i++)
+        if (materialData != null)
         {
-            float alpha = 0.2f * (1f - i * 0.3f);
-            float thickness = 1.5f - i * 0.3f;
-            if (thickness > 0.1f)
-            {
-                drawList.AddCircle(center, radius - i * 0.5f, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, alpha)), 128, thickness);
-            }
+            NVector2 infoPos = cursor + new NVector2(8f, previewSize.Y - 50f);
+            drawList.AddRectFilled(infoPos - new NVector2(4f, 4f), infoPos + new NVector2(220f, 42f), 
+                ImGui.GetColorU32(new NVector4(0f, 0f, 0f, 0.6f)), 4f);
+            
+            string roughnessText = $"Roughness: {materialData.Roughness:F2}";
+            drawList.AddText(infoPos, ImGui.GetColorU32(new NVector4(1f, 1f, 1f, 0.9f)), roughnessText);
         }
-        
-        Vector2 infoPos = cursor + new Vector2(8f, previewSize.Y - 50f);
-        drawList.AddRectFilled(infoPos - new Vector2(4f, 4f), infoPos + new Vector2(220f, 42f), 
-            ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.6f)), 4f);
-        
-        string roughnessText = $"Roughness: {roughness:F2}";
-        drawList.AddText(infoPos, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.9f)), roughnessText);
         ImGui.Dummy(previewSize);
     }
 
@@ -481,23 +501,34 @@ public class MaterialEditorWindow
 
     private void DrawCanvasGrid(ImDrawListPtr drawList, Vector2 canvasPos, Vector2 canvasSize)
     {
-        float tileSize = 64f;
-        if (tileSize < 24f) tileSize = 24f;
-
-        float tileOffsetX = 0f;
-        float tileOffsetY = 0f;
-
-        for (float x = tileOffsetX; x < canvasSize.X; x += tileSize)
+        float baseTileSize = 64f;
+        float tileSize = baseTileSize * _canvasZoom;
+        while (tileSize < 24f)
         {
-            for (float y = tileOffsetY; y < canvasSize.Y; y += tileSize)
+            baseTileSize *= 2f;
+            tileSize = baseTileSize * _canvasZoom;
+        }
+        while (tileSize > 140f)
+        {
+            baseTileSize *= 0.5f;
+            tileSize = baseTileSize * _canvasZoom;
+        }
+
+        float tileOffsetX = Mod(_canvasOffset.X, tileSize) - tileSize;
+        float tileOffsetY = Mod(_canvasOffset.Y, tileSize) - tileSize;
+
+        int initialTileX = (int)System.MathF.Floor((_canvasOffset.X + tileOffsetX) / tileSize);
+        int initialTileY = (int)System.MathF.Floor((_canvasOffset.Y + tileOffsetY) / tileSize);
+        int tileXIndex = initialTileX;
+        uint tileColor = ImGui.GetColorU32(_theme.GridTileDark);
+        for (float x = tileOffsetX; x < canvasSize.X + tileSize; x += tileSize, tileXIndex++)
+        {
+            int tileYIndex = initialTileY;
+            for (float y = tileOffsetY; y < canvasSize.Y + tileSize; y += tileSize, tileYIndex++)
             {
-                int tileX = (int)System.MathF.Floor(x / tileSize);
-                int tileY = (int)System.MathF.Floor(y / tileSize);
-                bool dark = ((tileX + tileY) & 1) == 0;
-                uint color = ImGui.GetColorU32(dark ? _theme.GridTileDark : _theme.GridTileLight);
                 Vector2 min = canvasPos + new Vector2(x, y);
                 Vector2 max = min + new Vector2(tileSize, tileSize);
-                drawList.AddRectFilled(min, max, color);
+                drawList.AddRectFilled(min, max, tileColor);
             }
         }
 
@@ -508,19 +539,41 @@ public class MaterialEditorWindow
         uint minorColor = ImGui.GetColorU32(_theme.GridMinor);
         uint majorColor = ImGui.GetColorU32(_theme.GridMajor);
 
-        float offsetX = 0f;
-        float offsetY = 0f;
+        float minorOffsetX = Mod(_canvasOffset.X, minorStep) - minorStep;
+        float minorOffsetY = Mod(_canvasOffset.Y, minorStep) - minorStep;
+        float majorOffsetX = Mod(_canvasOffset.X, majorStep) - majorStep;
+        float majorOffsetY = Mod(_canvasOffset.Y, majorStep) - majorStep;
 
-        for (float x = offsetX; x < canvasSize.X; x += minorStep)
+        for (float x = minorOffsetX; x < canvasSize.X + minorStep; x += minorStep)
         {
-            uint color = System.MathF.Abs((x % majorStep)) < 0.1f ? majorColor : minorColor;
-            drawList.AddLine(new Vector2(canvasPos.X + x, canvasPos.Y), new Vector2(canvasPos.X + x, canvasPos.Y + canvasSize.Y), color);
+            drawList.AddLine(
+                new Vector2(canvasPos.X + x, canvasPos.Y),
+                new Vector2(canvasPos.X + x, canvasPos.Y + canvasSize.Y),
+                minorColor);
         }
 
-        for (float y = offsetY; y < canvasSize.Y; y += minorStep)
+        for (float y = minorOffsetY; y < canvasSize.Y + minorStep; y += minorStep)
         {
-            uint color = System.MathF.Abs((y % majorStep)) < 0.1f ? majorColor : minorColor;
-            drawList.AddLine(new Vector2(canvasPos.X, canvasPos.Y + y), new Vector2(canvasPos.X + canvasSize.X, canvasPos.Y + y), color);
+            drawList.AddLine(
+                new Vector2(canvasPos.X, canvasPos.Y + y),
+                new Vector2(canvasPos.X + canvasSize.X, canvasPos.Y + y),
+                minorColor);
+        }
+
+        for (float x = majorOffsetX; x < canvasSize.X + majorStep; x += majorStep)
+        {
+            drawList.AddLine(
+                new Vector2(canvasPos.X + x, canvasPos.Y),
+                new Vector2(canvasPos.X + x, canvasPos.Y + canvasSize.Y),
+                majorColor);
+        }
+
+        for (float y = majorOffsetY; y < canvasSize.Y + majorStep; y += majorStep)
+        {
+            drawList.AddLine(
+                new Vector2(canvasPos.X, canvasPos.Y + y),
+                new Vector2(canvasPos.X + canvasSize.X, canvasPos.Y + y),
+                majorColor);
         }
     }
 
@@ -1071,6 +1124,8 @@ public class MaterialEditorWindow
             "Time" => new TimeNode(_nextNodeId++, position),
             "Delta Time" => new DeltaTimeNode(_nextNodeId++, position),
             "Panner" => new PannerNode(_nextNodeId++, position),
+            "Hue Shift" => new HueShiftNode(_nextNodeId++, position),
+            "Rotator" => new RotatorNode(_nextNodeId++, position),
             "Material Output" => new MaterialOutputNode(_nextNodeId++, position),
             _ => null
         };
