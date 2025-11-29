@@ -19,14 +19,28 @@ public class ToVector3Node : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
-        if (outputIndex == 0)
+        if (outputIndex >= OutputPins.Count)
+            return null;
+            
+        float? x = context.GetInputValue<float>(Id, 0);
+        float? y = context.GetInputValue<float>(Id, 1);
+        float? z = context.GetInputValue<float>(Id, 2);
+        EngineVec4 result = new EngineVec4(x ?? 0f, y ?? 0f, z ?? 0f, 1.0f);
+        
+        var pin = OutputPins[outputIndex];
+        
+        if (pin.IsSplitPin && pin.ChannelIndex.HasValue)
         {
-            float? x = context.GetInputValue<float>(Id, 0);
-            float? y = context.GetInputValue<float>(Id, 1);
-            float? z = context.GetInputValue<float>(Id, 2);
-            return new EngineVec4(x ?? 0f, y ?? 0f, z ?? 0f, 1.0f);
+            return pin.ChannelIndex.Value switch
+            {
+                0 => result.X,
+                1 => result.Y,
+                2 => result.Z,
+                _ => null
+            };
         }
-        return null;
+        
+        return result;
     }
 
     public override void DrawInspector()
@@ -46,15 +60,30 @@ public class ToVector4Node : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
-        if (outputIndex == 0)
+        if (outputIndex >= OutputPins.Count)
+            return null;
+            
+        float? x = context.GetInputValue<float>(Id, 0);
+        float? y = context.GetInputValue<float>(Id, 1);
+        float? z = context.GetInputValue<float>(Id, 2);
+        float? w = context.GetInputValue<float>(Id, 3);
+        EngineVec4 result = new EngineVec4(x ?? 0f, y ?? 0f, z ?? 0f, w ?? 0f);
+        
+        var pin = OutputPins[outputIndex];
+        
+        if (pin.IsSplitPin && pin.ChannelIndex.HasValue)
         {
-            float? x = context.GetInputValue<float>(Id, 0);
-            float? y = context.GetInputValue<float>(Id, 1);
-            float? z = context.GetInputValue<float>(Id, 2);
-            float? w = context.GetInputValue<float>(Id, 3);
-            return new EngineVec4(x ?? 0f, y ?? 0f, z ?? 0f, w ?? 0f);
+            return pin.ChannelIndex.Value switch
+            {
+                0 => result.X,
+                1 => result.Y,
+                2 => result.Z,
+                3 => result.W,
+                _ => null
+            };
         }
-        return null;
+        
+        return result;
     }
 
     public override void DrawInspector()
@@ -74,6 +103,9 @@ public class FromVector3Node : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
+        if (outputIndex >= OutputPins.Count)
+            return null;
+
         EngineVec4? input = context.GetInputValue<EngineVec4>(Id, 0);
         if (input.HasValue)
         {
@@ -111,6 +143,9 @@ public class FromVector4Node : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
+        if (outputIndex >= OutputPins.Count)
+            return null;
+
         EngineVec4? input = context.GetInputValue<EngineVec4>(Id, 0);
         if (input.HasValue)
         {
@@ -162,23 +197,22 @@ public class ToScalarNode : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
-        if (outputIndex == 0)
+        if (outputIndex >= OutputPins.Count)
+            return null;
+
+        EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
+        if (inputNullable.HasValue)
         {
-            EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
-            if (inputNullable.HasValue)
+            return Component switch
             {
-                return Component switch
-                {
-                    0 => inputNullable.Value.X,
-                    1 => inputNullable.Value.Y,
-                    2 => inputNullable.Value.Z,
-                    3 => inputNullable.Value.W,
-                    _ => 0.0f
-                };
-            }
-            return 0.5f;
+                0 => inputNullable.Value.X,
+                1 => inputNullable.Value.Y,
+                2 => inputNullable.Value.Z,
+                3 => inputNullable.Value.W,
+                _ => 0.0f
+            };
         }
-        return null;
+        return 0.5f;
     }
 
     public override void DrawInspector()
@@ -209,19 +243,18 @@ public class ToVector2Node : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
-        if (outputIndex == 0)
+        if (outputIndex >= OutputPins.Count)
+            return null;
+
+        EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
+        if (inputNullable.HasValue)
         {
-            EngineVec4? inputNullable = context.GetInputValue<EngineVec4>(Id, 0);
-            if (inputNullable.HasValue)
-            {
-                float[] components = { inputNullable.Value.X, inputNullable.Value.Y, inputNullable.Value.Z, inputNullable.Value.W };
-                float x = SwizzleX >= 0 && SwizzleX < 4 ? components[SwizzleX] : 0.0f;
-                float y = SwizzleY >= 0 && SwizzleY < 4 ? components[SwizzleY] : 0.0f;
-                return new EngineVec2(x, y);
-            }
-            return new EngineVec2(0.5f, 0.5f);
+            float[] components = { inputNullable.Value.X, inputNullable.Value.Y, inputNullable.Value.Z, inputNullable.Value.W };
+            float x = SwizzleX >= 0 && SwizzleX < 4 ? components[SwizzleX] : 0.0f;
+            float y = SwizzleY >= 0 && SwizzleY < 4 ? components[SwizzleY] : 0.0f;
+            return new EngineVec2(x, y);
         }
-        return null;
+        return new EngineVec2(0.5f, 0.5f);
     }
 
     public override void DrawInspector()
@@ -241,4 +274,3 @@ public class ToVector2Node : GraphNode
         }
     }
 }
-

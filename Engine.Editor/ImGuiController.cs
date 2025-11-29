@@ -316,6 +316,9 @@ void main()
         }
 
         readonly List<char> PressedChars = new List<char>();
+        private Vector2 _mouseScrollDelta = Vector2.Zero;
+
+        private Dictionary<ImGuiKey, bool> _previousKeyStates = new Dictionary<ImGuiKey, bool>();
 
         private void UpdateImGuiInput(GameWindow wnd)
         {
@@ -334,13 +337,25 @@ void main()
             var point = screenPoint;
             io.MousePos = new System.Numerics.Vector2(point.X, point.Y);
 
+            io.MouseWheel = _mouseScrollDelta.Y;
+            io.MouseWheelH = _mouseScrollDelta.X;
+            
+            _mouseScrollDelta = Vector2.Zero;
+
             foreach (Keys key in Enum.GetValues(typeof(Keys)))
             {
                 if (key == Keys.Unknown)
                 {
                     continue;
                 }
-                io.AddKeyEvent(TranslateKey(key), KeyboardState.IsKeyDown(key));
+                ImGuiKey imguiKey = TranslateKey(key);
+                bool isDown = KeyboardState.IsKeyDown(key);
+
+                if (!_previousKeyStates.TryGetValue(imguiKey, out bool previousState) || previousState != isDown)
+                {
+                    io.AddKeyEvent(imguiKey, isDown);
+                    _previousKeyStates[imguiKey] = isDown;
+                }
             }
 
             foreach (var c in PressedChars)
@@ -362,10 +377,7 @@ void main()
 
         internal void MouseScroll(Vector2 offset)
         {
-            ImGuiIOPtr io = ImGui.GetIO();
-
-            io.MouseWheel = offset.Y;
-            io.MouseWheelH = offset.X;
+            _mouseScrollDelta += offset;
         }
 
         private void RenderImDrawData(ImDrawDataPtr draw_data)

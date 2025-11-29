@@ -26,7 +26,8 @@ public class MaterialEditorWindow
     private readonly Dictionary<string, string[]> _nodePalette = new Dictionary<string, string[]>
     {
         { "Inputs", new[] { "Texture Sample", "Vector 3", "Vector 4", "Scalar Parameter", "TexCoord" } },
-        { "Math", new[] { "Multiply", "Add", "Lerp", "Power" } },
+        { "Math", new[] { "Multiply", "Add", "Subtract", "Divide", "Lerp", "Power", "Max", "Min" } },
+        { "Math Functions", new[] { "Abs", "Floor", "Ceil", "Frac", "Sin", "Cos" } },
         { "Utility", new[] { "Mask", "Clamp", "Time", "Delta Time", "Panner", "Hue Shift", "Rotator" } },
         { "Conversion", new[] { "To Vector 3", "To Vector 4", "From Vector 3", "From Vector 4", "To Scalar", "To Vector 2" } },
         { "Material", new[] { "Material Attributes", "Material Output" } }
@@ -38,6 +39,9 @@ public class MaterialEditorWindow
     private static readonly System.Numerics.Vector4 NodeColorUtility = new System.Numerics.Vector4(0.27f, 0.37f, 0.6f, 1f);
     private static readonly System.Numerics.Vector4 NodeColorOutput = new System.Numerics.Vector4(0.18f, 0.18f, 0.18f, 1f);
     private static readonly System.Numerics.Vector4 NodeColorConstant = new System.Numerics.Vector4(0.3f, 0.7f, 0.4f, 0.95f);
+    private const float InspectorWidth = 280f;
+    private Vector2 _inspectorMin = Vector2.Zero;
+    private Vector2 _inspectorMax = Vector2.Zero;
 
     private NVector2 _canvasOffset = new NVector2(120f, 120f);
     private float _canvasZoom = 1.0f;
@@ -47,12 +51,11 @@ public class MaterialEditorWindow
     private NVector2 _draggingNodeOffset;
     private (int nodeId, PinDirection direction, int pinIndex)? _hoveredPin;
     private (int nodeId, PinDirection direction, int pinIndex)? _activeLink;
+    private (int nodeId, PinDirection direction, int pinIndex)? _contextPin;
     private NVector2 _activeLinkMousePos;
     private int? _selectedConnectionIndex;
     private int? _hoveredConnectionIndex;
     private int? _contextConnectionIndex;
-    private string? _pendingNodeType;
-    private NVector2 _pendingNodePosition;
     
     private uint _previewFramebuffer;
     private uint _previewTexture;
@@ -63,6 +66,8 @@ public class MaterialEditorWindow
     private Camera? _previewCamera;
     private float _previewRotation = 0f;
     private FXAA? _previewFXAA;
+    private Engine.Renderer.Texture? _previewDiffuseTexture;
+    private string? _cachedPreviewTexturePath;
 
     public bool Visible { get; set; }
 
@@ -182,16 +187,12 @@ public class MaterialEditorWindow
         ImGui.Button("Export Material");
         ImGui.EndDisabled();
 
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.85f, 1f), "Node-based material editor");
-
         ImGui.Separator();
     }
 
     private void DrawBody()
     {
         float sidebarWidth = 260f;
-        float inspectorWidth = 280f;
 
         ImGui.BeginChild("MaterialSidebar", new Vector2(sidebarWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         DrawSidebar();
@@ -199,35 +200,26 @@ public class MaterialEditorWindow
 
         ImGui.SameLine();
 
-        ImGui.BeginChild("MaterialGraphArea", new Vector2(-inspectorWidth, 0f), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        ImGui.BeginChild("MaterialGraphArea", new Vector2(-InspectorWidth, 0f), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         DrawGraphArea();
         ImGui.EndChild();
 
             ImGui.SameLine();
 
-        ImGui.BeginChild("MaterialInspector", new Vector2(inspectorWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+        ImGui.BeginChild("MaterialInspector", new Vector2(InspectorWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         DrawInspector();
         ImGui.EndChild();
     }
 
     private void DrawSidebar()
     {
-        ImGui.Text("Project");
-            ImGui.Separator();
+        Vector2 availableSize = ImGui.GetContentRegionAvail();
+        float previewHeaderHeight = ImGui.GetTextLineHeight() + ImGui.GetStyle().ItemSpacing.Y * 2f + ImGui.GetStyle().FramePadding.Y * 2f;
+        float previewContentHeight = 200f;
+        float previewHeight = previewHeaderHeight + previewContentHeight + ImGui.GetStyle().ItemSpacing.Y;
 
-        string? projectPath = _editor.ProjectManager.CurrentProjectPath;
-        if (string.IsNullOrEmpty(projectPath))
-        {
-            ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "No project loaded");
-        }
-        else
-        {
-            string projectName = Path.GetFileName(projectPath);
-            ImGui.Text(projectName);
-            ImGui.TextDisabled(projectPath);
-        }
+        ImGui.BeginChild("SidebarContent", new Vector2(0f, availableSize.Y - previewHeight), ImGuiChildFlags.None, ImGuiWindowFlags.None);
 
-        ImGui.Spacing();
         ImGui.Text("Node Palette");
             ImGui.Separator();
 
@@ -263,17 +255,25 @@ public class MaterialEditorWindow
                 ImGui.TreePop();
             }
         }
+        
+        ImGui.EndChild();
 
-        ImGui.Spacing();
-        ImGui.Separator();
         ImGui.Text("Material Preview");
         ImGui.Separator();
+        ImGui.BeginChild("MaterialPreviewContainer", new Vector2(0f, previewContentHeight), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         DrawMaterialPreview();
+        ImGui.EndChild();
     }
 
     private void DrawMaterialPreview()
     {
-        Vector2 previewSize = new Vector2(240f, 200f);
+        Vector2 availableSize = ImGui.GetContentRegionAvail();
+        float aspectRatio = 1.2f;
+        float previewWidth = availableSize.X;
+        float previewHeight = System.MathF.Min(availableSize.Y, previewWidth / aspectRatio);
+        previewWidth = previewHeight * aspectRatio;
+        
+        Vector2 previewSize = new Vector2(previewWidth, previewHeight);
         Vector2 cursor = ImGui.GetCursorScreenPos();
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         
@@ -291,13 +291,10 @@ public class MaterialEditorWindow
             }
         }
         
-        drawList.AddRect(cursor, cursor + previewSize, ImGui.GetColorU32(new Vector4(0.25f, 0.25f, 0.35f, 1f)), 6f, ImDrawFlags.None, 2f);
-        
         MaterialData? materialData = EvaluateMaterial();
         
         if (_previewSphere != null && _previewCamera != null && _editor.DefaultShader != null)
         {
-            _previewRotation += 0.5f * ImGui.GetIO().DeltaTime;
             
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, _previewFramebuffer);
             GL.Viewport(0, 0, _previewWidth, _previewHeight);
@@ -315,21 +312,111 @@ public class MaterialEditorWindow
             _editor.DefaultShader.SetMatrix4("uModel", model);
             _editor.DefaultShader.SetMatrix4("uView", view);
             _editor.DefaultShader.SetMatrix4("uMVP", mvp);
+            
+            EngineVec2 previewUVScale = materialData?.UVScale ?? EngineVec2.One;
+            EngineVec2 previewUVOffset = materialData?.UVOffset ?? EngineVec2.Zero;
+            _editor.DefaultShader.SetVector2("uUVScale", previewUVScale);
+            _editor.DefaultShader.SetVector2("uUVOffset", previewUVOffset);
+            
+            bool useTexture = false;
+            if (materialData != null && !string.IsNullOrEmpty(materialData.DiffuseMapPath))
+            {
+                if (_cachedPreviewTexturePath != materialData.DiffuseMapPath)
+                {
+                    _previewDiffuseTexture?.Dispose();
+                    _previewDiffuseTexture = null;
+                    
+                    try
+                    {
+                        if (File.Exists(materialData.DiffuseMapPath))
+                        {
+                            var textureData = TextureFileLoader.Load(materialData.DiffuseMapPath);
+                            byte[] rgbaBytes = new byte[textureData.Width * textureData.Height * 4];
+                            for (int i = 0; i < textureData.Pixels.Length; i++)
+                            {
+                                float r = System.Math.Clamp(textureData.Pixels[i].X, 0f, 1f);
+                                float g = System.Math.Clamp(textureData.Pixels[i].Y, 0f, 1f);
+                                float b = System.Math.Clamp(textureData.Pixels[i].Z, 0f, 1f);
+                                float a = System.Math.Clamp(textureData.Pixels[i].W, 0f, 1f);
+                                rgbaBytes[i * 4 + 0] = (byte)(r * 255f);
+                                rgbaBytes[i * 4 + 1] = (byte)(g * 255f);
+                                rgbaBytes[i * 4 + 2] = (byte)(b * 255f);
+                                rgbaBytes[i * 4 + 3] = (byte)(a * 255f);
+                            }
+                            unsafe
+                            {
+                                fixed (byte* ptr = rgbaBytes)
+                                {
+                                    _previewDiffuseTexture = new Engine.Renderer.Texture(
+                                        textureData.Width,
+                                        textureData.Height,
+                                        (IntPtr)ptr
+                                    );
+                                }
+                            }
+                            _cachedPreviewTexturePath = materialData.DiffuseMapPath;
+                            useTexture = true;
+                        }
+                    }
+                    catch
+                    {
+                        useTexture = false;
+                    }
+                }
+                else if (_previewDiffuseTexture != null)
+                {
+                    useTexture = true;
+                }
+            }
+            
+            if (useTexture && _previewDiffuseTexture != null)
+            {
+                _editor.DefaultShader.SetInt("uUseTexture", 1);
+                _previewDiffuseTexture.Bind(0);
+                _editor.DefaultShader.SetInt("uTexture", 0);
+            }
+            else
+            {
             _editor.DefaultShader.SetInt("uUseTexture", 0);
+            }
             
             if (materialData != null)
             {
                 EngineVec4 color = materialData.DiffuseColor;
                 _editor.DefaultShader.SetVector4("uColor", color);
+                _editor.DefaultShader.SetFloat("uMetallic", materialData.Metallic);
+                _editor.DefaultShader.SetFloat("uSpecular", materialData.Specular);
+                _editor.DefaultShader.SetFloat("uRoughness", materialData.Roughness);
             }
             else
             {
                 _editor.DefaultShader.SetVector4("uColor", new EngineVec4(0.8f, 0.6f, 0.4f, 1.0f));
+                _editor.DefaultShader.SetFloat("uMetallic", 0.0f);
+                _editor.DefaultShader.SetFloat("uSpecular", 0.5f);
+                _editor.DefaultShader.SetFloat("uRoughness", 0.5f);
             }
             
             _previewSphere.Draw();
             
+            if (useTexture && _previewDiffuseTexture != null)
+            {
+                _previewDiffuseTexture.Unbind();
+            }
+            
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+            
+            if (_editor.DefaultShader != null)
+            {
+                _editor.DefaultShader.SetInt("uUseTexture", 0);
+                _editor.DefaultShader.SetVector2("uUVScale", EngineVec2.One);
+                _editor.DefaultShader.SetVector2("uUVOffset", EngineVec2.Zero);
+                _editor.DefaultShader.SetFloat("uMetallic", 0.0f);
+                _editor.DefaultShader.SetFloat("uSpecular", 0.5f);
+                _editor.DefaultShader.SetFloat("uRoughness", 0.5f);
+            }
 
             uint finalTexture = _previewTexture;
             if (_previewFXAA == null)
@@ -352,23 +439,14 @@ public class MaterialEditorWindow
             drawList.AddText(cursor + new NVector2(10f, 10f), ImGui.GetColorU32(new NVector4(1f, 1f, 1f, 0.9f)), "No Material");
         }
         
-        if (materialData != null)
-        {
-            NVector2 infoPos = cursor + new NVector2(8f, previewSize.Y - 50f);
-            drawList.AddRectFilled(infoPos - new NVector2(4f, 4f), infoPos + new NVector2(220f, 42f), 
-                ImGui.GetColorU32(new NVector4(0f, 0f, 0f, 0.6f)), 4f);
-            
-            string roughnessText = $"Roughness: {materialData.Roughness:F2}";
-            drawList.AddText(infoPos, ImGui.GetColorU32(new NVector4(1f, 1f, 1f, 0.9f)), roughnessText);
-        }
         ImGui.Dummy(previewSize);
     }
 
     private void DrawInspector()
     {
-        ImGui.Text("Node Inspector");
-            ImGui.Separator();
-
+        _inspectorMin = ImGui.GetWindowPos();
+        _inspectorMax = _inspectorMin + ImGui.GetWindowSize();
+        
         if (!_selectedNodeId.HasValue)
         {
             ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "No node selected");
@@ -394,7 +472,7 @@ public class MaterialEditorWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        node.DrawInspector();
+        node.DrawInspector(_connections);
     }
 
     private void DrawGraphArea()
@@ -453,11 +531,26 @@ public class MaterialEditorWindow
         }
     }
 
-    private void HandleNodeContextMenu(GraphDrawCache cache)
+    private bool HandleNodeContextMenu(GraphDrawCache cache)
     {
+        bool changed = false;
         var io = ImGui.GetIO();
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && !_hoveredPin.HasValue && _contextConnectionIndex == null)
+        
+        if (IsMouseOverInspector())
         {
+            return false;
+        }
+
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && _contextConnectionIndex == null)
+        {
+            if (_hoveredPin.HasValue)
+            {
+                _contextPin = _hoveredPin.Value;
+                ImGui.OpenPopup($"PinContextMenu_{_hoveredPin.Value.nodeId}_{_hoveredPin.Value.pinIndex}");
+            }
+            else
+            {
+                _contextPin = null;
             for (int i = cache.NodeStates.Count - 1; i >= 0; --i)
             {
                 var state = cache.NodeStates[i];
@@ -466,17 +559,170 @@ public class MaterialEditorWindow
                     _selectedNodeId = state.Node.Id;
                     break;
                 }
+                }
             }
         }
 
-        if (_selectedNodeId.HasValue && ImGui.BeginPopupContextWindow("NodeContextMenu"))
+        if (_contextPin.HasValue)
+        {
+            var (nodeId, direction, pinIndex) = _contextPin.Value;
+            GraphNode? node = GetNode(nodeId);
+            if (node != null && direction == PinDirection.Output && pinIndex < node.OutputPins.Count)
+            {
+                var pin = node.OutputPins[pinIndex];
+                string popupId = $"PinContextMenu_{nodeId}_{pinIndex}";
+                if (ImGui.BeginPopupContextItem(popupId))
+                {
+                    var typeDef = NodeValueTypeSystem.GetDefinition(pin.Kind);
+                    if (typeDef != null && typeDef.CanSplit)
+                    {
+                        if (!pin.IsSplitPin)
+                        {
+                            if (ImGui.MenuItem("Split"))
+                            {
+                                SplitPin(node, pinIndex);
+                                changed = true;
+                                ImGui.CloseCurrentPopup();
+                            }
+                        }
+                        else
+                        {
+                            if (ImGui.MenuItem("Promote to Vector"))
+                            {
+                                PromotePin(node, pinIndex);
+                                changed = true;
+                                ImGui.CloseCurrentPopup();
+                            }
+                        }
+                    }
+                    ImGui.EndPopup();
+                }
+            }
+        }
+        else if (_selectedNodeId.HasValue && ImGui.BeginPopupContextWindow("NodeContextMenu"))
         {
             if (ImGui.MenuItem("Delete"))
             {
                 DeleteSelectedNode();
+                changed = true;
                 ImGui.CloseCurrentPopup();
             }
             ImGui.EndPopup();
+        }
+        
+        return changed;
+    }
+    
+    private void SplitPin(GraphNode node, int pinIndex)
+    {
+        if (pinIndex >= node.OutputPins.Count)
+            return;
+            
+        var originalPin = node.OutputPins[pinIndex];
+        if (originalPin.IsSplitPin)
+            return;
+        
+        var typeDef = NodeValueTypeSystem.GetDefinition(originalPin.Kind);
+        if (typeDef == null || !typeDef.CanSplit)
+            return;
+        
+        int insertIndex = pinIndex;
+        node.OutputPins.RemoveAt(insertIndex);
+        
+        string[] componentNames = typeDef.ComponentNames;
+        for (int i = 0; i < componentNames.Length; i++)
+        {
+            node.OutputPins.Insert(insertIndex + i, new NodePin(componentNames[i], NodeValueKind.Scalar, true, i));
+        }
+        
+        _connections.RemoveAll(c => c.OutputNodeId == node.Id && c.OutputIndex == pinIndex);
+    }
+    
+    private void PromotePin(GraphNode node, int pinIndex)
+    {
+        if (pinIndex >= node.OutputPins.Count)
+            return;
+            
+        var pin = node.OutputPins[pinIndex];
+        if (!pin.IsSplitPin)
+            return;
+        
+        int startIndex = pinIndex;
+        while (startIndex > 0 && node.OutputPins[startIndex - 1].IsSplitPin)
+        {
+            startIndex--;
+        }
+        
+        int endIndex = pinIndex;
+        while (endIndex < node.OutputPins.Count - 1 && node.OutputPins[endIndex + 1].IsSplitPin)
+        {
+            endIndex++;
+        }
+        
+        int count = endIndex - startIndex + 1;
+        
+        NodeValueKind originalKind = NodeValueKind.Color;
+        string originalLabel = "Color";
+        
+        foreach (var kind in Enum.GetValues<NodeValueKind>())
+        {
+            var typeDef = NodeValueTypeSystem.GetDefinition(kind);
+            if (typeDef != null && typeDef.CanSplit && typeDef.ComponentCount == count)
+            {
+                bool matches = true;
+                for (int i = 0; i < count; i++)
+                {
+                    if (startIndex + i >= node.OutputPins.Count || 
+                        node.OutputPins[startIndex + i].Label != typeDef.ComponentNames[i])
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches)
+                {
+                    originalKind = kind;
+                    originalLabel = kind == NodeValueKind.Color ? "RGBA" : 
+                                   kind == NodeValueKind.UV ? "UV" :
+                                   kind == NodeValueKind.Vector ? "Vector" :
+                                   kind == NodeValueKind.Normal ? "Normal" :
+                                   kind == NodeValueKind.Emission ? "Emission" : "Color";
+                    break;
+                }
+            }
+        }
+        
+        string newLabel = originalLabel;
+        NodeValueKind newKind = originalKind;
+        
+        List<NodeConnection> connectionsToUpdate = new List<NodeConnection>();
+        for (int i = _connections.Count - 1; i >= 0; i--)
+        {
+            var conn = _connections[i];
+            if (conn.OutputNodeId == node.Id)
+            {
+                if (conn.OutputIndex >= startIndex && conn.OutputIndex <= endIndex)
+                {
+                    connectionsToUpdate.Add(conn);
+                    _connections.RemoveAt(i);
+                }
+                else if (conn.OutputIndex > endIndex)
+                {
+                    _connections[i] = new NodeConnection(conn.OutputNodeId, conn.OutputIndex - count + 1, conn.InputNodeId, conn.InputIndex, conn.Color);
+                }
+            }
+        }
+        
+        for (int i = endIndex; i >= startIndex; i--)
+        {
+            node.OutputPins.RemoveAt(i);
+        }
+        
+        node.OutputPins.Insert(startIndex, new NodePin(newLabel, newKind));
+        
+        foreach (var conn in connectionsToUpdate)
+        {
+            _connections.Add(new NodeConnection(node.Id, startIndex, conn.InputNodeId, conn.InputIndex, conn.Color));
         }
     }
 
@@ -668,17 +914,9 @@ public class MaterialEditorWindow
 
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_activeLink.HasValue && !_hoveredPin.HasValue)
         {
-            bool clickInInspector = false;
-            
-            if (ImGui.IsAnyItemActive() || ImGui.IsAnyItemHovered())
+            if (IsMouseOverInspector())
             {
-                Vector2 windowPos = ImGui.GetWindowPos();
-                Vector2 windowSize = ImGui.GetWindowSize();
-                float inspectorWidth = 280f;
-                if (io.MousePos.X >= windowPos.X + windowSize.X - inspectorWidth)
-                {
-                    clickInInspector = true;
-                }
+                return false;
             }
 
             bool clickedNode = false;
@@ -697,7 +935,7 @@ public class MaterialEditorWindow
                 }
             }
 
-            if (!clickedNode && !clickInInspector)
+            if (!clickedNode)
             {
                 _selectedNodeId = null;
             }
@@ -728,6 +966,11 @@ public class MaterialEditorWindow
         var io = ImGui.GetIO();
         bool changed = false;
         _hoveredPin = null;
+
+        if (IsMouseOverInspector())
+        {
+            return false;
+        }
 
         float detectionRadius = cache.PinHitRadius;
         float closest = detectionRadius;
@@ -766,12 +1009,32 @@ public class MaterialEditorWindow
                 {
                     changed |= TryCreateConnection(_activeLink.Value, _hoveredPin.Value);
                 }
+                else
+                {
+                    float maxConnectionDistance = cache.PinHitRadius * 1.5f;
+                    float closestDistance = maxConnectionDistance;
+                    (int nodeId, PinDirection direction, int pinIndex)? closestInputPin = null;
+                    
+                    foreach (var pin in cache.PinCenters)
+                    {
+                        if (pin.Key.direction == PinDirection.Input)
+                        {
+                            float distance = Vector2.Distance(io.MousePos, pin.Value);
+                            if (distance < closestDistance)
+                            {
+                                closestDistance = distance;
+                                closestInputPin = pin.Key;
+                            }
+                        }
+                    }
+                    
+                    if (closestInputPin.HasValue)
+                    {
+                        changed |= TryCreateConnection(_activeLink.Value, closestInputPin.Value);
+                    }
+                }
                 _activeLink = null;
             }
-        }
-        else if (ImGui.IsMouseReleased(ImGuiMouseButton.Left))
-        {
-            _activeLink = null;
         }
 
         return changed;
@@ -802,12 +1065,15 @@ public class MaterialEditorWindow
             float borderThickness = isSelected ? 2.4f * _canvasZoom : 1.2f * _canvasZoom;
             drawList.AddRect(min, max, borderColor, rounding, ImDrawFlags.None, borderThickness);
 
+            float fontScale = System.MathF.Round(_canvasZoom * 20f) / 20f;
+            ImGui.SetWindowFontScale(fontScale);
             drawList.AddText(min + new Vector2(14f * _canvasZoom, 8f * _canvasZoom), ImGui.GetColorU32(_theme.NodeTitle), state.Node.Title);
 
             if (!string.IsNullOrEmpty(state.Node.Subtitle))
             {
                 drawList.AddText(min + new Vector2(14f * _canvasZoom, state.HeaderHeight - 16f * _canvasZoom), ImGui.GetColorU32(_theme.NodeSubtitle), state.Node.Subtitle);
             }
+            ImGui.SetWindowFontScale(1.0f);
 
             DrawNodePins(drawList, state);
         }
@@ -823,6 +1089,9 @@ public class MaterialEditorWindow
 
         for (int i = 0; i < state.Node.InputPins.Count; i++)
         {
+            if (i >= state.InputPinCenters.Count)
+                break;
+                
             Vector2 center = state.InputPinCenters[i];
             NodeValueKind kind = state.Node.InputPins[i].Kind;
             bool hovered = _hoveredPin.HasValue && _hoveredPin.Value == (state.Node.Id, PinDirection.Input, i);
@@ -848,20 +1117,29 @@ public class MaterialEditorWindow
                 drawList.AddCircle(center, radius + 2f, ImGui.GetColorU32(_theme.PinHoverOutline), 16, 1.3f);
             }
 
+            float fontScale = System.MathF.Round(_canvasZoom * 10f) / 10f;
+            ImGui.SetWindowFontScale(fontScale);
             Vector2 textSize = ImGui.CalcTextSize(state.Node.InputPins[i].Label);
             Vector2 textPos = new Vector2(rowMin.X + 8f * _canvasZoom, center.Y - textSize.Y * 0.5f);
             drawList.AddText(textPos, ImGui.GetColorU32(_theme.PinLabelText), state.Node.InputPins[i].Label);
+            ImGui.SetWindowFontScale(1.0f);
         }
 
         for (int i = 0; i < state.Node.OutputPins.Count; i++)
         {
+            if (i >= state.OutputPinCenters.Count)
+                break;
+                
             Vector2 center = state.OutputPinCenters[i];
-            NodeValueKind kind = state.Node.OutputPins[i].Kind;
+            var pin = state.Node.OutputPins[i];
+            NodeValueKind kind = pin.Kind;
             bool hovered = _hoveredPin.HasValue && _hoveredPin.Value == (state.Node.Id, PinDirection.Output, i);
             float radius = hovered ? pinRadius * 1.25f : pinRadius;
             uint color = ImGui.GetColorU32(ResolvePinColor(kind));
 
-            Vector2 rowMin = new Vector2(state.ColumnSplit + rightPadding, center.Y - rowHalf);
+            float splitPinOffset = pin.IsSplitPin ? 8f * _canvasZoom : 0f;
+
+            Vector2 rowMin = new Vector2(state.ColumnSplit + rightPadding + splitPinOffset, center.Y - rowHalf);
             Vector2 rowMax = new Vector2(state.Max.X - leftPadding, center.Y + rowHalf);
             if (rowMax.X <= rowMin.X)
             {
@@ -880,9 +1158,21 @@ public class MaterialEditorWindow
                 drawList.AddCircle(center, radius + 2f, ImGui.GetColorU32(_theme.PinHoverOutline), 16, 1.3f);
             }
 
-            Vector2 labelSize = ImGui.CalcTextSize(state.Node.OutputPins[i].Label);
+            float fontScale = System.MathF.Round(_canvasZoom * 10f) / 10f;
+            ImGui.SetWindowFontScale(fontScale);
+            Vector2 labelSize = ImGui.CalcTextSize(pin.Label);
             Vector2 textPos = new Vector2(rowMax.X - labelSize.X - 8f * _canvasZoom, center.Y - labelSize.Y * 0.5f);
-            drawList.AddText(textPos, ImGui.GetColorU32(_theme.PinLabelText), state.Node.OutputPins[i].Label);
+            drawList.AddText(textPos, ImGui.GetColorU32(_theme.PinLabelText), pin.Label);
+            ImGui.SetWindowFontScale(1.0f);
+            
+            string pinId = $"Pin_{state.Node.Id}_Output_{i}";
+            ImGui.SetCursorScreenPos(center - new Vector2(radius, radius));
+            ImGui.InvisibleButton(pinId, new Vector2(radius * 2, radius * 2));
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            {
+                _contextPin = (state.Node.Id, PinDirection.Output, i);
+                ImGui.OpenPopup($"PinContextMenu_{state.Node.Id}_{i}");
+            }
         }
     }
 
@@ -890,6 +1180,11 @@ public class MaterialEditorWindow
     {
         var io = ImGui.GetIO();
         _hoveredConnectionIndex = null;
+
+        if (IsMouseOverInspector())
+        {
+            return;
+        }
 
         float closestDist = 20f * _canvasZoom;
         for (int i = 0; i < _connections.Count; i++)
@@ -1047,15 +1342,12 @@ public class MaterialEditorWindow
 
         NodeValueKind outputKind = outputNode.OutputPins[outputRef.pinIndex].Kind;
         NodeValueKind inputKind = inputNode.InputPins[inputRef.pinIndex].Kind;
-        
-        if (outputKind != inputKind)
-        {
+        if (!AreTypesCompatible(outputKind, inputKind, outputNode, outputRef.pinIndex))
             return false;
-        }
 
         _connections.RemoveAll(c => c.InputNodeId == inputRef.nodeId && c.InputIndex == inputRef.pinIndex);
 
-        Vector4 color = ResolvePinColor(outputNode.OutputPins[outputRef.pinIndex].Kind);
+        Vector4 color = ResolvePinColor(outputKind);
         _connections.Add(new NodeConnection(outputRef.nodeId, outputRef.pinIndex, inputRef.nodeId, inputRef.pinIndex, color));
         return true;
     }
@@ -1084,6 +1376,32 @@ public class MaterialEditorWindow
     private static bool ContainsPoint(Vector2 min, Vector2 max, Vector2 point)
     {
         return point.X >= min.X && point.X <= max.X && point.Y >= min.Y && point.Y <= max.Y;
+    }
+
+    private bool IsMouseOverInspector()
+    {
+        var io = ImGui.GetIO();
+        return ContainsPoint(_inspectorMin, _inspectorMax, io.MousePos);
+    }
+
+    private static bool AreTypesCompatible(NodeValueKind outputKind, NodeValueKind inputKind, GraphNode? outputNode = null, int outputIndex = -1)
+    {
+        if (outputKind == inputKind)
+            return true;
+
+        bool isSplitPin = false;
+        if (outputNode != null && outputIndex >= 0 && outputIndex < outputNode.OutputPins.Count)
+        {
+            var outputPin = outputNode.OutputPins[outputIndex];
+            isSplitPin = outputPin.IsSplitPin;
+            
+            if (isSplitPin && outputPin.Kind == NodeValueKind.Scalar && inputKind == NodeValueKind.Color)
+            {
+                return false;
+            }
+        }
+
+        return NodeValueTypeSystem.AreTypesCompatible(outputKind, inputKind);
     }
 
     private System.Numerics.Vector4 ResolvePinColor(NodeValueKind kind)
@@ -1117,8 +1435,18 @@ public class MaterialEditorWindow
             "To Vector 2" => new ToVector2Node(_nextNodeId++, position),
             "Multiply" => new MultiplyNode(_nextNodeId++, position),
             "Add" => new AddNode(_nextNodeId++, position),
+            "Subtract" => new SubtractNode(_nextNodeId++, position),
+            "Divide" => new DivideNode(_nextNodeId++, position),
             "Lerp" => new LerpNode(_nextNodeId++, position),
             "Power" => new PowerNode(_nextNodeId++, position),
+            "Max" => new MaxNode(_nextNodeId++, position),
+            "Min" => new MinNode(_nextNodeId++, position),
+            "Abs" => new AbsNode(_nextNodeId++, position),
+            "Floor" => new FloorNode(_nextNodeId++, position),
+            "Ceil" => new CeilNode(_nextNodeId++, position),
+            "Frac" => new FracNode(_nextNodeId++, position),
+            "Sin" => new SinNode(_nextNodeId++, position),
+            "Cos" => new CosNode(_nextNodeId++, position),
             "Mask" => new MaskNode(_nextNodeId++, position),
             "Clamp" => new ClampNode(_nextNodeId++, position),
             "Time" => new TimeNode(_nextNodeId++, position),
@@ -1175,7 +1503,6 @@ public class MaterialEditorWindow
 
 
 
-    private sealed record NodeConnection(int OutputNodeId, int OutputIndex, int InputNodeId, int InputIndex, System.Numerics.Vector4 Color);
 
     private sealed class NodeDrawState
     {
@@ -1327,23 +1654,241 @@ public class MaterialEditorWindow
             if (conn.InputNodeId == node.Id && conn.InputIndex == inputIndex)
             {
                 GraphNode? sourceNode = GetNode(conn.OutputNodeId);
-                if (sourceNode != null)
+                if (sourceNode != null && conn.OutputIndex < sourceNode.OutputPins.Count)
                 {
+                    var outputPin = sourceNode.OutputPins[conn.OutputIndex];
                     object? value = EvaluateNodeOutput(sourceNode, conn.OutputIndex, context);
-                    if (value is T t)
+                    
+                    if (value != null)
                     {
-                        return t;
+                        if (outputPin.IsSplitPin && outputPin.ChannelIndex.HasValue)
+                        {
+                            if (value is T typedValue)
+                            {
+                                return typedValue;
+                            }
+                            
+                            var componentValue = NodeValueTypeSystem.ExtractComponent(value, outputPin.Kind, outputPin.ChannelIndex.Value);
+                            if (componentValue != null)
+                            {
+                                if (componentValue is T tComponent)
+                                    return tComponent;
+                                
+                                var converted = ConvertValue<T>(componentValue, NodeValueKind.Scalar, InferValueKind<T>());
+                                if (converted != null)
+                                    return converted;
+                            }
+                            
+                            return default;
+                        }
+                        
+                        if (value is T t)
+                        {
+                            return t;
+                        }
+                        
+                        if (!outputPin.IsSplitPin)
+                        {
+                            T? converted = ConvertValue<T>(value, outputPin.Kind, InferValueKind<T>());
+                            if (converted != null)
+                            {
+                                return converted;
+                            }
+                        }
                     }
                 }
             }
         }
 
+        var inputPin = node.InputPins[inputIndex];
+        if (inputPin.DefaultValue is T defaultValue)
+            return defaultValue;
+        
+        var convertedDefault = ConvertValue<T>(inputPin.DefaultValue, inputPin.Kind, InferValueKind<T>());
+        return convertedDefault;
+    }
+    
+    private object? GetInputValueForChannel(GraphNode node, int inputIndex, NodeEvaluationContext context, int? channelIndex)
+    {
+        if (inputIndex < 0 || inputIndex >= node.InputPins.Count)
+            return null;
+
+        foreach (var conn in _connections)
+        {
+            if (conn.InputNodeId == node.Id && conn.InputIndex == inputIndex)
+            {
+                GraphNode? sourceNode = GetNode(conn.OutputNodeId);
+                if (sourceNode != null && conn.OutputIndex < sourceNode.OutputPins.Count)
+                {
+                    var outputPin = sourceNode.OutputPins[conn.OutputIndex];
+                    object? value = EvaluateNodeOutput(sourceNode, conn.OutputIndex, context);
+                    
+                    if (value != null)
+                    {
+                        if (outputPin.IsSplitPin && outputPin.ChannelIndex.HasValue)
+                        {
+                            return value;
+                        }
+                        
+                        if (channelIndex.HasValue && value is EngineVec4 color)
+                        {
+                            return channelIndex.Value switch
+                            {
+                                0 => color.X,
+                                1 => color.Y,
+                                2 => color.Z,
+                                3 => color.W,
+                                _ => value
+                            };
+                        }
+                        
+                        return value;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static T? ConvertValue<T>(object value, NodeValueKind? fromKind = null, NodeValueKind? toKind = null)
+    {
+        if (value == null)
+            return default;
+
+        NodeValueKind sourceKind = fromKind ?? InferValueKind(value);
+        NodeValueKind targetKind = toKind ?? InferValueKind<T>();
+
+        if (sourceKind == targetKind)
+        {
+            if (value is T t)
+                return t;
+            return default;
+        }
+
+        var converted = NodeValueTypeSystem.ConvertValue(value, sourceKind, targetKind);
+        if (converted is T tResult)
+            return tResult;
+
         return default;
+    }
+
+    private static object? ConvertValueForType(object value, Type targetType, NodeValueKind? fromKind = null, NodeValueKind? toKind = null)
+    {
+        if (value == null)
+            return null;
+
+        NodeValueKind sourceKind = fromKind ?? InferValueKind(value);
+        NodeValueKind targetKind = toKind ?? InferValueKind(targetType);
+
+        if (sourceKind == targetKind)
+        {
+            if (targetType.IsAssignableFrom(value.GetType()))
+                return value;
+            return null;
+        }
+
+        return NodeValueTypeSystem.ConvertValue(value, sourceKind, targetKind);
+    }
+
+    private static NodeValueKind InferValueKind(object value)
+    {
+        return value switch
+        {
+            EngineVec4 => NodeValueKind.Color,
+            float => NodeValueKind.Scalar,
+            EngineVec2 => NodeValueKind.UV,
+            _ => NodeValueKind.Color
+        };
+    }
+
+    private static NodeValueKind InferValueKind<T>()
+    {
+        return typeof(T) switch
+        {
+            var t when t == typeof(EngineVec4) => NodeValueKind.Color,
+            var t when t == typeof(float) => NodeValueKind.Scalar,
+            var t when t == typeof(EngineVec2) => NodeValueKind.UV,
+            _ => NodeValueKind.Color
+        };
+    }
+
+    private static NodeValueKind InferValueKind(Type type)
+    {
+        if (type == typeof(EngineVec4))
+            return NodeValueKind.Color;
+        if (type == typeof(float))
+            return NodeValueKind.Scalar;
+        if (type == typeof(EngineVec2))
+            return NodeValueKind.UV;
+        return NodeValueKind.Color;
+    }
+
+    private TextureSampleNode? FindTextureNodeInChain(int nodeId, int outputIndex)
+    {
+        return FindTextureNodeInChain(nodeId, outputIndex, new HashSet<(int, int)>());
+    }
+    
+    private TextureSampleNode? FindTextureNodeInChain(int nodeId, int outputIndex, HashSet<(int, int)> visited)
+    {
+        if (visited.Contains((nodeId, outputIndex)))
+            return null;
+            
+        visited.Add((nodeId, outputIndex));
+        
+        GraphNode? node = GetNode(nodeId);
+        if (node == null)
+            return null;
+            
+        if (node is TextureSampleNode textureNode)
+        {
+            return textureNode;
+        }
+        
+        if (outputIndex >= 0 && outputIndex < node.OutputPins.Count)
+        {
+            var pin = node.OutputPins[outputIndex];
+            
+            if (pin.IsSplitPin && pin.ChannelIndex.HasValue)
+            {
+                int startIndex = outputIndex;
+                while (startIndex > 0 && node.OutputPins[startIndex - 1].IsSplitPin)
+                {
+                    startIndex--;
+                }
+                
+                if (startIndex < node.OutputPins.Count)
+                {
+                    foreach (var conn in _connections)
+                    {
+                        if (conn.OutputNodeId == nodeId && conn.OutputIndex == startIndex)
+                        {
+                            var result = FindTextureNodeInChain(conn.InputNodeId, conn.InputIndex, visited);
+                            if (result != null)
+                                return result;
+                        }
+                    }
+                }
+            }
+        }
+        
+        foreach (var conn in _connections)
+        {
+            if (conn.OutputNodeId == nodeId && conn.OutputIndex == outputIndex)
+            {
+                var result = FindTextureNodeInChain(conn.InputNodeId, conn.InputIndex, visited);
+                if (result != null)
+                    return result;
+            }
+        }
+        
+        return null;
     }
 
     public MaterialData? EvaluateMaterial()
     {
         var context = new NodeEvaluationContext();
+        context.Cache.Clear();
         context.GetInputValueFunc = (nodeId, inputIndex, type) => 
         {
             GraphNode? node = GetNode(nodeId);
@@ -1354,16 +1899,63 @@ public class MaterialEditorWindow
                 if (conn.InputNodeId == nodeId && conn.InputIndex == inputIndex)
                 {
                     GraphNode? sourceNode = GetNode(conn.OutputNodeId);
-                    if (sourceNode != null)
+                    if (sourceNode != null && conn.OutputIndex < sourceNode.OutputPins.Count)
                     {
+                        var outputPin = sourceNode.OutputPins[conn.OutputIndex];
                         object? value = EvaluateNodeOutput(sourceNode, conn.OutputIndex, context);
-                        if (value != null && type.IsAssignableFrom(value.GetType()))
+                        
+                        if (value != null)
                         {
-                            return value;
+                            if (outputPin.IsSplitPin && outputPin.ChannelIndex.HasValue)
+                            {
+                                if (type.IsAssignableFrom(value.GetType()))
+                                {
+                                    return value;
+                                }
+                                
+                                var componentValue = NodeValueTypeSystem.ExtractComponent(value, outputPin.Kind, outputPin.ChannelIndex.Value);
+                                if (componentValue != null)
+                                {
+                                    if (type.IsAssignableFrom(componentValue.GetType()))
+                                        return componentValue;
+                                    
+                                    var converted = ConvertValueForType(componentValue, type, NodeValueKind.Scalar, InferValueKind(type));
+                                    if (converted != null)
+                                        return converted;
+                                }
+                                
+                                return null;
+                            }
+                            
+                            if (type.IsAssignableFrom(value.GetType()))
+                            {
+                                return value;
+                            }
+                            
+                            if (!outputPin.IsSplitPin)
+                            {
+                                object? converted = ConvertValueForType(value, type, outputPin.Kind, InferValueKind(type));
+                                if (converted != null)
+                                {
+                                    return converted;
+                                }
+                            }
                         }
                     }
                 }
             }
+            
+            var inputPin = node.InputPins[inputIndex];
+            if (inputPin.DefaultValue != null)
+            {
+                if (type.IsAssignableFrom(inputPin.DefaultValue.GetType()))
+                    return inputPin.DefaultValue;
+                
+                var converted = ConvertValueForType(inputPin.DefaultValue, type, inputPin.Kind, InferValueKind(type));
+                if (converted != null)
+                    return converted;
+            }
+            
             return null;
         };
 
@@ -1375,10 +1967,167 @@ public class MaterialEditorWindow
 
         if (materialOutput.InputPins.Count > 0)
         {
-            EngineVec4? baseColor = GetInputValue<EngineVec4>(materialOutput, 0, context);
-            if (baseColor.HasValue)
+            var baseConnection = _connections.FirstOrDefault(c => c.InputNodeId == materialOutput.Id && c.InputIndex == 0);
+            if (baseConnection != null)
             {
-                materialData.DiffuseColor = baseColor.Value;
+                bool handledByTexture = false;
+                TextureSampleNode? textureNode = FindTextureNodeInChain(baseConnection.OutputNodeId, baseConnection.OutputIndex);
+                
+                if (textureNode != null && !string.IsNullOrEmpty(textureNode.TexturePath))
+                {
+                    handledByTexture = true;
+                    materialData.DiffuseMapPath = textureNode.TexturePath;
+                    
+                    EngineVec4? multiplier = GetInputValue<EngineVec4>(textureNode, 1, context);
+                    if (multiplier.HasValue)
+                    {
+                        materialData.DiffuseColor = multiplier.Value;
+                    }
+                    else if (textureNode.InputPins.Count > 1 && textureNode.InputPins[1].DefaultValue is EngineVec4 defaultColor)
+                    {
+                        materialData.DiffuseColor = defaultColor;
+                    }
+                    else
+                    {
+                        materialData.DiffuseColor = new EngineVec4(1f, 1f, 1f, 1f);
+                    }
+                    
+                    var uvConnection = _connections.FirstOrDefault(c => c.InputNodeId == textureNode.Id && c.InputIndex == 0);
+                    if (uvConnection != null)
+                    {
+                        EngineVec2 uvOffset = EngineVec2.Zero;
+                        EngineVec2 uvScale = EngineVec2.One;
+                        
+                        GraphNode? uvNode = GetNode(uvConnection.OutputNodeId);
+                        if (uvNode is TexCoordNode texCoordNode)
+                        {
+                            float? scaleU = GetInputValue<float>(texCoordNode, 2, context);
+                            float? scaleV = GetInputValue<float>(texCoordNode, 3, context);
+                            float? offsetU = GetInputValue<float>(texCoordNode, 4, context);
+                            float? offsetV = GetInputValue<float>(texCoordNode, 5, context);
+                            
+                            float finalScaleU = scaleU ?? texCoordNode.Scale.X;
+                            float finalScaleV = scaleV ?? texCoordNode.Scale.Y;
+                            float finalOffsetU = offsetU ?? texCoordNode.Offset.X;
+                            float finalOffsetV = offsetV ?? texCoordNode.Offset.Y;
+                            
+                            if (finalScaleU <= 0f) finalScaleU = 1f;
+                            if (finalScaleV <= 0f) finalScaleV = 1f;
+                            
+                            uvScale = new EngineVec2(finalScaleU, finalScaleV);
+                            uvOffset = new EngineVec2(finalOffsetU, finalOffsetV);
+                        }
+                        else
+                        {
+                            if (uvNode is PannerNode pannerNode)
+                            {
+                                float? offsetX = EvaluateNodeOutput(pannerNode, 0, context) as float?;
+                                float? offsetY = EvaluateNodeOutput(pannerNode, 1, context) as float?;
+                                uvOffset = new EngineVec2(offsetX ?? 0f, offsetY ?? 0f);
+                            }
+                            else if (uvNode is RotatorNode rotatorNode)
+                            {
+                                float? offsetX = EvaluateNodeOutput(rotatorNode, 0, context) as float?;
+                                float? offsetY = EvaluateNodeOutput(rotatorNode, 1, context) as float?;
+                                uvOffset = new EngineVec2(offsetX ?? 0f, offsetY ?? 0f);
+                            }
+                            else
+                            {
+                                var currentUVNode = uvNode;
+                                while (currentUVNode != null)
+                                {
+                                    if (currentUVNode is TexCoordNode texCoord)
+                                    {
+                                        float? scaleU = GetInputValue<float>(texCoord, 2, context);
+                                        float? scaleV = GetInputValue<float>(texCoord, 3, context);
+                                        float? offsetU = GetInputValue<float>(texCoord, 4, context);
+                                        float? offsetV = GetInputValue<float>(texCoord, 5, context);
+                                        
+                                        float finalScaleU = scaleU ?? texCoord.Scale.X;
+                                        float finalScaleV = scaleV ?? texCoord.Scale.Y;
+                                        float finalOffsetU = offsetU ?? texCoord.Offset.X;
+                                        float finalOffsetV = offsetV ?? texCoord.Offset.Y;
+                                        
+                                        if (finalScaleU <= 0f) finalScaleU = 1f;
+                                        if (finalScaleV <= 0f) finalScaleV = 1f;
+                                        
+                                        uvScale = new EngineVec2(finalScaleU, finalScaleV);
+                                        uvOffset = new EngineVec2(finalOffsetU, finalOffsetV);
+                                        break;
+                                    }
+                                    
+                                    var inputConnection = _connections.FirstOrDefault(c => c.InputNodeId == currentUVNode.Id && c.InputIndex == 0);
+                                    if (inputConnection != null)
+                                    {
+                                        currentUVNode = GetNode(inputConnection.OutputNodeId);
+                                        
+                                        if (currentUVNode is PannerNode panner)
+                                        {
+                                            float? offsetX = EvaluateNodeOutput(panner, 0, context) as float?;
+                                            float? offsetY = EvaluateNodeOutput(panner, 1, context) as float?;
+                                            uvOffset = new EngineVec2(offsetX ?? 0f, offsetY ?? 0f);
+                                            break;
+                                        }
+                                        else if (currentUVNode is RotatorNode rotator)
+                                        {
+                                            float? offsetX = EvaluateNodeOutput(rotator, 0, context) as float?;
+                                            float? offsetY = EvaluateNodeOutput(rotator, 1, context) as float?;
+                                            uvOffset = new EngineVec2(offsetX ?? 0f, offsetY ?? 0f);
+                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        materialData.UVScale = uvScale;
+                        materialData.UVOffset = uvOffset;
+                    }
+                    else
+                    {
+                        materialData.UVScale = EngineVec2.One;
+                        materialData.UVOffset = EngineVec2.Zero;
+                    }
+                }
+                
+                if (!handledByTexture)
+                {
+                    EngineVec4? baseColor = GetInputValue<EngineVec4>(materialOutput, 0, context);
+                    if (baseColor.HasValue)
+                    {
+                        materialData.DiffuseColor = baseColor.Value;
+                    }
+                }
+            }
+            else
+            {
+                EngineVec4? baseColor = GetInputValue<EngineVec4>(materialOutput, 0, context);
+                if (baseColor.HasValue)
+                {
+                    materialData.DiffuseColor = baseColor.Value;
+                }
+            }
+        }
+
+        if (materialOutput.InputPins.Count > 1)
+        {
+            float? metallic = GetInputValue<float>(materialOutput, 1, context);
+            if (metallic.HasValue)
+            {
+                materialData.Metallic = System.Math.Clamp(metallic.Value, 0f, 1f);
+            }
+        }
+
+        if (materialOutput.InputPins.Count > 2)
+        {
+            float? specular = GetInputValue<float>(materialOutput, 2, context);
+            if (specular.HasValue)
+            {
+                materialData.Specular = System.Math.Clamp(specular.Value, 0f, 1f);
             }
         }
 

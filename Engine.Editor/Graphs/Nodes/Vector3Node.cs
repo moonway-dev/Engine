@@ -19,11 +19,23 @@ public class Vector3Node : GraphNode
 
     public override object? EvaluateOutput(int outputIndex, NodeEvaluationContext context)
     {
-        if (outputIndex == 0)
+        if (outputIndex >= OutputPins.Count)
+            return null;
+            
+        var pin = OutputPins[outputIndex];
+        
+        if (pin.IsSplitPin && pin.ChannelIndex.HasValue)
         {
-            return new EngineVec4(Color.X, Color.Y, Color.Z, 1.0f);
+            return pin.ChannelIndex.Value switch
+            {
+                0 => Color.X,
+                1 => Color.Y,
+                2 => Color.Z,
+                _ => null
+            };
         }
-        return null;
+        
+        return new EngineVec4(Color.X, Color.Y, Color.Z, 1.0f);
     }
 
     public override void DrawInspector()
@@ -57,4 +69,3 @@ public class Vector3Node : GraphNode
         }
     }
 }
-

@@ -10,11 +10,19 @@ public static class NodeDefinitions
         {
             "TexCoord" => new NodeDefinition
             {
-                Title = "TexCoord[0]",
+                Title = "TexCoord",
                 Subtitle = "UV Source",
-                Size = new Vector2(160f, 110f),
+                Size = new Vector2(200f, 280f),
                 HeaderColor = new Vector4(0.74f, 0.18f, 0.12f, 1f),
-                Inputs = Array.Empty<(string, NodeValueKind)>(),
+                Inputs = new[]
+                {
+                    ("Coordinates U", NodeValueKind.Scalar),
+                    ("Coordinates V", NodeValueKind.Scalar),
+                    ("Scale U", NodeValueKind.Scalar),
+                    ("Scale V", NodeValueKind.Scalar),
+                    ("Offset U", NodeValueKind.Scalar),
+                    ("Offset V", NodeValueKind.Scalar)
+                },
                 Outputs = new[] { ("UV", NodeValueKind.UV) }
             },
             "Texture Sample" => new NodeDefinition
@@ -23,8 +31,15 @@ public static class NodeDefinitions
                 Subtitle = null,
                 Size = new Vector2(230f, 190f),
                 HeaderColor = new Vector4(0.1f, 0.42f, 0.66f, 1f),
-                Inputs = new[] { ("UVs", NodeValueKind.UV) },
-                Outputs = new[] { ("RGB", NodeValueKind.Color), ("Alpha", NodeValueKind.Scalar) }
+                Inputs = new[]
+                {
+                    ("UVs", NodeValueKind.UV),
+                    ("RGBA", NodeValueKind.Color)
+                },
+                Outputs = new[]
+                {
+                    ("RGBA", NodeValueKind.Color)
+                }
             },
             "Constant3Vector" => new NodeDefinition
             {
@@ -111,15 +126,6 @@ public static class NodeDefinitions
     }
 }
 
-public enum NodeValueKind
-{
-    Color,
-    Scalar,
-    UV,
-    Normal,
-    Vector,
-    Emission
-}
 
 public class NodeDefinition
 {

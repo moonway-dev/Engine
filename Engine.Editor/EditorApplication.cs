@@ -67,6 +67,7 @@ public class EditorApplication : IDisposable
         _window.Resize += OnResize;
         _window.Closing += (e) => OnClosing();
         _window.TextInput += OnTextInput;
+        _window.MouseWheel += OnMouseWheel;
 
         _projectManager = new ProjectManager();
         _console = new ConsoleWindow();
@@ -194,6 +195,11 @@ in float FragDepth;
 uniform vec4 uColor;
 uniform sampler2D uTexture;
 uniform bool uUseTexture;
+uniform vec2 uUVScale;
+uniform vec2 uUVOffset;
+uniform float uMetallic;
+uniform float uSpecular;
+uniform float uRoughness;
 uniform sampler2D uShadowMap;
 uniform sampler2D uShadowMap0;
 uniform sampler2D uShadowMap1;
@@ -514,17 +520,30 @@ void main()
     vec4 color = uColor;
     if (uUseTexture)
     {
-        color = texture(uTexture, TexCoord) * uColor;
+        vec2 transformedUV = (TexCoord / uUVScale) + uUVOffset;
+        color = texture(uTexture, transformedUV) * uColor;
     }
     
     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    float diff = max(dot(normalize(Normal), lightDir), 0.2);
-    color.rgb *= diff;
+    vec3 viewDir = normalize(-FragPos);
+    vec3 normal = normalize(Normal);
+    
+    float NdotL = max(dot(normal, lightDir), 0.0);
+    float diff = mix(0.2, 1.0, NdotL);
+    
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), (1.0 - uRoughness) * 128.0 + 8.0);
+    spec *= uSpecular;
+    
+    vec3 albedo = color.rgb * (1.0 - uMetallic);
+    vec3 metallic = color.rgb * uMetallic;
+    
+    color.rgb = albedo * diff + metallic * spec * uSpecular;
     
     if (uUseShadows)
     {
         vec4 fragPosLightSpace = uLightSpaceMatrix * vec4(FragPos, 1.0);
-        float shadow = ShadowCalculation(fragPosLightSpace, normalize(Normal));
+        float shadow = ShadowCalculation(fragPosLightSpace, normal);
         color.rgb *= shadow;
     }
     
@@ -532,6 +551,8 @@ void main()
 }";
 
         _defaultShader = new Shader(vertexShader, fragmentShader);
+        _defaultShader.SetVector2("uUVScale", Engine.Math.Vector2.One);
+        _defaultShader.SetVector2("uUVOffset", Engine.Math.Vector2.Zero);
     }
 
     private void CreateDefaultScene()
@@ -959,6 +980,11 @@ void main()
         {
             _imguiController?.PressChar((char)e.Unicode);
         }
+    }
+
+    private void OnMouseWheel(MouseWheelEventArgs e)
+    {
+        _imguiController?.MouseScroll(new OpenTK.Mathematics.Vector2((float)e.OffsetX, (float)e.OffsetY));
     }
 
     public void Run()

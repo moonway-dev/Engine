@@ -13,10 +13,14 @@ public class MaterialData
     public Vector4 SpecularColor { get; set; } = Vector4.One;
     public Vector4 EmissionColor { get; set; } = Vector4.Zero;
     public float Shininess { get; set; } = 32.0f;
+    public float Metallic { get; set; } = 0.0f;
+    public float Specular { get; set; } = 0.5f;
     public float Roughness { get; set; } = 0.5f;
     public string? DiffuseMapPath { get; set; }
     public string? SpecularMapPath { get; set; }
     public string? NormalMapPath { get; set; }
+    public Vector2 UVScale { get; set; } = Vector2.One;
+    public Vector2 UVOffset { get; set; } = Vector2.Zero;
 
     public void Save(string filePath)
     {
