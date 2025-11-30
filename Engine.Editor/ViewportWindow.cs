@@ -119,8 +119,6 @@ public class ViewportWindow
             throw new Exception($"Framebuffer is not complete! Status: {status}");
         }
 
-        Logger.Info($"Framebuffer created successfully: {_width}x{_height}, texture ID: {_texture}, MSAA samples: {samples}");
-
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _msaaSamples = samples;
     }
@@ -163,10 +161,13 @@ public class ViewportWindow
                 
                 GL.BindFramebuffer(FramebufferTarget.Framebuffer, renderFramebuffer);
                 
-                var fbStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
-                if (fbStatus != FramebufferErrorCode.FramebufferComplete)
+                if (Engine.Core.System.DevMode)
                 {
-                    Logger.Error($"Framebuffer not complete before render! Status: {fbStatus}");
+                    var fbStatus = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+                    if (fbStatus != FramebufferErrorCode.FramebufferComplete)
+                    {
+                        Logger.Error($"Framebuffer not complete before render! Status: {fbStatus}");
+                    }
                 }
                 
                 GL.Viewport(0, 0, _width, _height);
@@ -182,7 +183,14 @@ public class ViewportWindow
                 {
                     GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFramebuffer);
                     GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _framebuffer);
-                    GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+                    if (Engine.Core.System.IsMacOS())
+                    {
+                        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+                    }
+                    else
+                    {
+                        GL.BlitFramebuffer(0, 0, _width, _height, 0, 0, _width, _height, ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+                    }
                 }
                 
                 GL.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
@@ -191,7 +199,10 @@ public class ViewportWindow
                 GL.Enable(EnableCap.DepthTest);
                 GL.DepthFunc(DepthFunction.Less);
                 GL.Disable(EnableCap.Blend);
-                GL.Disable(EnableCap.CullFace);
+                if (!Engine.Core.System.IsMacOS())
+                {
+                    GL.Disable(EnableCap.CullFace);
+                }
 
                 if (_editor.Skybox != null)
                 {
@@ -284,26 +295,41 @@ public class ViewportWindow
                     finalTexture = currentTexture;
                 }
                 
-                int windowWidth = _editor.Window != null ? _editor.Window.Size.X : 1920;
-                int windowHeight = _editor.Window != null ? _editor.Window.Size.Y : 1080;
-                GL.Viewport(0, 0, windowWidth, windowHeight);
+                int viewportWidth, viewportHeight;
+                if (Engine.Core.System.IsMacOS() && _editor.Window != null)
+                {
+                    viewportWidth = _editor.Window.FramebufferSize.X;
+                    viewportHeight = _editor.Window.FramebufferSize.Y;
+                }
+                else
+                {
+                    viewportWidth = _editor.Window != null ? _editor.Window.Size.X : 1920;
+                    viewportHeight = _editor.Window != null ? _editor.Window.Size.Y : 1080;
+                }
+                GL.Viewport(0, 0, viewportWidth, viewportHeight);
 
                 GL.Enable(EnableCap.Blend);
                 GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
                 GL.BindTexture(TextureTarget.Texture2D, finalTexture);
-                ErrorCode error = GL.GetError();
-                if (error != ErrorCode.NoError)
+                if (Engine.Core.System.DevMode)
                 {
-                    Logger.Error($"Viewport: OpenGL error before ImGui.Image: {error}");
+                    ErrorCode error = GL.GetError();
+                    if (error != ErrorCode.NoError)
+                    {
+                        Logger.Error($"Viewport: OpenGL error before ImGui.Image: {error}");
+                    }
                 }
 
                 ImGui.Image((IntPtr)finalTexture, viewportSize, new System.Numerics.Vector2(0, 1), new System.Numerics.Vector2(1, 0));
                 
-                error = GL.GetError();
-                if (error != ErrorCode.NoError)
+                if (Engine.Core.System.DevMode)
                 {
-                    Logger.Error($"Viewport: OpenGL error after ImGui.Image: {error}");
+                    ErrorCode error = GL.GetError();
+                    if (error != ErrorCode.NoError)
+                    {
+                        Logger.Error($"Viewport: OpenGL error after ImGui.Image: {error}");
+                    }
                 }
             }
         }
@@ -345,10 +371,6 @@ public class ViewportWindow
         if (status != FramebufferErrorCode.FramebufferComplete)
         {
             Logger.Error($"Framebuffer resize failed! Status: {status}");
-        }
-        else
-        {
-            Logger.Info($"Framebuffer resized: {_width}x{_height}");
         }
         
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);

@@ -50,6 +50,7 @@ public class EditorApplication : IDisposable
     private bool _showPhysicsDebug = false;
     private bool _isPhysicsSimulating = false;
     private bool _isRunning = false;
+    private bool _vSyncEnabled = true;
     private enum PlayMode { Stopped, Playing, Paused }
     private PlayMode _playMode = PlayMode.Stopped;
     private Dictionary<GameObject, (Engine.Math.Vector3 position, Engine.Math.Quaternion rotation)> _originalTransforms = new Dictionary<GameObject, (Engine.Math.Vector3, Engine.Math.Quaternion)>();
@@ -58,7 +59,7 @@ public class EditorApplication : IDisposable
     {
         var nativeWindowSettings = NativeWindowSettings.Default;
         nativeWindowSettings.ClientSize = new OpenTK.Mathematics.Vector2i(1920, 1080);
-        nativeWindowSettings.Title = "Engine Editor";
+        nativeWindowSettings.Title = "Engine";
 
         _window = new GameWindow(GameWindowSettings.Default, nativeWindowSettings);
         _window.Load += OnLoad;
@@ -99,11 +100,17 @@ public class EditorApplication : IDisposable
 
     private void OnLoad()
     {
+        ApplyVSync();
+
         GL.Enable(EnableCap.DepthTest);
         GL.Enable(EnableCap.Blend);
         GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
         _imguiController = new ImGuiController(_window!.Size.X, _window.Size.Y);
+        if (Engine.Core.System.IsMacOS())
+        {
+            _imguiController.FramebufferResized(_window.FramebufferSize.X, _window.FramebufferSize.Y);
+        }
         _isRunning = true;
 
         Input.Initialize(_window);
@@ -682,7 +689,14 @@ void main()
             return;
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
+        if (Engine.Core.System.IsMacOS())
+        {
+            GL.Viewport(0, 0, _window.FramebufferSize.X, _window.FramebufferSize.Y);
+        }
+        else
+        {
+            GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
+        }
         
         GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
@@ -705,7 +719,14 @@ void main()
         }
 
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
+        if (Engine.Core.System.IsMacOS())
+        {
+            GL.Viewport(0, 0, _window.FramebufferSize.X, _window.FramebufferSize.Y);
+        }
+        else
+        {
+            GL.Viewport(0, 0, _window.Size.X, _window.Size.Y);
+        }
         _imguiController.Render();
 
         _window.SwapBuffers();
@@ -964,8 +985,20 @@ void main()
 
     private void OnResize(ResizeEventArgs e)
     {
-        GL.Viewport(0, 0, e.Width, e.Height);
-        _imguiController?.WindowResized(e.Width, e.Height);
+        if (_window != null)
+        {
+            if (Engine.Core.System.IsMacOS())
+            {
+                GL.Viewport(0, 0, _window.FramebufferSize.X, _window.FramebufferSize.Y);
+                _imguiController?.WindowResized(e.Width, e.Height);
+                _imguiController?.FramebufferResized(_window.FramebufferSize.X, _window.FramebufferSize.Y);
+            }
+            else
+            {
+                GL.Viewport(0, 0, e.Width, e.Height);
+                _imguiController?.WindowResized(e.Width, e.Height);
+            }
+        }
         _camera.AspectRatio = (float)e.Width / e.Height;
     }
 
@@ -1162,6 +1195,24 @@ void main()
     }
     
     internal GameWindow? Window => _window;
+
+    public bool VSyncEnabled
+    {
+        get => _vSyncEnabled;
+        set
+        {
+            if (_vSyncEnabled != value)
+            {
+                _vSyncEnabled = value;
+                ApplyVSync();
+            }
+        }
+    }
+
+    private void ApplyVSync()
+    {
+        _window.VSync = _vSyncEnabled ? VSyncMode.On : VSyncMode.Off;
+    }
 
     public void Dispose()
     {

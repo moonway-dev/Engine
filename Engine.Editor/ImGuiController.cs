@@ -1,15 +1,17 @@
-﻿using ImGuiNET;
+using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
+using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Diagnostics;
 using ErrorCode = OpenTK.Graphics.OpenGL4.ErrorCode;
 using System.IO;
 using System.Runtime.InteropServices;
+using Engine.Core;
 
 namespace Engine.Editor
 {
@@ -33,6 +35,8 @@ namespace Engine.Editor
 
         private int _windowWidth;
         private int _windowHeight;
+        private int _framebufferWidth;
+        private int _framebufferHeight;
 
         private System.Numerics.Vector2 _scaleFactor = System.Numerics.Vector2.One;
 
@@ -45,6 +49,9 @@ namespace Engine.Editor
         {
             _windowWidth = width;
             _windowHeight = height;
+            _framebufferWidth = width;
+            _framebufferHeight = height;
+            UpdateScaleFactor();
 
             int major = GL.GetInteger(GetPName.MajorVersion);
             int minor = GL.GetInteger(GetPName.MinorVersion);
@@ -164,6 +171,35 @@ namespace Engine.Editor
         {
             _windowWidth = width;
             _windowHeight = height;
+            UpdateScaleFactor();
+        }
+
+        public void FramebufferResized(int framebufferWidth, int framebufferHeight)
+        {
+            _framebufferWidth = framebufferWidth;
+            _framebufferHeight = framebufferHeight;
+            UpdateScaleFactor();
+        }
+
+        private void UpdateScaleFactor()
+        {
+            if (Engine.Core.System.IsMacOS())
+            {
+                if (_windowWidth > 0 && _windowHeight > 0)
+                {
+                    _scaleFactor = new System.Numerics.Vector2(
+                        (float)_framebufferWidth / _windowWidth,
+                        (float)_framebufferHeight / _windowHeight);
+                }
+                else
+                {
+                    _scaleFactor = System.Numerics.Vector2.One;
+                }
+            }
+            else
+            {
+                _scaleFactor = System.Numerics.Vector2.One;
+            }
         }
 
         public void DestroyDeviceObjects()
@@ -308,9 +344,7 @@ void main()
         private void SetPerFrameImGuiData(float deltaSeconds)
         {
             ImGuiIOPtr io = ImGui.GetIO();
-            io.DisplaySize = new System.Numerics.Vector2(
-                _windowWidth / _scaleFactor.X,
-                _windowHeight / _scaleFactor.Y);
+            io.DisplaySize = new System.Numerics.Vector2(_windowWidth, _windowHeight);
             io.DisplayFramebufferScale = _scaleFactor;
             io.DeltaTime = deltaSeconds;
         }
@@ -324,21 +358,38 @@ void main()
         {
             ImGuiIOPtr io = ImGui.GetIO();
 
+            bool cursorGrabbed = wnd.CursorState == CursorState.Grabbed;
+            
             MouseState MouseState = wnd.MouseState;
             KeyboardState KeyboardState = wnd.KeyboardState;
 
-            io.MouseDown[0] = MouseState[MouseButton.Left];
-            io.MouseDown[1] = MouseState[MouseButton.Right];
-            io.MouseDown[2] = MouseState[MouseButton.Middle];
-            io.MouseDown[3] = MouseState[MouseButton.Button4];
-            io.MouseDown[4] = MouseState[MouseButton.Button5];
+            if (cursorGrabbed)
+            {
+                io.MouseDown[0] = false;
+                io.MouseDown[1] = false;
+                io.MouseDown[2] = false;
+                io.MouseDown[3] = false;
+                io.MouseDown[4] = false;
+                io.MousePos = new System.Numerics.Vector2(-1, -1);
+                io.MouseWheel = 0;
+                io.MouseWheelH = 0;
+                io.WantCaptureMouse = false;
+            }
+            else
+            {
+                io.MouseDown[0] = MouseState[MouseButton.Left];
+                io.MouseDown[1] = MouseState[MouseButton.Right];
+                io.MouseDown[2] = MouseState[MouseButton.Middle];
+                io.MouseDown[3] = MouseState[MouseButton.Button4];
+                io.MouseDown[4] = MouseState[MouseButton.Button5];
 
-            var screenPoint = new Vector2i((int)MouseState.X, (int)MouseState.Y);
-            var point = screenPoint;
-            io.MousePos = new System.Numerics.Vector2(point.X, point.Y);
+                var screenPoint = new Vector2i((int)MouseState.X, (int)MouseState.Y);
+                var point = screenPoint;
+                io.MousePos = new System.Numerics.Vector2(point.X, point.Y);
 
-            io.MouseWheel = _mouseScrollDelta.Y;
-            io.MouseWheelH = _mouseScrollDelta.X;
+                io.MouseWheel = _mouseScrollDelta.Y;
+                io.MouseWheelH = _mouseScrollDelta.X;
+            }
             
             _mouseScrollDelta = Vector2.Zero;
 
@@ -455,7 +506,14 @@ void main()
             }
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            GL.Viewport(0, 0, _windowWidth, _windowHeight);
+            if (Engine.Core.System.IsMacOS())
+            {
+                GL.Viewport(0, 0, _framebufferWidth, _framebufferHeight);
+            }
+            else
+            {
+                GL.Viewport(0, 0, _windowWidth, _windowHeight);
+            }
 
             ImGuiIOPtr io = ImGui.GetIO();
             Matrix4 mvp = Matrix4.CreateOrthographicOffCenter(
@@ -469,10 +527,16 @@ void main()
             GL.UseProgram(_shader);
             GL.UniformMatrix4(_shaderProjectionMatrixLocation, false, ref mvp);
             GL.Uniform1(_shaderFontTextureLocation, 0);
-            CheckGLError("Projection");
+            if (Engine.Core.System.DevMode)
+            {
+                CheckGLError("Projection");
+            }
 
             GL.BindVertexArray(_vertexArray);
-            CheckGLError("VAO");
+            if (Engine.Core.System.DevMode)
+            {
+                CheckGLError("VAO");
+            }
 
             draw_data.ScaleClipRects(io.DisplayFramebufferScale);
 
@@ -488,10 +552,16 @@ void main()
                 ImDrawListPtr cmd_list = draw_data.CmdLists[n];
 
                 GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data);
-                CheckGLError($"Data Vert {n}");
+                if (Engine.Core.System.DevMode)
+                {
+                    CheckGLError($"Data Vert {n}");
+                }
 
                 GL.BufferSubData(BufferTarget.ElementArrayBuffer, IntPtr.Zero, cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data);
-                CheckGLError($"Data Idx {n}");
+                if (Engine.Core.System.DevMode)
+                {
+                    CheckGLError($"Data Idx {n}");
+                }
 
                 for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
                 {
@@ -504,11 +574,18 @@ void main()
                     {
                         GL.ActiveTexture(TextureUnit.Texture0);
                         GL.BindTexture(TextureTarget.Texture2D, (int)pcmd.TextureId);
-                        CheckGLError("Texture");
+                        if (Engine.Core.System.DevMode)
+                        {
+                            CheckGLError("Texture");
+                        }
 
                         var clip = pcmd.ClipRect;
-                        GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
-                        CheckGLError("Scissor");
+                        int scissorHeight = Engine.Core.System.IsMacOS() ? _framebufferHeight : _windowHeight;
+                        GL.Scissor((int)clip.X, scissorHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
+                        if (Engine.Core.System.DevMode)
+                        {
+                            CheckGLError("Scissor");
+                        }
 
                         if ((io.BackendFlags & ImGuiBackendFlags.RendererHasVtxOffset) != 0)
                         {
@@ -518,7 +595,10 @@ void main()
                         {
                             GL.DrawElements(BeginMode.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (int)pcmd.IdxOffset * sizeof(ushort));
                         }
-                        CheckGLError("Draw");
+                        if (Engine.Core.System.DevMode)
+                        {
+                            CheckGLError("Draw");
+                        }
                     }
                 }
             }

@@ -194,7 +194,7 @@ public class MaterialEditorWindow
     {
         float sidebarWidth = 260f;
 
-        ImGui.BeginChild("MaterialSidebar", new Vector2(sidebarWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+        ImGui.BeginChild("MaterialSidebar", new Vector2(sidebarWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         DrawSidebar();
         ImGui.EndChild();
 
@@ -206,7 +206,7 @@ public class MaterialEditorWindow
 
             ImGui.SameLine();
 
-        ImGui.BeginChild("MaterialInspector", new Vector2(InspectorWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+        ImGui.BeginChild("MaterialInspector", new Vector2(InspectorWidth, 0f), ImGuiChildFlags.Border, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         DrawInspector();
         ImGui.EndChild();
     }

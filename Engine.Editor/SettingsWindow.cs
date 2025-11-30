@@ -162,6 +162,15 @@ public class SettingsWindow
                 }
             }
 
+            if (ImGui.CollapsingHeader("Display"))
+            {
+                bool vSync = _editor.VSyncEnabled;
+                if (ImGui.Checkbox("V-Sync", ref vSync))
+                {
+                    _editor.VSyncEnabled = vSync;
+                }
+            }
+
             if (ImGui.CollapsingHeader("Post Processing"))
             {
                 var ppSettings = _editor.PostProcessingSettings;
