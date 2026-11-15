@@ -67,6 +67,16 @@ public class MeshLodChainTests
     }
 
     [Fact]
+    public void Generate_ExpiredSharedTimeBudget_ThrowsWithoutReturningPartialChain()
+    {
+        (Vertex[] vertices, uint[] indices) = Sphere(48, 32);
+        Assert.Throws<MeshLodGenerationTimeoutException>(() => MeshLodChainGenerator.Generate(
+            vertices,
+            indices,
+            new MeshLodChainOptions(MaxLevels: 4, TimeBudget: TimeSpan.Zero)));
+    }
+
+    [Fact]
     public void Generate_DoesNotMutateSource()
     {
         (Vertex[] vertices, uint[] indices) = Sphere(48, 32);

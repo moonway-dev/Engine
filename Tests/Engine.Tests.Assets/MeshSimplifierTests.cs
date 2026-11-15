@@ -90,7 +90,8 @@ public class MeshSimplifierTests
     {
         Vertex[] vertices = new Vertex[3];
         uint[] indices = [0, 1, 2];
-        Assert.Throws<InvalidOperationException>(() => MeshSimplifier.Simplify(vertices, indices, 0.5f, 1));
+        MeshLodMemoryBudgetException exception = Assert.Throws<MeshLodMemoryBudgetException>(() => MeshSimplifier.Simplify(vertices, indices, 0.5f, 1));
+        Assert.True(exception.EstimatedBytes > exception.MemoryBudget);
         Assert.Throws<OperationCanceledException>(() => MeshSimplifier.Simplify(vertices, indices, 0.5f,
             cancellationToken: new CancellationToken(true)));
     }

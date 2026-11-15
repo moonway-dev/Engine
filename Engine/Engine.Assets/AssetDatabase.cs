@@ -26,7 +26,7 @@ public sealed class AssetDatabase : IDisposable
     private readonly CancellationTokenSource _importCancellation = new();
     private readonly SemaphoreSlim _importGate = new(1, 1);
     private readonly Dictionary<(string Path, string Part), LodChainState> _lodChains = [];
-    private readonly SemaphoreSlim _lodGate = new(2, 2);
+    private readonly SemaphoreSlim _lodGate = new(1, 1);
 
     public int PendingMeshImports => _meshImports.Count;
     public double LastMeshUploadMilliseconds { get; private set; }
@@ -37,7 +37,7 @@ public sealed class AssetDatabase : IDisposable
     private readonly Dictionary<string, ModelData> _models = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<(string Path, string Part), Mesh> _partMeshes = [];
 
-    public MeshLodChainOptions LodOptions { get; set; } = new() { MemoryBudget = 4096L * 1024 * 1024 };
+    public MeshLodChainOptions LodOptions { get; set; } = new();
     public int LodUploadBudget { get; set; } = 2;
     public int PendingLodUploads => _lodChains.Values.Sum(state => state.Pending.Count);
     public int GeneratingLodChains => _lodChains.Values.Count(state => state.Generation is not null);
@@ -55,6 +55,7 @@ public sealed class AssetDatabase : IDisposable
         public Task<IReadOnlyList<MeshLodData>>? Generation { get; set; }
         public bool Failed { get; set; }
         public Queue<MeshLodData> Pending { get; } = new();
+        public bool HasUploadedLevels { get; set; }
     }
 
     private void BeginLodChain(string path, string partId, ModelData model, Mesh mesh)
@@ -122,8 +123,19 @@ public sealed class AssetDatabase : IDisposable
                 try
                 {
                     IReadOnlyList<MeshLodData> chain = generation.GetAwaiter().GetResult();
+                    if (state.HasUploadedLevels && chain.Count > 0)
+                    {
+                        state.Failed = true;
+                        Diagnostic?.Invoke($"LOD chain '{state.Path}#{state.PartId}': received a replacement chain after upload started.");
+                        continue;
+                    }
                     foreach (MeshLodData entry in chain)
                         state.Pending.Enqueue(entry);
+                }
+                catch (MeshLodMemoryBudgetException exception)
+                {
+                    state.Failed = true;
+                    Diagnostic?.Invoke($"LOD chain '{state.Path}#{state.PartId}': {exception.Message} Source: {exception.EstimatedBytes / (1024.0 * 1024.0):F0} MiB estimated, {exception.MemoryBudget / (1024.0 * 1024.0):F0} MiB budget.");
                 }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
@@ -139,6 +151,7 @@ public sealed class AssetDatabase : IDisposable
                 try
                 {
                     state.Mesh.AddLod(entry.Vertices, entry.Indices, entry.Error);
+                    state.HasUploadedLevels = true;
                     uploaded++;
                     UploadedLodLevels++;
                 }

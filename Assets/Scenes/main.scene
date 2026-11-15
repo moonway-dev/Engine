@@ -3,7 +3,7 @@
   "name": "Main",
   "objects": [
     {
-      "id": "c4c9d0e2-4386-4c92-a13e-7743423e39f6",
+      "id": "cfa45e9f-3d4c-4e55-9056-a0e62ac9404e",
       "name": "Ground",
       "active": true,
       "transform": {
@@ -26,7 +26,7 @@
       },
       "components": [
         {
-          "id": "00959df8-d829-488e-8771-ec6043e8b64c",
+          "id": "6ab895fe-813c-4d0f-9f72-95bce9b76991",
           "type": "MeshRenderer",
           "enabled": true,
           "properties": {
@@ -58,7 +58,7 @@
           }
         },
         {
-          "id": "6fc9c335-cba1-4dcc-b3df-32af5beabc48",
+          "id": "5bbe40a7-6f96-4a75-826f-e12368a2b93a",
           "type": "RigidBody",
           "enabled": true,
           "properties": {
@@ -82,7 +82,7 @@
       "unknownComponents": []
     },
     {
-      "id": "d2e694e8-f17a-43d5-bf92-6ff7356ac0e2",
+      "id": "9f84b91a-9c4d-405d-aab2-de29b66c25e6",
       "name": "MetalCube",
       "active": true,
       "transform": {
@@ -105,7 +105,7 @@
       },
       "components": [
         {
-          "id": "c70211a9-979e-4795-8b5b-c63e1254433e",
+          "id": "f63c8548-c9f2-4397-9796-cb55a82e30db",
           "type": "MeshRenderer",
           "enabled": true,
           "properties": {
@@ -140,7 +140,7 @@
       "unknownComponents": []
     },
     {
-      "id": "2f634e26-7bfa-45aa-bf2a-aee808376ebb",
+      "id": "4fb33898-2603-4f6b-a4dc-5fc359e9bb26",
       "name": "PhysicsCrate",
       "active": true,
       "transform": {
@@ -163,7 +163,7 @@
       },
       "components": [
         {
-          "id": "798fa8db-392d-4f25-9cd7-23cda81fc539",
+          "id": "97cdda1c-8aa3-4366-b017-13de19a3c3c3",
           "type": "MeshRenderer",
           "enabled": true,
           "properties": {
@@ -195,7 +195,7 @@
           }
         },
         {
-          "id": "560d0576-89d6-4472-a558-be98b58fd956",
+          "id": "706b0794-d30f-4507-81bf-7f464666dcf2",
           "type": "RigidBody",
           "enabled": true,
           "properties": {
@@ -219,7 +219,7 @@
       "unknownComponents": []
     },
     {
-      "id": "469433fb-ff90-4a89-8814-346ab52dae3c",
+      "id": "ab650c97-e2b1-4236-a90d-979529e30900",
       "name": "PlasticSphere",
       "active": true,
       "transform": {
@@ -242,7 +242,7 @@
       },
       "components": [
         {
-          "id": "9e43295f-c441-404c-a3a8-16b547a78c46",
+          "id": "931a360e-1c2f-489a-835f-a347de49ee0b",
           "type": "MeshRenderer",
           "enabled": true,
           "properties": {
@@ -277,7 +277,7 @@
       "unknownComponents": []
     },
     {
-      "id": "26725693-3818-4f3a-af4e-e25a6ee7e81c",
+      "id": "61c3e0a1-c445-49af-a795-001c338ec937",
       "name": "RoughCube",
       "active": true,
       "transform": {
@@ -300,7 +300,7 @@
       },
       "components": [
         {
-          "id": "c10f9b85-992a-4bd4-ba28-1fe421d7a130",
+          "id": "1206d35b-7539-4d0e-8892-60e60ce0a6e7",
           "type": "MeshRenderer",
           "enabled": true,
           "properties": {
@@ -335,7 +335,7 @@
       "unknownComponents": []
     },
     {
-      "id": "278568a6-a5c4-4219-becd-71a349cfbf2e",
+      "id": "55eb0fff-14e2-4104-916a-8062ee395014",
       "name": "GlowingSphere",
       "active": true,
       "transform": {
@@ -358,7 +358,7 @@
       },
       "components": [
         {
-          "id": "8e252447-d7c2-4205-806b-0ed07cf33dd3",
+          "id": "ebe8ab73-8d64-43ed-8ac0-d32c42a5e98e",
           "type": "MeshRenderer",
           "enabled": true,
           "properties": {
@@ -393,7 +393,7 @@
       "unknownComponents": []
     },
     {
-      "id": "affe5e85-0e44-4814-96a1-4b4468c317db",
+      "id": "0c929663-002e-46c8-9b0f-1fedbb5be5db",
       "name": "Sun",
       "active": true,
       "transform": {
@@ -416,7 +416,7 @@
       },
       "components": [
         {
-          "id": "dcdb608e-2187-4220-9feb-485eb4f6a333",
+          "id": "995a24e4-fddc-4bec-838e-f4b5c19c9be5",
           "type": "Light",
           "enabled": true,
           "properties": {
@@ -434,7 +434,7 @@
       "unknownComponents": []
     },
     {
-      "id": "35d4d770-b830-4a17-87dd-b39de48af3b6",
+      "id": "7b305cd7-e626-4019-b73d-2c90f04f82c7",
       "name": "BlueLamp",
       "active": true,
       "transform": {
@@ -457,7 +457,7 @@
       },
       "components": [
         {
-          "id": "33143028-e17c-4c7b-a628-664cf9d8ae12",
+          "id": "a96e900b-0f05-4ce0-870d-5fa203ce0c35",
           "type": "Light",
           "enabled": true,
           "properties": {
@@ -475,7 +475,7 @@
       "unknownComponents": []
     },
     {
-      "id": "e3f77952-6235-4a4f-9cb0-60b60da5095f",
+      "id": "81d4f7c0-1993-452e-a449-743682de50a9",
       "name": "RedLamp",
       "active": true,
       "transform": {
@@ -498,7 +498,7 @@
       },
       "components": [
         {
-          "id": "b2d6f220-9a90-436d-beea-b9e9d694f799",
+          "id": "86cf372b-2a9b-4a50-baf8-e49bd706673e",
           "type": "Light",
           "enabled": true,
           "properties": {
@@ -516,7 +516,7 @@
       "unknownComponents": []
     },
     {
-      "id": "1f994316-73b0-4f9b-b04b-04fd72897c16",
+      "id": "efe4ed3e-6375-411a-8f7d-d7f3769f0adb",
       "name": "MainCamera",
       "active": true,
       "transform": {
@@ -539,7 +539,7 @@
       },
       "components": [
         {
-          "id": "1ad8d28e-00ea-4a6e-be3d-253aa14735e8",
+          "id": "cc60ce69-a5cc-45eb-acdb-4637a6ddfa38",
           "type": "Camera",
           "enabled": true,
           "properties": {

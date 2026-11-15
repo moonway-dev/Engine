@@ -134,9 +134,25 @@ public sealed class RendererModule : IUpdatableModule
 
     public Func<string, bool>? MeshImportFailedResolver { get; set; }
 
-    public long SceneTriangleCount => _sceneItems.Values.Sum(item => (long)item.Mesh.IndexCount / 3);
+    public long SceneSourceTriangleCount => _sceneItems.Values.Sum(item => (long)item.Mesh.IndexCount / 3);
 
-    public long SceneVertexCount => _sceneItems.Values.Sum(item => (long)item.Mesh.VertexCount);
+    public long SceneSourceVertexCount => _sceneItems.Values.Sum(item => (long)item.Mesh.VertexCount);
+
+    public long SceneDrawnTriangleCount { get; private set; }
+
+    public long GameDrawnTriangleCount { get; private set; }
+
+    public long ShadowDrawnTriangleCount { get; private set; }
+
+    public int SceneLodLevel { get; private set; }
+
+    public int GameLodLevel { get; private set; }
+
+    public int SceneDrawnObjects { get; private set; }
+
+    public int GameDrawnObjects { get; private set; }
+
+    public int ShadowDrawnObjects { get; private set; }
 
     public int LodMeshCount => _sceneItems.Values.Count(item => item.Mesh.LodCount > 1);
 
@@ -274,6 +290,14 @@ public sealed class RendererModule : IUpdatableModule
             return;
         DrawnObjects = 0;
         CulledObjects = 0;
+        SceneDrawnTriangleCount = 0;
+        GameDrawnTriangleCount = 0;
+        ShadowDrawnTriangleCount = 0;
+        SceneLodLevel = 0;
+        GameLodLevel = 0;
+        SceneDrawnObjects = 0;
+        GameDrawnObjects = 0;
+        ShadowDrawnObjects = 0;
         long start = System.Diagnostics.Stopwatch.GetTimestamp();
         SyncScene();
         UpdateLights();
@@ -420,6 +444,8 @@ public sealed class RendererModule : IUpdatableModule
                 continue;
             }
             DrawnObjects++;
+            ShadowDrawnObjects++;
+            ShadowDrawnTriangleCount += renderItem.Mesh.TriangleCount;
             ShadowModelConstants constants = new() { ModelViewProjection = matrix };
             commandBuffer.PushConstants(StructuredBytes(constants), _shadowPushStages);
             renderItem.Mesh.Draw(commandBuffer);
@@ -453,6 +479,19 @@ public sealed class RendererModule : IUpdatableModule
                 continue;
             }
             DrawnObjects++;
+            Mesh drawMesh = SelectForwardLodMesh(renderItem, cameraAllocation, extent);
+            if (_editorMode && cameraAllocation != _gameCameraAllocation)
+            {
+                SceneDrawnObjects++;
+                SceneDrawnTriangleCount += drawMesh.TriangleCount;
+                SceneLodLevel = Math.Max(SceneLodLevel, FindLodLevel(renderItem.Mesh, drawMesh));
+            }
+            else
+            {
+                GameDrawnObjects++;
+                GameDrawnTriangleCount += drawMesh.TriangleCount;
+                GameLodLevel = Math.Max(GameLodLevel, FindLodLevel(renderItem.Mesh, drawMesh));
+            }
             if (renderItem.Material.ParamsDirty)
             {
                 _device!.UploadBufferData(renderItem.Material.ParamsBuffer, StructuredBytes(renderItem.Material.ToData()));
@@ -461,7 +500,7 @@ public sealed class RendererModule : IUpdatableModule
             commandBuffer.BindDescriptorSet(renderItem.Material.Set!, 1);
             ModelConstants constants = ModelConstants.FromModel(renderItem.ModelMatrix);
             commandBuffer.PushConstants(StructuredBytes(constants), _pbrPushStages);
-            SelectForwardLodMesh(renderItem, cameraAllocation, extent).Draw(commandBuffer);
+            drawMesh.Draw(commandBuffer);
         }
     }
 
@@ -484,8 +523,17 @@ public sealed class RendererModule : IUpdatableModule
             return mesh;
         Matrix4x4 modelMatrix = renderItem.ModelMatrix;
         float pixelsPerUnit = MeshLodProjection.PixelsPerUnit(camera, extent, mesh, modelMatrix);
-        int level = state.Select(mesh, renderItem.Lod, pixelsPerUnit, 1f, LodPixelBudget);
+        float pixelBudget = float.IsFinite(LodPixelBudget) && LodPixelBudget > 0f ? LodPixelBudget : 320f;
+        int level = state.Select(mesh, renderItem.Lod, pixelsPerUnit, 1f, pixelBudget);
         return mesh.GetLod(level);
+    }
+
+    private static int FindLodLevel(Mesh source, Mesh selected)
+    {
+        for (int level = 0; level < source.LodCount; level++)
+            if (ReferenceEquals(source.GetLod(level), selected))
+                return level;
+        return 0;
     }
 
     private void ExecuteBloomPass(ICommandBuffer commandBuffer, RenderGraph graph) =>

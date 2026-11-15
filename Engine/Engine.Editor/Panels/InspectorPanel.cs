@@ -218,17 +218,21 @@ public sealed class InspectorPanel : EditorPanel
         PrepareField("LOD Mode");
         if (ImGui.Combo("##LodMode", ref lodMode, lodModes, lodModes.Length))
             SetComponentProperty(id, nameof(MeshRendererComponent.LodMode), current => ((MeshRendererComponent)current).LodMode, (current, value) => ((MeshRendererComponent)current).LodMode = value, (MeshLodMode)lodMode, false);
-        int forcedLod = mesh.ForcedLodLevel;
+        int lodCount = _context.ModelAssets?.RequestMesh(mesh.ResourceKey, mesh.PartId)?.LodCount ?? 1;
+        int forcedLod = Math.Clamp(mesh.ForcedLodLevel, 0, Math.Max(0, lodCount - 1));
         PrepareField("Forced LOD");
-        if (ImGui.SliderInt("##ForcedLod", ref forcedLod, 0, 4))
+        ImGui.BeginDisabled(lodCount <= 1);
+        if (ImGui.SliderInt("##ForcedLod", ref forcedLod, 0, Math.Max(0, lodCount - 1)))
             SetComponentProperty(id, nameof(MeshRendererComponent.ForcedLodLevel), current => ((MeshRendererComponent)current).ForcedLodLevel, (current, value) => ((MeshRendererComponent)current).ForcedLodLevel = value, forcedLod);
+        ImGui.EndDisabled();
         float lodBias = mesh.LodBias;
         PrepareField("LOD Bias");
         if (ImGui.DragFloat("##LodBias", ref lodBias, 0.02f, 0.05f, 4f))
             SetComponentProperty(id, nameof(MeshRendererComponent.LodBias), current => ((MeshRendererComponent)current).LodBias, (current, value) => ((MeshRendererComponent)current).LodBias = value, lodBias);
         EndMergeAfterEdit();
         if (_context.ModelAssets is { } assets && !string.IsNullOrWhiteSpace(mesh.ResourceKey)
-            && mesh.ResourceKey.EndsWith(".obj", StringComparison.OrdinalIgnoreCase)
+            && (mesh.ResourceKey.EndsWith(".obj", StringComparison.OrdinalIgnoreCase)
+                || mesh.ResourceKey.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
             && assets.IsMeshImportFailed(mesh.ResourceKey))
         {
             ImGui.TextUnformatted("Model import failed");

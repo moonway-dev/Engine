@@ -48,13 +48,22 @@ public static class MeshLodProjection
             return 0f;
         Vector3 center = (mesh.BoundsMin + mesh.BoundsMax) * 0.5f;
         Vector3 halfExtent = (mesh.BoundsMax - mesh.BoundsMin) * 0.5f;
-        float radius = halfExtent.Length * ScaleOf(modelMatrix);
         Vector3 worldCenter = Vector3.TransformPoint(center, modelMatrix);
+        float rightRadius = MathF.Abs(Vector3.Dot(camera.Right, new Vector3(modelMatrix.M11, modelMatrix.M21, modelMatrix.M31))) * halfExtent.X
+            + MathF.Abs(Vector3.Dot(camera.Right, new Vector3(modelMatrix.M12, modelMatrix.M22, modelMatrix.M32))) * halfExtent.Y
+            + MathF.Abs(Vector3.Dot(camera.Right, new Vector3(modelMatrix.M13, modelMatrix.M23, modelMatrix.M33))) * halfExtent.Z;
+        float upRadius = MathF.Abs(Vector3.Dot(camera.Up, new Vector3(modelMatrix.M11, modelMatrix.M21, modelMatrix.M31))) * halfExtent.X
+            + MathF.Abs(Vector3.Dot(camera.Up, new Vector3(modelMatrix.M12, modelMatrix.M22, modelMatrix.M32))) * halfExtent.Y
+            + MathF.Abs(Vector3.Dot(camera.Up, new Vector3(modelMatrix.M13, modelMatrix.M23, modelMatrix.M33))) * halfExtent.Z;
+        float depthRadius = MathF.Abs(Vector3.Dot(camera.Forward, new Vector3(modelMatrix.M11, modelMatrix.M21, modelMatrix.M31))) * halfExtent.X
+            + MathF.Abs(Vector3.Dot(camera.Forward, new Vector3(modelMatrix.M12, modelMatrix.M22, modelMatrix.M32))) * halfExtent.Y
+            + MathF.Abs(Vector3.Dot(camera.Forward, new Vector3(modelMatrix.M13, modelMatrix.M23, modelMatrix.M33))) * halfExtent.Z;
         float centerDepth = Vector3.Dot(worldCenter - camera.Position, camera.Forward);
-        float nearestDepth = MathF.Max(camera.NearPlane, centerDepth - radius);
-        if (nearestDepth <= MathF.Max(camera.NearPlane, 0f))
+        if (!float.IsFinite(rightRadius) || !float.IsFinite(upRadius) || !float.IsFinite(depthRadius)
+            || !float.IsFinite(centerDepth) || centerDepth - depthRadius <= camera.NearPlane)
             return float.MaxValue;
-        float worldHeight = 2f * MathF.Tan(camera.FieldOfViewY * 0.5f) * nearestDepth;
+        float depth = centerDepth - depthRadius;
+        float worldHeight = 2f * MathF.Tan(camera.FieldOfViewY * 0.5f) * depth;
         return worldHeight <= MathUtil.Epsilon ? float.MaxValue : extent.Height / worldHeight;
     }
 

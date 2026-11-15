@@ -5,6 +5,24 @@ namespace Engine.Assets;
 
 public sealed record MeshLodData(Vertex[] Vertices, uint[] Indices, float Error);
 
+public sealed class MeshLodGenerationTimeoutException : TimeoutException
+{
+    public MeshLodGenerationTimeoutException() : base("LOD generation exceeded its time budget.") { }
+}
+
+public sealed class MeshLodMemoryBudgetException : InvalidOperationException
+{
+    public long EstimatedBytes { get; }
+    public long MemoryBudget { get; }
+
+    public MeshLodMemoryBudgetException(long estimatedBytes, long memoryBudget)
+        : base($"LOD generation skipped: estimated working set {estimatedBytes / (1024.0 * 1024.0):F0} MiB exceeds memory budget {memoryBudget / (1024.0 * 1024.0):F0} MiB.")
+    {
+        EstimatedBytes = estimatedBytes;
+        MemoryBudget = memoryBudget;
+    }
+}
+
 public static class MeshSimplifier
 {
     private struct Quadric
@@ -34,25 +52,34 @@ public static class MeshSimplifier
             throw new ArgumentOutOfRangeException(nameof(ratio));
         if (sourceIndices.Length % 3 != 0)
             throw new ArgumentException("Triangle index count must be divisible by three.", nameof(sourceIndices));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(memoryBudget);
+        if (timeBudget is { } requestedTime && requestedTime < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeBudget));
         long estimate = checked((long)sourceVertices.Length * 240 + (long)sourceIndices.Length * 24);
         if (estimate > memoryBudget)
-            throw new InvalidOperationException("LOD preprocessing exceeds its memory budget.");
+            throw new MeshLodMemoryBudgetException(estimate, memoryBudget);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         TimeSpan limit = timeBudget ?? TimeSpan.FromMinutes(2);
         int target = Math.Max(4, (int)(sourceIndices.Length / 3 * ratio));
         Vertex[] vertices = sourceVertices;
         uint[] indices = sourceIndices;
         float error = 0;
+        if (limit <= TimeSpan.Zero)
+            throw new MeshLodGenerationTimeoutException();
         for (int pass = 0; pass < 48 && indices.Length / 3 > target; pass++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (System.Diagnostics.Stopwatch.GetElapsedTime(started) > limit)
-                break;
+                throw new MeshLodGenerationTimeoutException();
             int[] offsets = new int[vertices.Length + 1];
             for (int i = 0; i < indices.Length; i++)
             {
                 if ((i & 16383) == 0)
+                {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (System.Diagnostics.Stopwatch.GetElapsedTime(started) > limit)
+                        throw new MeshLodGenerationTimeoutException();
+                }
                 uint index = indices[i];
                 if (index >= vertices.Length)
                     throw new InvalidDataException("Invalid simplification index.");
@@ -66,7 +93,11 @@ public static class MeshSimplifier
             for (int i = 0; i < indices.Length; i += 3)
             {
                 if ((i & 16383) == 0)
+                {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (System.Diagnostics.Stopwatch.GetElapsedTime(started) > limit)
+                        throw new MeshLodGenerationTimeoutException();
+                }
                 int a = (int)indices[i], b = (int)indices[i + 1], c = (int)indices[i + 2];
                 adjacency[cursor[a]++] = i;
                 adjacency[cursor[b]++] = i;

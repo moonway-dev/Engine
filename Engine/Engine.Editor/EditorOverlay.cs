@@ -50,7 +50,8 @@ public sealed class EditorOverlay : IDisposable
         RendererModule renderer,
         EditorContext context,
         MemoryLogSink logSink,
-        bool vsync)
+        bool vsync,
+        FeatureInfo? graphicsFeatures = null)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -60,7 +61,7 @@ public sealed class EditorOverlay : IDisposable
         _inspector = new InspectorPanel(context);
         _projectBrowser = new ProjectBrowserPanel(context);
         _console = new ConsolePanel(logSink);
-        _stats = new StatsPanel(context, renderer, vsync);
+        _stats = new StatsPanel(context, renderer, vsync, graphicsFeatures);
         _sceneView = new ViewportPanel("Scene View", tracksDesiredExtent: true);
         _gameView = new ViewportPanel("Game View", tracksDesiredExtent: false);
         _panels = [_hierarchy, _inspector, _projectBrowser, _console, _stats, _sceneView, _gameView];

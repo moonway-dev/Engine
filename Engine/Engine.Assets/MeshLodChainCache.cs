@@ -7,7 +7,7 @@ namespace Engine.Assets;
 
 public static class MeshLodChainCache
 {
-    private const int Version = 1;
+    private const int Version = 2;
     private const int Magic = 0x444F444C;
 
     public static IReadOnlyList<MeshLodData>? TryLoad(
@@ -31,11 +31,16 @@ public static class MeshLodChainCache
                 return null;
             long sourceLength = reader.ReadInt64();
             long sourceStamp = reader.ReadInt64();
+            byte[] sourceHash = reader.ReadBytes(32);
             int maxLevels = reader.ReadInt32();
             float ratio = reader.ReadSingle();
             int minTriangles = reader.ReadInt32();
+            long memoryBudget = reader.ReadInt64();
+            long timeBudgetTicks = reader.ReadInt64();
             if (sourceLength != info.Length || sourceStamp != info.LastWriteTimeUtc.Ticks
-                || maxLevels != options.MaxLevels || ratio != options.Ratio || minTriangles != options.MinTriangles)
+                || sourceHash.Length != 32 || !CryptographicOperations.FixedTimeEquals(sourceHash, HashSource(sourcePath, cancellationToken))
+                || maxLevels != options.MaxLevels || ratio != options.Ratio || minTriangles != options.MinTriangles
+                || memoryBudget != options.MemoryBudget || timeBudgetTicks != (options.TimeBudget?.Ticks ?? -1))
                 return null;
             int levelCount = reader.ReadInt32();
             if (levelCount < 0 || levelCount > options.MaxLevels)
@@ -67,6 +72,8 @@ public static class MeshLodChainCache
                 previousError = error;
                 previousTriangles = indexCount / 3;
             }
+            if (stream.Position != stream.Length)
+                return null;
             cancellationToken.ThrowIfCancellationRequested();
             return levels;
         }
@@ -92,6 +99,7 @@ public static class MeshLodChainCache
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
+            byte[] sourceHash = HashSource(sourcePath, cancellationToken);
             Directory.CreateDirectory(directory);
             using (FileStream stream = new(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             using (BinaryWriter writer = new(stream, Encoding.UTF8, true))
@@ -101,9 +109,12 @@ public static class MeshLodChainCache
                 writer.Write(Marshal.SizeOf<Vertex>());
                 writer.Write(info.Length);
                 writer.Write(info.LastWriteTimeUtc.Ticks);
+                writer.Write(sourceHash);
                 writer.Write(options.MaxLevels);
                 writer.Write(options.Ratio);
                 writer.Write(options.MinTriangles);
+                writer.Write(options.MemoryBudget);
+                writer.Write(options.TimeBudget?.Ticks ?? -1);
                 writer.Write(levels.Count);
                 foreach (MeshLodData level in levels)
                 {
@@ -116,6 +127,10 @@ public static class MeshLodChainCache
                 stream.Flush(true);
             }
             cancellationToken.ThrowIfCancellationRequested();
+            FileInfo current = new(sourcePath);
+            if (!current.Exists || current.Length != info.Length || current.LastWriteTimeUtc.Ticks != info.LastWriteTimeUtc.Ticks
+                || !CryptographicOperations.FixedTimeEquals(sourceHash, HashSource(sourcePath, cancellationToken)))
+                return;
             File.Move(temporary, path, true);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -126,6 +141,20 @@ public static class MeshLodChainCache
             if (File.Exists(temporary))
                 File.Delete(temporary);
         }
+    }
+
+    private static byte[] HashSource(string sourcePath, CancellationToken cancellationToken)
+    {
+        using FileStream stream = new(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = new byte[1024 * 1024];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            hash.AppendData(buffer, 0, read);
+        }
+        return hash.GetHashAndReset();
     }
 
     private static string CachePath(string sourcePath, string partId, MeshLodChainOptions options, string directory)

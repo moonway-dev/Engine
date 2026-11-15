@@ -159,6 +159,8 @@ public sealed class Mesh : IDisposable
 
     public uint IndexCount { get; }
 
+    public int TriangleCount => checked((int)(IndexCount / 3));
+
     public int VertexCount { get; }
 
     public Vector3 BoundsMin { get; }

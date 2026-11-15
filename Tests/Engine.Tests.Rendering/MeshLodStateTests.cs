@@ -117,6 +117,49 @@ public class MeshLodProjectionTests
     }
 
     [Fact]
+    public void PixelsPerUnit_UsesNearestBoundsDepthWithoutDoubleScale()
+    {
+        using NullDevice device = new();
+        Vertex[] vertices =
+        [
+            new() { Position = new Vector3(-2f, -1f, -1f) },
+            new() { Position = new Vector3(2f, 1f, 1f) },
+        ];
+        using Mesh mesh = new(device, vertices, [0u, 1u, 0u], "BoundsLodTest");
+        Camera camera = new()
+        {
+            Position = new Vector3(0f, 0f, 10f),
+            FieldOfViewY = MathF.PI / 2f,
+        };
+        Matrix4x4 model = Matrix4x4.CreateScale(3f);
+        float pixelsPerUnit = MeshLodProjection.PixelsPerUnit(camera, new Size2D(1000, 1000), mesh, model);
+        Assert.Equal(100f / 1.4f, pixelsPerUnit, 3);
+    }
+
+    [Fact]
+    public void PixelsPerUnit_BoundsIntersectingNearPlane_ForcesFinestLevel()
+    {
+        using NullDevice device = new();
+        Vertex[] vertices =
+        [
+            new() { Position = new Vector3(-1f, -1f, -1f) },
+            new() { Position = new Vector3(1f, 1f, 1f) },
+        ];
+        using Mesh mesh = new(device, vertices, [0u, 1u, 0u, 0u, 1u, 1u], "NearLodTest");
+        Camera camera = new()
+        {
+            Position = Vector3.Zero,
+            FieldOfViewY = MathF.PI / 2f,
+            NearPlane = 0.1f,
+        };
+        float pixelsPerUnit = MeshLodProjection.PixelsPerUnit(camera, new Size2D(1000, 1000), mesh, Matrix4x4.CreateTranslation(new Vector3(0f, 0f, -0.5f)));
+        MeshLodState state = new();
+        mesh.AddLod(vertices, [0u, 0u, 0u], 0.001f);
+        Assert.Equal(float.MaxValue, pixelsPerUnit);
+        Assert.Equal(0, state.Select(mesh, new MeshLodSettings(), pixelsPerUnit, 1f, 320f));
+    }
+
+    [Fact]
     public void ScaleOf_TakesLargestAxis()
     {
         Matrix4x4 matrix = Matrix4x4.CreateScale(new Vector3(2f, 5f, 3f));

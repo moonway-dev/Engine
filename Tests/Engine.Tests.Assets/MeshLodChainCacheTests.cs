@@ -100,6 +100,35 @@ public sealed class MeshLodChainCacheTests : IDisposable
     }
 
     [Fact]
+    public void TryLoad_ChangedBudget_ReturnsNull()
+    {
+        MeshLodChainOptions options = new(MaxLevels: 1, Ratio: 0.5f);
+        MeshLodData[] chain = [new(new[] { SingleVertex() }, [0u, 0u, 0u], 1f)];
+        MeshLodChainCache.Save(_source, string.Empty, options, _directory, chain);
+        Assert.Null(MeshLodChainCache.TryLoad(_source, string.Empty, options with { MemoryBudget = options.MemoryBudget - 1 }, _directory));
+    }
+
+    [Fact]
+    public void TryLoad_SameLengthAndTimestampButChangedContent_ReturnsNull()
+    {
+        MeshLodChainOptions options = new(MaxLevels: 1, Ratio: 0.5f);
+        MeshLodData[] chain = [new(new[] { SingleVertex() }, [0u, 0u, 0u], 1f)];
+        MeshLodChainCache.Save(_source, string.Empty, options, _directory, chain);
+        FileInfo info = new(_source);
+        long length = info.Length;
+        DateTime timestamp = info.LastWriteTimeUtc;
+        byte[] original = File.ReadAllBytes(_source);
+        byte[] changed = (byte[])original.Clone();
+        int index = Array.FindIndex(changed, value => value == (byte)'0');
+        Assert.True(index >= 0);
+        changed[index] = (byte)'9';
+        File.WriteAllBytes(_source, changed);
+        File.SetLastWriteTimeUtc(_source, timestamp);
+        Assert.Equal(length, new FileInfo(_source).Length);
+        Assert.Null(MeshLodChainCache.TryLoad(_source, string.Empty, options, _directory));
+    }
+
+    [Fact]
     public void TryLoad_ChangedSource_ReturnsNull()
     {
         MeshLodChainOptions options = new(MaxLevels: 1, Ratio: 0.5f);

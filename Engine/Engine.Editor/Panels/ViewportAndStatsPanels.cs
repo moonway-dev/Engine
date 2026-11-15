@@ -15,6 +15,8 @@ public sealed class ViewportPanel : EditorPanel
     private Size2D _textureSize;
     private System.Numerics.Vector2 _contentSize = new(1280f, 720f);
 
+    public ImDrawListPtr DrawList { get; private set; }
+
     public override string Title => _title;
 
     public bool IsRenderVisible { get; private set; }
@@ -53,6 +55,7 @@ public sealed class ViewportPanel : EditorPanel
     public override void Draw()
     {
         DroppedAsset = null;
+        DrawList = default;
         IsRenderVisible = false;
         if (!IsOpen)
         {
@@ -73,6 +76,7 @@ public sealed class ViewportPanel : EditorPanel
         }
         IsOpen = open;
         ImGui.PopStyleVar();
+        DrawList = ImGui.GetWindowDrawList();
         System.Numerics.Vector2 available = ImGui.GetContentRegionAvail();
         IsRenderVisible = open && available.X >= 8f && available.Y >= 8f;
         if (_tracksDesiredExtent)
@@ -120,6 +124,7 @@ public sealed class StatsPanel : EditorPanel
 {
     private readonly EditorContext _context;
     private readonly RendererModule _renderer;
+    private readonly FeatureInfo? _graphicsFeatures;
     private bool _vsync;
     private System.Numerics.Vector4 _skyColor;
 
@@ -127,11 +132,12 @@ public sealed class StatsPanel : EditorPanel
 
     public event Action<bool>? VSyncChanged;
 
-    public StatsPanel(EditorContext context, RendererModule renderer, bool vsync)
+    public StatsPanel(EditorContext context, RendererModule renderer, bool vsync, FeatureInfo? graphicsFeatures = null)
     {
         _context = context;
         _renderer = renderer;
         _vsync = vsync;
+        _graphicsFeatures = graphicsFeatures;
         Vector4 sky = renderer.SkyColor;
         _skyColor = new System.Numerics.Vector4(sky.X, sky.Y, sky.Z, sky.W);
     }
@@ -148,60 +154,69 @@ public sealed class StatsPanel : EditorPanel
             return;
         }
         IsOpen = open;
-        ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
-        ImGui.TextUnformatted("FPS");
-        ImGui.PopStyleColor();
-        ImGui.SameLine(96f);
-        ImGui.TextUnformatted($"{ImGui.GetIO().Framerate:F0}");
-        ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
-        ImGui.TextUnformatted("Objects");
-        ImGui.PopStyleColor();
-        ImGui.SameLine(96f);
-        ImGui.TextUnformatted($"{_context.Document.Scene.AllObjects.Count}");
-        ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
-        ImGui.TextUnformatted("Render items");
-        ImGui.PopStyleColor();
-        ImGui.SameLine(96f);
-        ImGui.TextUnformatted($"{_renderer.Items.Count}");
-        ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
-        ImGui.TextUnformatted("Lights");
-        ImGui.PopStyleColor();
-        ImGui.SameLine(96f);
-        ImGui.TextUnformatted($"{_renderer.Lights.Count}");
-        ImGui.Spacing();
+        ImGui.TextUnformatted($"{ImGui.GetIO().Framerate:F0} FPS  |  {_context.Document.Scene.AllObjects.Count} objects  |  {_renderer.Lights.Count} lights");
         ImGui.Separator();
-        ImGui.Spacing();
-        ImGui.TextUnformatted($"Geometry: {_renderer.SceneVertexCount:N0} vertices / {_renderer.SceneTriangleCount:N0} triangles");
-        ImGui.TextUnformatted($"Pending / failed meshes: {_renderer.LoadingMeshCount} / {_renderer.FailedMeshCount}");
-        if (_context.ModelAssets is { } assets)
+        if (ImGui.CollapsingHeader("Graphics", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ImGui.TextUnformatted($"Import/cache: {assets.LastMeshImportMilliseconds:F1} ms ({(assets.LastMeshCacheHit ? "cache hit" : "source")})");
-            ImGui.TextUnformatted($"Mesh GPU upload: {assets.LastMeshUploadMilliseconds:F1} ms");
-            ImGui.TextUnformatted($"LOD chains: {assets.LodChainCount} ({assets.GeneratingLodChains} generating, {assets.PendingLodUploads} pending upload)");
-            ImGui.TextUnformatted($"LOD generation: {assets.LastLodGenerationMilliseconds:F1} ms ({(assets.LastLodCacheHit ? "cache hit" : "source")})");
-            ImGui.TextUnformatted($"Uploaded LOD levels: {assets.UploadedLodLevels}");
-            ImGui.TextUnformatted($"LOD meshes: {_renderer.LodMeshCount}");
+            if (_graphicsFeatures is { } features)
+            {
+                ImGui.TextUnformatted($"Device: {features.DeviceName}");
+                ImGui.TextUnformatted($"Vendor / API: {features.VendorName} / {features.ApiVersion}");
+                ImGui.TextUnformatted($"Dedicated memory: {features.DedicatedVideoMemory / (1024.0 * 1024.0):F0} MiB");
+                ImGui.TextUnformatted($"Compute / Ray tracing / Mesh shaders: {YesNo(features.SupportsCompute)} / {YesNo(features.SupportsRayTracing)} / {YesNo(features.SupportsMeshShaders)}");
+            }
+            else
+                ImGui.TextUnformatted("Graphics device information unavailable");
+            ImGui.TextUnformatted($"Views: Scene {(_renderer.SceneViewVisible ? "on" : "off")}, Game {(_renderer.GameViewVisible ? "on" : "off")}");
         }
-        ImGui.TextUnformatted($"Scene sync CPU: {_renderer.SceneSyncMilliseconds:F2} ms");
-        ImGui.TextUnformatted($"Frame wait CPU: {_renderer.FrameWaitMilliseconds:F2} ms");
-        ImGui.TextUnformatted($"Frame setup/upload CPU: {_renderer.UniformUploadMilliseconds:F2} ms");
-        ImGui.TextUnformatted($"Record/submit/present CPU: {_renderer.RenderCpuMilliseconds:F2} ms");
-        ImGui.TextUnformatted($"Drawn / culled (all passes): {_renderer.DrawnObjects} / {_renderer.CulledObjects}");
-        ImGui.TextUnformatted($"Views: Scene {(_renderer.SceneViewVisible ? "on" : "off")}, Game {(_renderer.GameViewVisible ? "on" : "off")}");
-        float exposure = _renderer.Exposure;
-        if (ImGui.SliderFloat("Exposure", ref exposure, 0.1f, 4f))
-            _renderer.Exposure = exposure;
-        float shadowStrength = _renderer.ShadowStrength;
-        if (ImGui.SliderFloat("Shadow strength", ref shadowStrength, 0f, 1f))
-            _renderer.ShadowStrength = shadowStrength;
-        bool vsync = _vsync;
-        if (ImGui.Checkbox("VSync", ref vsync))
+        if (ImGui.CollapsingHeader("Geometry", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            _vsync = vsync;
-            VSyncChanged?.Invoke(vsync);
+            ImGui.TextUnformatted($"Render items / lights: {_renderer.Items.Count} / {_renderer.Lights.Count}");
+            ImGui.TextUnformatted($"Source: {_renderer.SceneSourceVertexCount:N0} vertices / {_renderer.SceneSourceTriangleCount:N0} triangles");
+            ImGui.TextUnformatted($"Submitted triangles: Scene {_renderer.SceneDrawnTriangleCount:N0} (LOD ≤ {_renderer.SceneLodLevel}), Game {_renderer.GameDrawnTriangleCount:N0} (LOD ≤ {_renderer.GameLodLevel}), Shadow {_renderer.ShadowDrawnTriangleCount:N0} (LOD0)");
+            ImGui.TextUnformatted($"Drawn objects: Scene {_renderer.SceneDrawnObjects}, Game {_renderer.GameDrawnObjects}, Shadow {_renderer.ShadowDrawnObjects}; culled {_renderer.CulledObjects}");
         }
-        if (ImGui.ColorEdit4("Sky color", ref _skyColor))
-            _renderer.SkyColor = new Vector4(_skyColor.X, _skyColor.Y, _skyColor.Z, _skyColor.W);
+        if (ImGui.CollapsingHeader("Assets and LOD", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ImGui.TextUnformatted($"Pending / failed meshes: {_renderer.LoadingMeshCount} / {_renderer.FailedMeshCount}");
+            if (_context.ModelAssets is { } assets)
+            {
+                ImGui.TextUnformatted($"Import/cache: {assets.LastMeshImportMilliseconds:F1} ms ({(assets.LastMeshCacheHit ? "cache hit" : "source")})");
+                ImGui.TextUnformatted($"Mesh GPU upload: {assets.LastMeshUploadMilliseconds:F1} ms");
+                ImGui.TextUnformatted($"LOD chains: {assets.LodChainCount} ({assets.GeneratingLodChains} generating, {assets.PendingLodUploads} pending upload)");
+                ImGui.TextUnformatted($"LOD generation: {assets.LastLodGenerationMilliseconds:F1} ms ({(assets.LastLodCacheHit ? "cache hit" : "source")})");
+                ImGui.TextUnformatted($"Uploaded levels / LOD meshes: {assets.UploadedLodLevels} / {_renderer.LodMeshCount}");
+            }
+        }
+        if (ImGui.CollapsingHeader("Frame CPU timings"))
+        {
+            ImGui.TextUnformatted($"Scene sync: {_renderer.SceneSyncMilliseconds:F2} ms");
+            ImGui.TextUnformatted($"Frame wait: {_renderer.FrameWaitMilliseconds:F2} ms");
+            ImGui.TextUnformatted($"Frame setup/upload: {_renderer.UniformUploadMilliseconds:F2} ms");
+            ImGui.TextUnformatted($"Record/submit/present: {_renderer.RenderCpuMilliseconds:F2} ms");
+        }
+        if (ImGui.CollapsingHeader("Render settings"))
+        {
+            float exposure = _renderer.Exposure;
+            if (ImGui.SliderFloat("Exposure", ref exposure, 0.1f, 4f))
+                _renderer.Exposure = exposure;
+            float lodPixelBudget = _renderer.LodPixelBudget;
+            if (ImGui.SliderFloat("LOD pixel budget", ref lodPixelBudget, 0.25f, 8f))
+                _renderer.LodPixelBudget = lodPixelBudget;
+            float shadowStrength = _renderer.ShadowStrength;
+            if (ImGui.SliderFloat("Shadow strength", ref shadowStrength, 0f, 1f))
+                _renderer.ShadowStrength = shadowStrength;
+            bool vsync = _vsync;
+            if (ImGui.Checkbox("VSync", ref vsync))
+            {
+                _vsync = vsync;
+                VSyncChanged?.Invoke(vsync);
+            }
+            if (ImGui.ColorEdit4("Sky color", ref _skyColor))
+                _renderer.SkyColor = new Vector4(_skyColor.X, _skyColor.Y, _skyColor.Z, _skyColor.W);
+        }
         ImGui.End();
     }
+
+    private static string YesNo(bool value) => value ? "yes" : "no";
 }

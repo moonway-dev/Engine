@@ -7,7 +7,7 @@ namespace Engine.Assets;
 
 public static class ModelCache
 {
-    private const int Version = 3;
+    private const int Version = 4;
     private const int Magic = 0x454D444C;
 
     public static ModelData Load(string source, string directory, out bool cacheHit, CancellationToken cancellationToken = default)
@@ -77,7 +77,7 @@ public static class ModelCache
         {
         }
         sourceHash ??= HashSource(source, cancellationToken);
-        ModelData model = ObjModelLoader.LoadModel(source, cancellationToken);
+        ModelData model = ModelImporter.LoadModel(source, cancellationToken);
         info.Refresh();
         if (info.Length == length && info.LastWriteTimeUtc.Ticks == stamp)
         {

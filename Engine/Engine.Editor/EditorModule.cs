@@ -112,7 +112,8 @@ public sealed class EditorModule : IUpdatableModule
             _renderer,
             editorContext,
             _memoryLogSink,
-            _rhiModule.Instance?.VSync ?? true);
+            _rhiModule.Instance?.VSync ?? true,
+            _rhiModule.Instance?.Device.Features);
         _overlay.VSyncChanged += OnVSyncChanged;
     }
 

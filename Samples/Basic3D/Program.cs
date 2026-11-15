@@ -391,7 +391,6 @@ internal sealed class Basic3DModule(
     public void Update(in FrameTime frameTime)
     {
         EnsureScene();
-        _assets?.PumpLodUploads();
         if (_assets is { } assets && assets.UploadedLodLevels != _lastLoggedLodLevels)
         {
             _lastLoggedLodLevels = assets.UploadedLodLevels;
@@ -402,7 +401,7 @@ internal sealed class Basic3DModule(
 
         HandleInput();
         UpdateCamera(frameTime);
-        if (Environment.GetEnvironmentVariable("ENGINE_MESH_BENCHMARK") == "1" && renderer.SceneTriangleCount > 1000000)
+        if (Environment.GetEnvironmentVariable("ENGINE_MESH_BENCHMARK") == "1" && renderer.SceneSourceTriangleCount > 1000000)
         {
             _benchmarkFrames++;
             if (_benchmarkFrames == 31)
@@ -410,7 +409,7 @@ internal sealed class Basic3DModule(
             if (_benchmarkFrames == 151 && !_benchmarkReported)
             {
                 double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(_benchmarkStart).TotalMilliseconds / 120;
-                _log!.Information($"Mesh benchmark: {renderer.SceneVertexCount} vertices, {renderer.SceneTriangleCount} triangles; views {renderer.SceneViewVisible}/{renderer.GameViewVisible}, drawn {renderer.DrawnObjects}, culled {renderer.CulledObjects}; {milliseconds:F2} ms/frame, {1000 / milliseconds:F2} FPS; sync {renderer.SceneSyncMilliseconds:F2} ms, wait {renderer.FrameWaitMilliseconds:F2} ms, record {renderer.RenderCpuMilliseconds:F2} ms; import/cache {_assets!.LastMeshImportMilliseconds:F2} ms, cache hit {_assets.LastMeshCacheHit}; upload {_assets.LastMeshUploadMilliseconds:F2} ms; LOD chains {_assets.LodChainCount}, levels uploaded {_assets.UploadedLodLevels}, generating {_assets.GeneratingLodChains}, pending {_assets.PendingLodUploads}, LOD meshes {renderer.LodMeshCount}");
+                _log!.Information($"Mesh benchmark: source {renderer.SceneSourceVertexCount} vertices/{renderer.SceneSourceTriangleCount} triangles; submitted Scene/Game/Shadow {renderer.SceneDrawnTriangleCount}/{renderer.GameDrawnTriangleCount}/{renderer.ShadowDrawnTriangleCount} triangles; max LOD Scene/Game {renderer.SceneLodLevel}/{renderer.GameLodLevel}; views {renderer.SceneViewVisible}/{renderer.GameViewVisible}, drawn {renderer.DrawnObjects}, culled {renderer.CulledObjects}; {milliseconds:F2} ms/frame, {1000 / milliseconds:F2} FPS; sync {renderer.SceneSyncMilliseconds:F2} ms, wait {renderer.FrameWaitMilliseconds:F2} ms, record {renderer.RenderCpuMilliseconds:F2} ms; import/cache {_assets!.LastMeshImportMilliseconds:F2} ms, cache hit {_assets.LastMeshCacheHit}; upload {_assets.LastMeshUploadMilliseconds:F2} ms; LOD chains {_assets.LodChainCount}, levels uploaded {_assets.UploadedLodLevels}, generating {_assets.GeneratingLodChains}, pending {_assets.PendingLodUploads}, LOD meshes {renderer.LodMeshCount}");
                 _benchmarkReported = true;
                 _context!.RequestExit();
             }

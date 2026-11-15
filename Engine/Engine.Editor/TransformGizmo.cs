@@ -71,7 +71,7 @@ internal sealed class TransformGizmo
                 && NumericsVector2.DistanceSquared(origin, endpoints[index]) >= 36f;
         }
 
-        ImDrawListPtr drawList = ImGui.GetForegroundDrawList();
+        ImDrawListPtr drawList = viewport.DrawList;
         drawList.PushClipRect(viewport.ImageMinimum, viewport.ImageMinimum + viewport.ImageSize, true);
         for (int index = 0; index < axes.Length; index++)
         {
