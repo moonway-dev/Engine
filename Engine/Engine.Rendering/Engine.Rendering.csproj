@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Engine.Core\Engine.Core.csproj" />
+    <ProjectReference Include="..\..\SDK\Engine.Mathematics\Engine.Mathematics.csproj" />
+    <ProjectReference Include="..\Engine.RHI\Engine.RHI.csproj" />
+    <ProjectReference Include="..\Engine.Shaders\Engine.Shaders.csproj" />
+    <ProjectReference Include="..\Engine.Scene\Engine.Scene.csproj" />
+  </ItemGroup>
+</Project>

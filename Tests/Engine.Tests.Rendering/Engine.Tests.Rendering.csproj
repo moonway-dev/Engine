@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Engine\Engine.Core\Engine.Core.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.RHI\Engine.RHI.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Shaders\Engine.Shaders.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Rendering\Engine.Rendering.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Editor\Engine.Editor.csproj" />
+    <ProjectReference Include="..\..\Backends\Engine.Backends.Null\Engine.Backends.Null.csproj" />
+    <ProjectReference Include="..\..\SDK\Engine.Mathematics\Engine.Mathematics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+</Project>

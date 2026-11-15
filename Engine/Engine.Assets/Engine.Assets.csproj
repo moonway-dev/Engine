@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Engine.Assets</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\SDK\Engine.Mathematics\Engine.Mathematics.csproj" />
+    <ProjectReference Include="..\Engine.RHI\Engine.RHI.csproj" />
+    <ProjectReference Include="..\Engine.Rendering\Engine.Rendering.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="StbImageSharp" />
+  </ItemGroup>
+</Project>
