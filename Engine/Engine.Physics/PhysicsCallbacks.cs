@@ -24,7 +24,7 @@ internal readonly struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
         pairMaterial = default;
         pairMaterial.FrictionCoefficient = 0.7f;
         pairMaterial.MaximumRecoveryVelocity = 2f;
-        pairMaterial.SpringSettings = new BepuPhysics.Constraints.SpringSettings(30f, 0.2f);
+        pairMaterial.SpringSettings = new BepuPhysics.Constraints.SpringSettings(30f, 1f);
         return manifold.Count > 0;
     }
 
@@ -41,7 +41,6 @@ internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
     public readonly float LinearDamping;
     public readonly float AngularDamping;
 
-    private Vector3 _gravityDt;
     private float _linearDampingDt;
     private float _angularDampingDt;
 
@@ -64,7 +63,6 @@ internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
 
     public void PrepareForIntegration(float dt)
     {
-        _gravityDt = Gravity * dt;
         _linearDampingDt = MathF.Pow(MathF.Max(0f, 1f - LinearDamping), dt);
         _angularDampingDt = MathF.Pow(MathF.Max(0f, 1f - AngularDamping), dt);
     }
@@ -80,7 +78,8 @@ internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
         Vector<float> dt,
         ref BodyVelocityWide velocity)
     {
-        velocity.Linear += Vector3Wide.Broadcast(_gravityDt);
+        Vector3Wide.Scale(Vector3Wide.Broadcast(Gravity), dt, out Vector3Wide gravityDt);
+        velocity.Linear += gravityDt;
         velocity.Linear *= Vector<float>.One * _linearDampingDt;
         velocity.Angular *= Vector<float>.One * _angularDampingDt;
     }

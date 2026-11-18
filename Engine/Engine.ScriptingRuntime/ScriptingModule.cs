@@ -1,0 +1,432 @@
+namespace Engine.Scripting;
+
+using System.Text.Json;
+using Engine.Core;
+using Engine.Platform;
+using Engine.Scene;
+using SceneModel = Engine.Scene.Scene;
+
+public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDisposable
+{
+    public const string LogCategory = "Scripting";
+
+    private const double ReloadDebounceSeconds = 0.4;
+
+    private readonly string _scriptsRoot;
+    private readonly List<SceneModel> _scenes = [];
+    private readonly List<SceneModel> _playingScenes = [];
+    private readonly List<(ScriptComponent Component, ScriptBehaviour Behaviour)> _activeInstances = [];
+    private readonly HashSet<ScriptBehaviour> _started = [];
+    private ScriptCompilationResult? _current;
+    private ScriptLoadContext? _retiredContext;
+    private ILogger? _log;
+    private FileSystemWatcher? _watcher;
+    private DateTime? _reloadQueuedAt;
+    private FrameTime _lastFrameTime;
+    private bool _paused;
+    private bool _stepRequested;
+    private bool _lastCompileSuccessful;
+    private IReadOnlyList<string> _lastErrors = [];
+    private DateTime _lastCompileTime = DateTime.MinValue;
+
+    public string Name => "Scripting";
+
+    public string ScriptsRoot => _scriptsRoot;
+
+    public bool AlwaysPlay { get; set; }
+
+    public bool IsPaused => _paused;
+
+    public bool HasScripts => _current is { Success: true } && _current.Scripts.Count > 0;
+
+    public IReadOnlyList<ScriptTypeRegistration> Scripts =>
+        _current is { Success: true } ? _current.Scripts : [];
+
+    public bool LastCompileSuccessful => _lastCompileSuccessful;
+
+    public IReadOnlyList<string> LastErrors => _lastErrors;
+
+    public DateTime LastCompileTime => _lastCompileTime;
+
+    public FrameTime LastFrameTime => _lastFrameTime;
+
+    public event Action? ScriptsReloaded;
+
+    public ScriptingModule(string scriptsRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scriptsRoot);
+        _scriptsRoot = Path.GetFullPath(scriptsRoot);
+    }
+
+    public void Initialize(IEngineContext context)
+    {
+        _log = context.Logging.CreateLogger(LogCategory);
+        ScriptLog.Sink = (severity, message) =>
+        {
+            switch (severity)
+            {
+                case "Warning":
+                    _log?.Warning(message);
+                    break;
+                case "Error":
+                    _log?.Error(message);
+                    break;
+                default:
+                    _log?.Information(message);
+                    break;
+            }
+        };
+        try
+        {
+            ScriptInput.Window = context.Services.Resolve<IWindow>();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
+        {
+            ScriptInput.Window = null;
+        }
+        ScriptHost.InstanceFactory = CreateInstance;
+        ScriptHost.InstanceReleaser = ReleaseInstance;
+        ScriptHost.ScriptsProvider = ListScripts;
+        Recompile();
+        StartWatcher();
+    }
+
+    public void AttachScene(SceneModel scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!_scenes.Contains(scene))
+            _scenes.Add(scene);
+        RegisterInto(scene.ComponentRegistry);
+        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        {
+            if (string.IsNullOrWhiteSpace(component.Script))
+                continue;
+            if (component.EnsureInstance())
+                component.ApplyPending();
+        }
+    }
+
+    public void DetachScene(SceneModel scene)
+    {
+        if (_playingScenes.Contains(scene))
+            EndPlay(scene);
+        _scenes.Remove(scene);
+    }
+
+    public void BeginPlay(SceneModel scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (_playingScenes.Contains(scene))
+            return;
+        _playingScenes.Add(scene);
+        if (!_scenes.Contains(scene))
+            _scenes.Add(scene);
+        RegisterInto(scene.ComponentRegistry);
+        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        {
+            if (string.IsNullOrWhiteSpace(component.Script))
+                continue;
+            if (!component.EnsureInstance())
+                continue;
+            component.ApplyPending();
+            if (component.Instance is not ScriptBehaviour behaviour)
+                continue;
+            _activeInstances.Add((component, behaviour));
+            SafeRun(component, behaviour, behaviour.OnEnable);
+        }
+    }
+
+    public void EndPlay(SceneModel scene)
+    {
+        if (!_playingScenes.Remove(scene))
+            return;
+        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        {
+            if (component.Instance is ScriptBehaviour behaviour)
+            {
+                SafeRun(component, behaviour, behaviour.OnDisable);
+                SafeRun(component, behaviour, behaviour.OnDestroy);
+                _started.Remove(behaviour);
+            }
+            component.Instance = null;
+            _activeInstances.RemoveAll(entry => ReferenceEquals(entry.Component, component));
+        }
+    }
+
+    public void Pause() => _paused = true;
+
+    public void Resume() => _paused = false;
+
+    public void Step()
+    {
+        if (_playingScenes.Count == 0)
+            return;
+        _paused = true;
+        _stepRequested = true;
+    }
+
+    public void Recompile()
+    {
+        ScriptCompilationResult result = new ScriptCompiler().Compile(_scriptsRoot);
+        _lastCompileTime = DateTime.Now;
+        _lastErrors = result.Errors;
+        _lastCompileSuccessful = result.Success;
+        if (!result.Success)
+        {
+            foreach (string error in result.Errors)
+                _log?.Error(error);
+            return;
+        }
+        foreach (string error in result.Errors)
+            _log?.Warning(error);
+
+        ScriptCompilationResult? previous = _current;
+        _current = result;
+        foreach (ScriptTypeRegistration registration in result.Scripts)
+        {
+            try
+            {
+                ComponentRegistry.RegisterGlobal(registration.ComponentType, registration.CreateComponent, registration.Key, overwrite: true);
+            }
+            catch (InvalidOperationException exception)
+            {
+                _log?.Error($"Script '{registration.Key}' conflicts with an existing component key: {exception.Message}");
+            }
+        }
+        foreach (SceneModel scene in _scenes)
+            RegisterInto(scene.ComponentRegistry);
+        foreach (SceneModel scene in _scenes)
+            SwapSceneInstances(scene);
+        if (previous is not null)
+            RetireLoadContext(previous);
+        _log?.Information($"Scripts compiled: {result.Scripts.Count} script(s)");
+        ScriptsReloaded?.Invoke();
+    }
+
+    private void RetireLoadContext(ScriptCompilationResult previous)
+    {
+        if (_retiredContext is not null)
+            return;
+        _retiredContext = previous.LoadContext;
+        previous.LoadContext?.Unload();
+        _retiredContext = null;
+    }
+
+    private void RegisterInto(ComponentRegistry registry)
+    {
+        if (_current is not { Success: true } compilation)
+            return;
+        foreach (ScriptTypeRegistration registration in compilation.Scripts)
+        {
+            try
+            {
+                registry.Register(registration.ComponentType, registration.CreateComponent, registration.Key, overwrite: true);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+    }
+
+    private void SwapSceneInstances(SceneModel scene)
+    {
+        bool playing = _playingScenes.Contains(scene);
+        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        {
+            if (string.IsNullOrWhiteSpace(component.Script))
+                continue;
+            bool wasTicking = _activeInstances.Any(entry => ReferenceEquals(entry.Component, component));
+            Dictionary<string, JsonElement>? captured = component.Instance is null
+                ? null
+                : SceneSerializer.CaptureProperties(component, out _);
+            ScriptHost.DetachInstance(component);
+            if (!component.EnsureInstance())
+                continue;
+            if (captured is not null)
+                SceneSerializer.ApplyProperties(component, captured);
+            if (!playing || !wasTicking || component.Instance is not ScriptBehaviour behaviour)
+                continue;
+            _activeInstances.Add((component, behaviour));
+            SafeRun(component, behaviour, behaviour.OnEnable);
+        }
+    }
+
+    private IReadOnlyList<ScriptDescription> ListScripts() =>
+        _current is not { Success: true } compilation
+            ? []
+            : [.. compilation.Scripts.Select(script => new ScriptDescription(script.Key, script.DisplayName, script.ComponentType))];
+
+    private object? CreateInstance(ScriptComponent component)
+    {
+        if (_current is not { Success: true } compilation)
+            return null;
+        ScriptTypeRegistration? registration = compilation.Scripts.FirstOrDefault(script =>
+            script.Key.Equals(component.Script, StringComparison.OrdinalIgnoreCase));
+        if (registration is null || Activator.CreateInstance(registration.BehaviourType) is not ScriptBehaviour behaviour)
+            return null;
+        behaviour.Component = component;
+        return behaviour;
+    }
+
+    private void ReleaseInstance(ScriptComponent component, object instance)
+    {
+        if (instance is not ScriptBehaviour behaviour)
+            return;
+        if (_playingScenes.Contains(component.Scene))
+        {
+            SafeRun(component, behaviour, behaviour.OnDisable);
+            SafeRun(component, behaviour, behaviour.OnDestroy);
+            _activeInstances.RemoveAll(entry => ReferenceEquals(entry.Component, component));
+        }
+        _started.Remove(behaviour);
+    }
+
+    public void Update(in FrameTime frameTime)
+    {
+        _lastFrameTime = frameTime;
+        PumpReload();
+        if (AlwaysPlay)
+            SyncAlwaysPlayScenes();
+        if (_stepRequested)
+        {
+            _stepRequested = false;
+            RunUpdateTick(_lastFrameTime);
+            RunFixedTick(_lastFrameTime);
+            return;
+        }
+        if (_paused)
+            return;
+        RunUpdateTick(frameTime);
+    }
+
+    public void FixedUpdate(in FrameTime frameTime)
+    {
+        if (_paused)
+            return;
+        ScriptTime.FixedDeltaTime = frameTime.FixedDeltaTime;
+        RunFixedTick(frameTime);
+    }
+
+    private void RunUpdateTick(in FrameTime frameTime)
+    {
+        ScriptTime.DeltaTime = frameTime.DeltaTime;
+        ScriptTime.UnscaledDeltaTime = frameTime.UnscaledDeltaTime;
+        ScriptTime.TotalTime = frameTime.TotalTime;
+        for (int index = 0; index < _activeInstances.Count; index++)
+        {
+            (ScriptComponent component, ScriptBehaviour behaviour) = _activeInstances[index];
+            if (!behaviour.IsActive)
+                continue;
+            if (_started.Add(behaviour))
+                SafeRun(component, behaviour, behaviour.OnStart);
+            SafeRun(component, behaviour, behaviour.OnUpdate);
+        }
+    }
+
+    private void RunFixedTick(in FrameTime frameTime)
+    {
+        for (int index = 0; index < _activeInstances.Count; index++)
+        {
+            (ScriptComponent component, ScriptBehaviour behaviour) = _activeInstances[index];
+            if (!behaviour.IsActive)
+                continue;
+            SafeRun(component, behaviour, behaviour.OnFixedUpdate);
+        }
+    }
+
+    private void SyncAlwaysPlayScenes()
+    {
+        foreach (SceneModel scene in _scenes.ToArray())
+        {
+            if (!_playingScenes.Contains(scene))
+                BeginPlay(scene);
+        }
+        foreach (SceneModel scene in _playingScenes.ToArray())
+        {
+            if (!_scenes.Contains(scene))
+                EndPlay(scene);
+        }
+    }
+
+    private void StartWatcher()
+    {
+        if (!Directory.Exists(_scriptsRoot))
+            return;
+        try
+        {
+            FileSystemWatcher watcher = new(_scriptsRoot, "*.cs")
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+            };
+            watcher.Changed += OnScriptFileChanged;
+            watcher.Created += OnScriptFileChanged;
+            watcher.Deleted += OnScriptFileChanged;
+            watcher.Renamed += OnScriptFileRenamed;
+            watcher.EnableRaisingEvents = true;
+            _watcher = watcher;
+        }
+        catch (IOException exception)
+        {
+            _log?.Warning($"Script file watcher unavailable: {exception.Message}");
+        }
+    }
+
+    private void OnScriptFileChanged(object? sender, FileSystemEventArgs args) => QueueReload();
+
+    private void OnScriptFileRenamed(object? sender, RenamedEventArgs args) => QueueReload();
+
+    private void QueueReload() => _reloadQueuedAt ??= DateTime.UtcNow;
+
+    private void PumpReload()
+    {
+        if (_reloadQueuedAt is not { } queuedAt)
+            return;
+        if ((DateTime.UtcNow - queuedAt).TotalSeconds < ReloadDebounceSeconds)
+            return;
+        _reloadQueuedAt = null;
+        try
+        {
+            Recompile();
+        }
+        catch (Exception exception)
+        {
+            _log?.Error($"Script recompile failed: {exception.Message}");
+        }
+    }
+
+    private void SafeRun(ScriptComponent component, ScriptBehaviour behaviour, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            _log?.Error($"Script '{behaviour.GetType().Name}' on '{component.Owner?.Name ?? "<null>"}' threw: {exception.Message}");
+        }
+    }
+
+    public void Shutdown()
+    {
+        foreach (SceneModel scene in _playingScenes.ToArray())
+            EndPlay(scene);
+        if (_watcher is not null)
+        {
+            _watcher.EnableRaisingEvents = false;
+            _watcher.Dispose();
+            _watcher = null;
+        }
+        ScriptHost.InstanceFactory = null;
+        ScriptHost.InstanceReleaser = null;
+        ScriptHost.ScriptsProvider = null;
+        ScriptInput.Window = null;
+        ScriptLog.Sink = null;
+        _scenes.Clear();
+        _current = null;
+        _retiredContext = null;
+        _log?.Information("Scripting shut down");
+    }
+
+    public void Dispose() => Shutdown();
+}

@@ -32,13 +32,15 @@ public sealed class SceneSnapshot
     public static SceneSnapshot Capture(Scene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        return CaptureObjects(
+        SceneSnapshot snapshot = CaptureObjects(
             scene.Name,
             scene.EnumerateHierarchy(),
             scene.UnknownComponents,
             null,
             null,
             scene.ComponentRegistry);
+        snapshot._document.SkyColor = scene.SkyColor;
+        return snapshot;
     }
 
     public static SceneSnapshot CaptureSubtree(GameObject root)
@@ -126,6 +128,8 @@ public sealed class SceneSnapshot
         ComponentRegistry? componentRegistry = null)
     {
         Scene scene = new(_document.Name, componentRegistry);
+        if (_document.SkyColor is { } skyColor)
+            scene.SkyColor = skyColor;
         SceneSnapshotRestoreResult result = RestoreInto(scene, idPolicy);
         scene.Version = SceneSerializer.CurrentVersion;
         return result;
@@ -739,6 +743,7 @@ internal sealed class SceneSnapshotDocument
 {
     public int Version { get; set; } = SceneSerializer.CurrentVersion;
     public string Name { get; set; } = "Scene";
+    public Vector4? SkyColor { get; set; }
     public Guid? RootId { get; set; }
     public PrefabSnapshotMetadata? Prefab { get; set; }
     public List<SceneObjectSnapshot> Objects { get; set; } = [];

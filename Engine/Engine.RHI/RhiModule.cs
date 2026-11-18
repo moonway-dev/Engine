@@ -21,6 +21,8 @@ public sealed class RhiModule : IEngineModule
 
     public IRHI? Instance => _rhi;
 
+    public RayTracingMode RayTracingMode => _configuration.RayTracing;
+
     public RhiModule(IRhiFactory factory, RHIConfiguration? configuration = null, Action<RhiModule, IDevice>? deviceConfigured = null)
     {
         _factory = factory;
@@ -93,7 +95,7 @@ public sealed class RhiRenderModule : IUpdatableModule
             return;
         if (_rhi.BeginFrame() is FrameStatus.Skipped)
             return;
-        ICommandBuffer commandBuffer = _rhi.Device.CreateCommandBuffer();
+        ICommandBuffer commandBuffer = _rhi.GetFrameCommandBuffer();
         commandBuffer.Begin();
         _rhi.ClearFramebuffer(commandBuffer, ClearColor);
         commandBuffer.End();

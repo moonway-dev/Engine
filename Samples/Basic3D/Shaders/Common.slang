@@ -1,16 +1,27 @@
 struct CameraData
 {
     float4x4 viewProjection;
+    float4x4 previousViewProjection;
     float3 cameraPosition;
     float padding;
+    float2 jitter;
+    float2 previousJitter;
 };
 
 struct ShadowData
 {
-    float4x4 lightViewProjection;
-    float texelSize;
-    float strength;
+    float4x4 lightViewProjections[4];
+    float4 atlasTiles[4];
+    float4 cascadeMetrics[4];
+    float4 splitDepths;
+    float4 cameraPositionAndNear;
+    float4 cameraForwardAndDistance;
+    float4 lightDirectionAndStrength;
+    float4 filterParameters;
+    float4 biasParameters;
     int lightIndex;
+    uint quality;
+    uint debugCascades;
     float padding0;
 };
 
@@ -54,7 +65,7 @@ struct LightsInput
 struct ModelConstants
 {
     float4x4 model;
-    float4x4 normalMatrix;
+    float4x4 previousModel;
 };
 
 struct TonemapInput
@@ -114,7 +125,8 @@ void computePointLightRadiance(LightInput light, float3 worldPosition, out float
     float3 delta = light.directionOrPosition - worldPosition;
     float distance = length(delta);
     lightDirection = delta / max(distance, 1e-4);
-    float rangeFactor = saturate(1.0 - pow(distance / max(light.range, 1e-4), 4.0));
+    float normalizedDistance = distance / max(light.range, 1e-4);
+    float rangeFactor = saturate(1.0 - pow(normalizedDistance, 4.0));
     attenuation = rangeFactor * rangeFactor / max(distance * distance, 1.0);
 }
 
@@ -128,7 +140,9 @@ float3 applyLighting(
     float3 fresnelBase,
     LightsInput lights,
     int shadowLightIndex,
-    float shadowVisibility)
+    float shadowVisibility,
+    int pointShadowLightIndex,
+    float pointShadowVisibility)
 {
     float3 result = float3(0.0, 0.0, 0.0);
     for (int i = 0; i < int(lights.count); i++)
@@ -159,7 +173,9 @@ float3 applyLighting(
         float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * albedo / 3.14159265;
 
         float3 radiance = light.color * light.intensity * attenuation;
-        float visibility = i == shadowLightIndex ? shadowVisibility : 1.0;
+        float visibility = i == shadowLightIndex ? shadowVisibility
+            : i == pointShadowLightIndex ? pointShadowVisibility
+            : 1.0;
         result += (diffuse + specular) * radiance * nDotL * visibility;
     }
     return result;

@@ -8,19 +8,42 @@ namespace Engine.Rendering;
 public struct CameraData
 {
     public Matrix4x4 ViewProjection;
+    public Matrix4x4 PreviousViewProjection;
     public Vector3 CameraPosition;
     public float Padding0;
+    public Vector2 Jitter;
+    public Vector2 PreviousJitter;
 
     public static int SizeInBytes => Marshal.SizeOf<CameraData>();
+}
+
+[InlineArray(4)]
+public struct ShadowMatrixArray
+{
+    private Matrix4x4 _element0;
+}
+
+[InlineArray(4)]
+public struct ShadowVectorArray
+{
+    private Vector4 _element0;
 }
 
 [StructLayout(LayoutKind.Sequential)]
 public struct ShadowData
 {
-    public Matrix4x4 LightViewProjection;
-    public float TexelSize;
-    public float Strength;
+    public ShadowMatrixArray LightViewProjections;
+    public ShadowVectorArray AtlasTiles;
+    public ShadowVectorArray CascadeMetrics;
+    public Vector4 SplitDepths;
+    public Vector4 CameraPositionAndNear;
+    public Vector4 CameraForwardAndDistance;
+    public Vector4 LightDirectionAndStrength;
+    public Vector4 FilterParameters;
+    public Vector4 BiasParameters;
     public int LightIndex;
+    public uint Quality;
+    public uint DebugCascades;
     public float Padding0;
 }
 
@@ -88,12 +111,12 @@ public struct ShadowModelConstants
 public struct ModelConstants
 {
     public Matrix4x4 Model;
-    public Matrix4x4 NormalMatrix;
+    public Matrix4x4 PreviousModel;
 
-    public static ModelConstants FromModel(Matrix4x4 model) => new()
+    public static ModelConstants FromModel(Matrix4x4 model, Matrix4x4? previousModel = null) => new()
     {
         Model = model,
-        NormalMatrix = model.Invert().Transpose(),
+        PreviousModel = previousModel ?? model,
     };
 }
 
@@ -110,10 +133,109 @@ public struct BloomConstants
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public struct TemporalConstants
+{
+    public uint Width;
+    public uint Height;
+    public uint SourceWidth;
+    public uint SourceHeight;
+    public uint HistoryValid;
+    public float HistoryWeight;
+    public float DepthThreshold;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public struct TonemapConstants
 {
     public float Exposure;
     public float Padding0;
     public float Padding1;
     public float Padding2;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct RtShadowControl
+{
+    public uint Enabled;
+    public uint ExtentWidth;
+    public uint ExtentHeight;
+    public uint PointLightEnabled;
+    public uint PointLightIndex;
+    public uint RasterDisabled;
+    public uint Padding1;
+    public uint Padding2;
+
+    public static int SizeInBytes => Marshal.SizeOf<RtShadowControl>();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct RtViewData
+{
+    public Matrix4x4 ViewProjection;
+    public Matrix4x4 InverseViewProjection;
+    public Matrix4x4 PreviousViewProjection;
+    public Vector4 CameraPositionAndMaxDistance;
+    public Vector4 ExtentAndFrame;
+    public Vector4 LightDirectionAndAngularRadius;
+    public Vector4 Settings;
+    public Vector4 PointLightPositionAndRange;
+    public Vector4 ShadowQuality;
+    public Vector4 ReflectionQuality;
+    public Vector4 GiQuality;
+
+    public static int SizeInBytes => Marshal.SizeOf<RtViewData>();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct RtFilterConstants
+{
+    public uint ExtentWidth;
+    public uint ExtentHeight;
+    public uint SourceWidth;
+    public uint SourceHeight;
+    public uint HistoryValid;
+    public uint Mode;
+    public float HistoryWeight;
+    public float DepthThreshold;
+    public float NormalThreshold;
+    public uint StepWidth;
+    public uint ValidityEnabled;
+    public uint UseSceneDepth;
+    public uint Padding1;
+    public uint Padding2;
+
+    public static int SizeInBytes => Marshal.SizeOf<RtFilterConstants>();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct RtCompositeConstants
+{
+    public uint ExtentWidth;
+    public uint ExtentHeight;
+    public uint SourceWidth;
+    public uint SourceHeight;
+    public uint ReflectionsEnabled;
+    public float Strength;
+
+    public static int SizeInBytes => Marshal.SizeOf<RtCompositeConstants>();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct SsgiData
+{
+    public Matrix4x4 ViewProjection;
+    public Matrix4x4 InverseViewProjection;
+    public Vector4 CameraPositionAndRadius;
+    public Vector4 ExtentAndFrame;
+
+    public static int SizeInBytes => Marshal.SizeOf<SsgiData>();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct GiCompositeConstants
+{
+    public uint Width;
+    public uint Height;
+    public float Intensity;
+    public float Padding0;
 }

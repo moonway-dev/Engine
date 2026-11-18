@@ -143,7 +143,7 @@ public sealed class ImGuiBackend : IDisposable
         if (fontPath is null)
             atlas.AddFontDefault();
         else
-            atlas.AddFontFromFileTTF(fontPath, 16f);
+            atlas.AddFontFromFileTTF(fontPath, 14f);
         atlas.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
         byte[] data = new byte[width * height * bytesPerPixel];
         Marshal.Copy(pixels, data, 0, data.Length);

@@ -10,6 +10,9 @@ public sealed class GameClock
     private double _fpsTimer;
     private int _fpsFrames;
     private int _fixedStepsTaken;
+    private int _fixedStepsPending;
+    private double _droppedFixedTimeSeconds;
+    private double _droppedFixedTimeSecondsThisFrame;
 
     public float FixedDeltaTime { get; set; } = DefaultFixedDeltaTime;
     public int MaxFixedStepsPerFrame { get; set; } = DefaultMaxFixedStepsPerFrame;
@@ -22,7 +25,11 @@ public sealed class GameClock
     public float UnscaledTotalTime { get; private set; }
     public ulong FrameIndex { get; private set; }
     public float AverageFps { get; private set; }
-    public int FixedStepsPending => Math.Min((int)(_fixedAccumulator / FixedDeltaTime), int.MaxValue);
+    public int FixedStepsPending => _fixedStepsPending;
+    public int FixedStepsTakenThisFrame => _fixedStepsTaken;
+    public float FixedInterpolationAlpha => FixedDeltaTime > 0f ? Math.Clamp((float)(_fixedAccumulator / FixedDeltaTime), 0f, 1f) : 0f;
+    public float DroppedFixedTimeSeconds => (float)_droppedFixedTimeSeconds;
+    public float DroppedFixedTimeSecondsThisFrame => (float)_droppedFixedTimeSecondsThisFrame;
 
     public void Tick(double realDeltaSeconds)
     {
@@ -34,8 +41,33 @@ public sealed class GameClock
         TotalTime += scaledDelta;
         FrameIndex++;
         _fixedStepsTaken = 0;
+        _droppedFixedTimeSecondsThisFrame = 0;
         if (!IsPaused)
             _fixedAccumulator += scaledDelta;
+        if (FixedDeltaTime <= 0f || !float.IsFinite(FixedDeltaTime))
+        {
+            _fixedStepsPending = 0;
+            _fpsFrames++;
+            _fpsTimer += realDeltaSeconds;
+            if (_fpsTimer >= 0.5)
+            {
+                AverageFps = (float)(_fpsFrames / _fpsTimer);
+                _fpsFrames = 0;
+                _fpsTimer = 0;
+            }
+            return;
+        }
+        int maxSteps = Math.Max(0, MaxFixedStepsPerFrame);
+        double availableSteps = Math.Floor(_fixedAccumulator / FixedDeltaTime);
+        if (availableSteps > maxSteps)
+        {
+            double droppedTime = (availableSteps - maxSteps) * FixedDeltaTime;
+            _fixedAccumulator -= droppedTime;
+            _droppedFixedTimeSeconds += droppedTime;
+            _droppedFixedTimeSecondsThisFrame = droppedTime;
+            availableSteps = maxSteps;
+        }
+        _fixedStepsPending = (int)Math.Clamp(availableSteps, 0, int.MaxValue);
         _fpsFrames++;
         _fpsTimer += realDeltaSeconds;
         if (_fpsTimer >= 0.5)
@@ -48,10 +80,20 @@ public sealed class GameClock
 
     public bool ConsumeFixedStep()
     {
-        if (IsPaused || _fixedStepsTaken >= MaxFixedStepsPerFrame || _fixedAccumulator < FixedDeltaTime)
+        if (IsPaused || FixedDeltaTime <= 0f || _fixedStepsTaken >= MaxFixedStepsPerFrame || _fixedAccumulator < FixedDeltaTime)
             return false;
         _fixedAccumulator -= FixedDeltaTime;
         _fixedStepsTaken++;
+        _fixedStepsPending = Math.Max(0, _fixedStepsPending - 1);
+        if (_fixedStepsTaken >= Math.Max(0, MaxFixedStepsPerFrame) && FixedDeltaTime > 0f && _fixedAccumulator >= FixedDeltaTime)
+        {
+            double droppedSteps = Math.Floor(_fixedAccumulator / FixedDeltaTime);
+            double droppedTime = droppedSteps * FixedDeltaTime;
+            _fixedAccumulator -= droppedTime;
+            _droppedFixedTimeSeconds += droppedTime;
+            _droppedFixedTimeSecondsThisFrame += droppedTime;
+            _fixedStepsPending = 0;
+        }
         return true;
     }
 
@@ -65,6 +107,9 @@ public sealed class GameClock
         AverageFps = 0f;
         _fixedAccumulator = 0;
         _fixedStepsTaken = 0;
+        _fixedStepsPending = 0;
+        _droppedFixedTimeSeconds = 0;
+        _droppedFixedTimeSecondsThisFrame = 0;
         _fpsTimer = 0;
         _fpsFrames = 0;
         IsPaused = false;

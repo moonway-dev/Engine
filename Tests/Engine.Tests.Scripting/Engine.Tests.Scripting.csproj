@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Engine\Engine.ScriptingRuntime\Engine.ScriptingRuntime.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Editor\Engine.Editor.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+</Project>

@@ -1,6 +1,9 @@
+using System.Runtime.CompilerServices;
 using Engine.Mathematics;
 using Engine.Scene;
 using Engine.RHI;
+
+[assembly: InternalsVisibleTo("Engine.Tests.Rendering")]
 
 namespace Engine.Rendering;
 
@@ -227,6 +230,8 @@ public sealed class Material : IDisposable
 
     internal IBuffer ParamsBuffer { get; set; } = null!;
     internal IDescriptorSet? Set { get; set; }
+    internal IDescriptorSet? RtSet { get; set; }
+    internal IDescriptorSet? RtPrepassSet { get; set; }
     internal bool ParamsDirty { get; set; } = true;
 
     public MaterialData ToData()
@@ -257,6 +262,8 @@ public sealed class Material : IDisposable
             return;
         _disposed = true;
         Set?.Dispose();
+        RtSet?.Dispose();
+        RtPrepassSet?.Dispose();
         ParamsBuffer?.Dispose();
     }
 }
@@ -276,5 +283,27 @@ public sealed class RenderItem
 
     internal Transform? BoundTransform { get; set; }
 
-    public Matrix4x4 ModelMatrix => BoundTransform?.WorldMatrix ?? Matrix4x4.CreateTRS(Position, Rotation, Scale);
+    internal float RenderInterpolationAlpha { get; set; } = 1f;
+
+    public Matrix4x4 ModelMatrix
+    {
+        get
+        {
+            if (BoundTransform is null)
+                return Matrix4x4.CreateTRS(Position, Rotation, Scale);
+            Matrix4x4 current = BoundTransform.WorldMatrix;
+            float alpha = Math.Clamp(RenderInterpolationAlpha, 0f, 1f);
+            if (alpha >= 1f)
+                return current;
+            Matrix4x4 previous = BoundTransform.RenderWorldMatrix;
+            if (previous == current)
+                return current;
+            current.Decompose(out Vector3 scale, out Quaternion rotation, out Vector3 position);
+            previous.Decompose(out _, out Quaternion previousRotation, out Vector3 previousPosition);
+            return Matrix4x4.CreateTRS(
+                Vector3.Lerp(previousPosition, position, alpha),
+                Quaternion.Slerp(previousRotation, rotation, alpha),
+                scale);
+        }
+    }
 }

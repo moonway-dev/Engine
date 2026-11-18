@@ -3,6 +3,7 @@ using Engine.Rendering;
 using Engine.Editor.Commands;
 using Engine.Editor.Documents;
 using Engine.Scene;
+using Engine.Mathematics;
 
 namespace Engine.Editor;
 
@@ -91,6 +92,22 @@ public sealed class EditorContext : IDisposable
     public TransformMode TransformMode { get; set; } = TransformMode.Translate;
 
     public TransformSpace TransformSpace { get; set; } = TransformSpace.Local;
+
+    public const float MinimumScaleMagnitude = 0.01f;
+
+    public static Vector3 ClampScale(Vector3 scale) => new(
+        ClampScaleComponent(scale.X),
+        ClampScaleComponent(scale.Y),
+        ClampScaleComponent(scale.Z));
+
+    private static float ClampScaleComponent(float value)
+    {
+        if (!float.IsFinite(value))
+            return value < 0f ? -MinimumScaleMagnitude : MinimumScaleMagnitude;
+        if (MathF.Abs(value) >= MinimumScaleMagnitude)
+            return value;
+        return value < 0f ? -MinimumScaleMagnitude : MinimumScaleMagnitude;
+    }
 
     public string AssetsRoot { get; }
 

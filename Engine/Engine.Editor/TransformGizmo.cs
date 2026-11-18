@@ -10,8 +10,11 @@ namespace Engine.Editor;
 
 internal sealed class TransformGizmo
 {
-    private static readonly uint[] AxisColors = [0xFF4D4DFF, 0xFF4DFF4D, 0xFFFF8040];
-    private const uint ActiveColor = 0xFF40FFFF;
+    private static readonly uint[] AxisColors = [0xFF6464D8, 0xFF65B96A, 0xFFD68B59];
+    private const uint ActiveColor = 0xFFB8D477;
+    private const float AxisLineWidth = 2f;
+    private const float ActiveAxisLineWidth = 3f;
+    private const float AxisHitRadius = 13f;
 
     private readonly EditorContext _context;
     private readonly RendererModule _renderer;
@@ -34,8 +37,20 @@ internal sealed class TransformGizmo
         _renderer = renderer;
     }
 
+    public void CancelDrag()
+    {
+        _objectId = null;
+        _axisIndex = -1;
+    }
+
     public bool Draw(ViewportPanel viewport)
     {
+        if (!viewport.CanDrawOverlay)
+        {
+            CancelDrag();
+            return false;
+        }
+
         GameObject? selected = _context.Document.SelectedObject;
         bool consumed = _objectId is not null;
         if (_objectId is Guid activeId)
@@ -72,6 +87,8 @@ internal sealed class TransformGizmo
         }
 
         ImDrawListPtr drawList = viewport.DrawList;
+        if (!HasNativeDrawList(drawList))
+            return false;
         drawList.PushClipRect(viewport.ImageMinimum, viewport.ImageMinimum + viewport.ImageSize, true);
         for (int index = 0; index < axes.Length; index++)
         {
@@ -79,7 +96,7 @@ internal sealed class TransformGizmo
                 continue;
             uint color = _objectId == selected.Id && _axisIndex == index ? ActiveColor : AxisColors[index];
             NumericsVector2 direction = NumericsVector2.Normalize(endpoints[index] - origin);
-            drawList.AddLine(origin, endpoints[index], color, _objectId == selected.Id && _axisIndex == index ? 4f : 3f);
+            drawList.AddLine(origin, endpoints[index], color, _objectId == selected.Id && _axisIndex == index ? ActiveAxisLineWidth : AxisLineWidth);
             DrawHandle(drawList, endpoints[index], direction, color, frame.Mode);
         }
         drawList.PopClipRect();
@@ -97,6 +114,8 @@ internal sealed class TransformGizmo
 
         return consumed || _objectId is not null;
     }
+
+    private static unsafe bool HasNativeDrawList(ImDrawListPtr drawList) => drawList.NativePtr != null;
 
     private void BeginDrag(
         GameObject selected,
@@ -144,9 +163,9 @@ internal sealed class TransformGizmo
                 break;
             case TransformMode.Scale:
                 Vector3 scale = _startScale;
-                float value = MathF.Max(0.01f, GetAxis(scale, _axisIndex) + pixels / 80f);
+                float value = GetAxis(scale, _axisIndex) + pixels / 80f;
                 SetAxis(ref scale, _axisIndex, value);
-                transform.LocalScale = scale;
+                transform.LocalScale = EditorContext.ClampScale(scale);
                 break;
         }
     }
@@ -210,7 +229,7 @@ internal sealed class TransformGizmo
     private static int FindAxis(NumericsVector2 mouse, NumericsVector2 origin, NumericsVector2[] endpoints, bool[] visible)
     {
         int result = -1;
-        float closest = 10f;
+        float closest = AxisHitRadius;
         for (int index = 0; index < endpoints.Length; index++)
         {
             if (!visible[index])
@@ -240,14 +259,14 @@ internal sealed class TransformGizmo
         {
             case TransformMode.Translate:
                 NumericsVector2 perpendicular = new(-direction.Y, direction.X);
-                NumericsVector2 basePoint = endpoint - direction * 11f;
-                drawList.AddTriangleFilled(endpoint, basePoint + perpendicular * 5f, basePoint - perpendicular * 5f, color);
+                NumericsVector2 basePoint = endpoint - direction * 9f;
+                drawList.AddTriangleFilled(endpoint, basePoint + perpendicular * 4f, basePoint - perpendicular * 4f, color);
                 break;
             case TransformMode.Rotate:
-                drawList.AddCircle(endpoint, 6f, color, 16, 3f);
+                drawList.AddCircle(endpoint, 5f, color, 16, 2f);
                 break;
             case TransformMode.Scale:
-                NumericsVector2 half = new(5f, 5f);
+                NumericsVector2 half = new(4f, 4f);
                 drawList.AddRectFilled(endpoint - half, endpoint + half, color);
                 break;
         }

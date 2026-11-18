@@ -204,11 +204,20 @@ internal unsafe sealed class VulkanGraphicsPipeline : IGraphicsPipeline
             RasterizationSamples = SampleCountFlags.Count1Bit,
             MinSampleShading = 1f,
         };
+        uint colorFormatCount = (uint)description.ColorAttachmentFormats.Count;
+        PipelineColorBlendAttachmentState* blendAttachments = null;
+        if (colorFormatCount > 0)
+        {
+            PipelineColorBlendAttachmentState* attachments = stackalloc PipelineColorBlendAttachmentState[(int)colorFormatCount];
+            for (int i = 0; i < description.ColorAttachmentFormats.Count; i++)
+                attachments[i] = blendAttachment;
+            blendAttachments = attachments;
+        }
         PipelineColorBlendStateCreateInfo colorBlend = new()
         {
             SType = StructureType.PipelineColorBlendStateCreateInfo,
-            AttachmentCount = 1,
-            PAttachments = &blendAttachment,
+            AttachmentCount = colorFormatCount,
+            PAttachments = blendAttachments,
         };
 
         PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -247,7 +256,6 @@ internal unsafe sealed class VulkanGraphicsPipeline : IGraphicsPipeline
             PDynamicStates = dynamicStates,
         };
 
-        uint colorFormatCount = (uint)description.ColorAttachmentFormats.Count;
         VkFormat* colorFormats = null;
         if (colorFormatCount > 0)
         {
@@ -355,6 +363,9 @@ internal unsafe sealed class VulkanSampler : ISampler
 {
     private readonly Vk _vk;
     private readonly VulkanDevice _device;
+    private readonly object _lifetimeLock = new();
+    private int _retainedCount;
+    private bool _disposeRequested;
     private bool _disposed;
 
     public Sampler Handle { get; }
@@ -407,7 +418,43 @@ internal unsafe sealed class VulkanSampler : ISampler
         Handle = sampler;
     }
 
+    internal bool BelongsTo(VulkanDevice device) => ReferenceEquals(_device, device);
+
+    internal IDisposable Retain()
+    {
+        lock (_lifetimeLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposeRequested, this);
+            _retainedCount++;
+            return new VulkanResourceLease(ReleaseRetained);
+        }
+    }
+
+    private void ReleaseRetained()
+    {
+        lock (_lifetimeLock)
+        {
+            if (_retainedCount <= 0)
+                throw new InvalidOperationException("Sampler retention count underflow.");
+            _retainedCount--;
+            if (_disposeRequested && _retainedCount == 0)
+                DestroyNative();
+        }
+    }
+
     public void Dispose()
+    {
+        lock (_lifetimeLock)
+        {
+            if (_disposeRequested)
+                return;
+            _disposeRequested = true;
+            if (_retainedCount == 0)
+                DestroyNative();
+        }
+    }
+
+    private void DestroyNative()
     {
         if (_disposed)
             return;

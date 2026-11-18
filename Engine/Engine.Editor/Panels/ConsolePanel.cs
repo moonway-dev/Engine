@@ -56,7 +56,7 @@ public sealed class ConsolePanel : EditorPanel
         DrawLevelToggle("C", LogLevel.Critical);
 
         string category = _filter.Category;
-        ImGui.SetNextItemWidth(180f);
+        ImGui.SetNextItemWidth(140f);
         if (ImGui.InputTextWithHint("##Category", "Category", ref category, 256))
             _filter.Category = category;
         ImGui.SameLine();

@@ -85,6 +85,99 @@ public class NullRHITests
     }
 
     [Fact]
+    public void Texture_CubeAndArrayViews_EnforceDimensionContracts()
+    {
+        NullDevice device = new();
+        using ITexture cube = device.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(8, 8),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Dimension = TextureDimension.Cube,
+            MipLevels = 4,
+        });
+        Assert.Equal(6u, cube.ArrayLayers);
+        using ITextureView cubeView = device.CreateTextureView(cube, TextureViewType.Cube);
+        Assert.Equal(TextureViewType.Cube, cubeView.Type);
+        Assert.Same(cube, cubeView.Texture);
+        Assert.Equal(4u, cubeView.MipLevelCount);
+        Assert.Equal(6u, cubeView.ArrayLayerCount);
+        Assert.Throws<ArgumentException>(() => device.CreateTextureView(cube, TextureViewType.Texture2D));
+        using ITextureView storageFace = device.CreateTextureView(cube, new TextureViewDescription
+        {
+            Type = TextureViewType.Texture2DArray,
+            BaseMipLevel = 2,
+            MipLevelCount = 1,
+            BaseArrayLayer = 3,
+            ArrayLayerCount = 1,
+        });
+        Assert.Equal(2u, storageFace.BaseMipLevel);
+        Assert.Equal(1u, storageFace.MipLevelCount);
+        Assert.Equal(3u, storageFace.BaseArrayLayer);
+        Assert.Equal(1u, storageFace.ArrayLayerCount);
+        Assert.Throws<ArgumentOutOfRangeException>(() => device.CreateTextureView(cube, new TextureViewDescription
+        {
+            Type = TextureViewType.Texture2DArray,
+            BaseMipLevel = 4,
+            MipLevelCount = 1,
+        }));
+
+        using ITexture array = device.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(8, 4),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Dimension = TextureDimension.Texture2DArray,
+            ArrayLayers = 3,
+        });
+        using ITextureView arrayView = device.CreateTextureView(array, TextureViewType.Texture2DArray);
+        Assert.Equal(3u, array.ArrayLayers);
+        Assert.Equal(TextureViewType.Texture2DArray, arrayView.Type);
+        Assert.Throws<ArgumentException>(() => device.CreateTextureView(array, TextureViewType.Texture2D));
+
+        Assert.Throws<ArgumentException>(() => device.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(8, 4),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Dimension = TextureDimension.Cube,
+        }));
+        Assert.Throws<ArgumentException>(() => device.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(8, 8),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Dimension = TextureDimension.Texture2D,
+            ArrayLayers = 2,
+        }));
+    }
+
+    [Fact]
+    public void TextureSubresources_ValidateMipLayerAndPayload()
+    {
+        NullDevice device = new();
+        using ITexture texture = device.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(4, 4),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Dimension = TextureDimension.Texture2DArray,
+            MipLevels = 3,
+            ArrayLayers = 2,
+        });
+        TextureSubresourceData valid = new()
+        {
+            MipLevel = 2,
+            ArrayLayer = 1,
+            Data = new byte[4],
+        };
+        device.UploadTextureSubresources(texture, [valid]);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => device.UploadTextureSubresources(texture, [valid with { MipLevel = 3 }]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => device.UploadTextureSubresources(texture, [valid with { ArrayLayer = 2 }]));
+        Assert.Throws<ArgumentException>(() => device.UploadTextureSubresources(texture, [valid with { Data = new byte[3] }]));
+        Assert.Throws<ArgumentException>(() => device.UploadTextureSubresources(texture, [valid, valid]));
+        Assert.Throws<NotSupportedException>(() => TextureUploadValidation.ValidateSubresources(
+            new NullTexture(new TextureDescription { Extent = new Size2D(1, 1), Format = TextureFormat.Unknown }),
+            [valid with { MipLevel = 0, ArrayLayer = 0, Data = ReadOnlyMemory<byte>.Empty }]));
+    }
+
+    [Fact]
     public void CommandBuffer_EnforcesState()
     {
         using NullRHI rhi = CreateInitialized(out _);
@@ -114,6 +207,22 @@ public class NullRHITests
         Assert.Equal(1u, cmd.DrawCalls);
         Assert.Equal(1u, cmd.DrawIndexedCalls);
         Assert.True(cmd.HasRecorded);
+    }
+
+    [Fact]
+    public void GpuTimestamps_AreUnsupportedAndDoNotPublishFakeResults()
+    {
+        using NullRHI rhi = CreateInitialized(out _);
+        using NullCommandBuffer commandBuffer = (NullCommandBuffer)rhi.Device.CreateCommandBuffer();
+        Assert.False(rhi.SupportsGpuTimestamps);
+        Assert.Null(rhi.LatestGpuFrameTiming);
+
+        commandBuffer.Begin();
+        commandBuffer.BeginTimestamp("Pass");
+        commandBuffer.EndTimestamp();
+        commandBuffer.End();
+
+        Assert.Null(rhi.LatestGpuFrameTiming);
     }
 
     [Fact]

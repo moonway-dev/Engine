@@ -33,6 +33,29 @@ public class RenderGraphTests
         });
 
     [Fact]
+    public void Execute_TimestampsOnlyExecutedPasses()
+    {
+        (RenderGraph graph, NullDevice device, NullCommandBuffer commandBuffer) = CreateGraph();
+        using ITexture imported = CreateTexture(device, usage: TextureUsage.ColorAttachment);
+        using (graph)
+        using (commandBuffer)
+        using (imported)
+        {
+            RenderGraphResource output = graph.ImportTexture("Output", imported, ImageLayout.ColorAttachmentOptimal);
+            RenderGraphPass pass = graph.AddGraphicsPass("Executed", (_, _) => { });
+            graph.WritesColor(pass, output);
+            RenderGraphPass skipped = graph.AddGraphicsPass("Skipped", (_, _) => { });
+            graph.ReadsColor(skipped, output);
+            skipped.ShouldExecute = () => false;
+
+            graph.Execute(commandBuffer);
+
+            Assert.Equal(0, commandBuffer.TimestampScopeCount);
+            Assert.Equal(1, commandBuffer.CompletedTimestampScopeCount);
+        }
+    }
+
+    [Fact]
     public void Compile_RejectsReadBeforeWriteForTransientTexture()
     {
         (RenderGraph graph, _, _) = CreateGraph();
@@ -105,6 +128,27 @@ public class RenderGraphTests
             Assert.True(access.Writes);
             Assert.Equal(ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite, access.State.Access);
             Assert.Equal(PipelineStages.ComputeShader, access.State.Stages);
+        }
+    }
+
+    [Fact]
+    public void SetColorClear_UpdatesCompiledColorAttachmentWithoutRecompiling()
+    {
+        (RenderGraph graph, _, _) = CreateGraph();
+        using (graph)
+        {
+            RenderGraphResource texture = graph.DeclareTransientTexture("Color", TextureFormat.R8G8B8A8UNorm, 8, 8);
+            RenderGraphPass pass = graph.AddGraphicsPass("Draw", (_, _) => { });
+            graph.WritesColor(pass, texture, clear: true, new Vector4(0.1f, 0.2f, 0.3f, 1f));
+            RenderGraphCompilation compilation = graph.Compile();
+            RenderGraphCompiledAccess access = Assert.Single(Assert.Single(compilation.OrderedPasses).CompiledAccesses);
+            Vector4 newColor = new(0.7f, 0.6f, 0.5f, 1f);
+
+            graph.SetColorClear(pass, texture, newColor);
+
+            Assert.Same(compilation, graph.Compilation);
+            Assert.Equal(newColor, pass.Accesses[0].ClearColor);
+            Assert.Equal(newColor, access.Declaration.ClearColor);
         }
     }
 

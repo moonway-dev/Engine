@@ -194,7 +194,7 @@ public sealed class ProjectBrowserPanel : EditorPanel
         if (!ImGui.BeginPopupModal("Create Material", ref open, ImGuiWindowFlags.AlwaysAutoResize))
             return;
         ImGui.TextUnformatted("Path relative to Assets");
-        ImGui.SetNextItemWidth(360f);
+        ImGui.SetNextItemWidth(280f);
         ImGui.InputText("##MaterialPath", ref _createPath, 1024);
         if (_error is not null)
             ImGui.TextWrapped(_error);

@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Backends\Engine.Backends.Null\Engine.Backends.Null.csproj" />
+    <ProjectReference Include="..\..\Backends\Engine.Backends.Vulkan\Engine.Backends.Vulkan.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.RHI\Engine.RHI.csproj" />
   </ItemGroup>
   <ItemGroup>

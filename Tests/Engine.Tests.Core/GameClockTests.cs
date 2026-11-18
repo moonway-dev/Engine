@@ -39,6 +39,20 @@ public class GameClockTests
     }
 
     [Fact]
+    public void MaxFixedSteps_DropsExcessWholeStepsAndKeepsInterpolationRemainder()
+    {
+        GameClock clock = new() { MaxFixedStepsPerFrame = 2 };
+        clock.Tick(0.2);
+        Assert.True(clock.ConsumeFixedStep());
+        Assert.True(clock.ConsumeFixedStep());
+        Assert.False(clock.ConsumeFixedStep());
+
+        Assert.Equal(0, clock.FixedStepsPending);
+        Assert.InRange(clock.FixedInterpolationAlpha, 0f, 1f);
+        Assert.True(clock.DroppedFixedTimeSeconds > 0f);
+    }
+
+    [Fact]
     public void TimeScale_ScalesDelta()
     {
         GameClock clock = new() { TimeScale = 0.5f };

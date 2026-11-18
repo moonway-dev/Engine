@@ -1,6 +1,7 @@
 using VkSemaphore = Silk.NET.Vulkan.Semaphore;
 using Engine.Core;
 using Engine.Mathematics;
+using Engine.RHI;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -20,11 +21,29 @@ internal unsafe sealed class VulkanPhysicalDevice
 
     public uint GraphicsFamilyIndex { get; }
 
+    public bool GraphicsSubmissionQueueSupportsCompute { get; }
+
     public uint PresentFamilyIndex { get; }
 
     public uint ComputeFamilyIndex { get; }
 
     public uint TransferFamilyIndex { get; }
+
+    public uint GraphicsTimestampValidBits { get; }
+
+    public bool SupportsStorageImageReadWithoutFormat { get; }
+
+    public bool SupportsStorageImageWriteWithoutFormat { get; }
+
+    public bool SupportsR16G16B16A16FloatStorageImage { get; }
+
+    public bool SupportsCompute { get; }
+
+    public bool SupportsDynamicRendering { get; }
+
+    public bool SupportsSynchronization2 { get; }
+
+    public VulkanRayTracingCapabilities RayTracing { get; }
 
     public string DeviceName
     {
@@ -43,9 +62,17 @@ internal unsafe sealed class VulkanPhysicalDevice
         in PhysicalDeviceProperties properties,
         in PhysicalDeviceMemoryProperties memoryProperties,
         uint graphicsFamily,
+        bool graphicsSubmissionQueueSupportsCompute,
         uint presentFamily,
         uint computeFamily,
-        uint transferFamily)
+        uint transferFamily,
+        uint graphicsTimestampValidBits,
+        bool supportsDynamicRendering,
+        bool supportsSynchronization2,
+        bool supportsStorageImageReadWithoutFormat,
+        bool supportsStorageImageWriteWithoutFormat,
+        bool supportsR16G16B16A16FloatStorageImage,
+        VulkanRayTracingCapabilities rayTracing)
     {
         _vk = vk;
         _instance = instance;
@@ -53,9 +80,21 @@ internal unsafe sealed class VulkanPhysicalDevice
         Properties = properties;
         MemoryProperties = memoryProperties;
         GraphicsFamilyIndex = graphicsFamily;
+        GraphicsSubmissionQueueSupportsCompute = graphicsSubmissionQueueSupportsCompute;
         PresentFamilyIndex = presentFamily;
         ComputeFamilyIndex = computeFamily;
         TransferFamilyIndex = transferFamily;
+        GraphicsTimestampValidBits = graphicsTimestampValidBits;
+        SupportsDynamicRendering = supportsDynamicRendering;
+        SupportsSynchronization2 = supportsSynchronization2;
+        SupportsStorageImageReadWithoutFormat = supportsStorageImageReadWithoutFormat;
+        SupportsStorageImageWriteWithoutFormat = supportsStorageImageWriteWithoutFormat;
+        SupportsR16G16B16A16FloatStorageImage = supportsR16G16B16A16FloatStorageImage;
+        RayTracing = rayTracing;
+        SupportsCompute = graphicsSubmissionQueueSupportsCompute
+            && supportsStorageImageReadWithoutFormat
+            && supportsStorageImageWriteWithoutFormat
+            && supportsR16G16B16A16FloatStorageImage;
     }
 
     public static VulkanPhysicalDevice Select(
@@ -64,8 +103,12 @@ internal unsafe sealed class VulkanPhysicalDevice
         KhrSurface? khrSurface,
         SurfaceKHR? surface,
         int? preferredDeviceIndex,
+        RayTracingMode rayTracingMode,
         ILogger log)
     {
+        if (!Enum.IsDefined(rayTracingMode))
+            throw new ArgumentOutOfRangeException(nameof(rayTracingMode));
+
         uint count = 0;
         vk.EnumeratePhysicalDevices(instance, &count, null);
         if (count == 0)
@@ -99,9 +142,38 @@ internal unsafe sealed class VulkanPhysicalDevice
                 continue;
             }
 
+            PhysicalDeviceVulkan13Features vulkan13Features = new()
+            {
+                SType = StructureType.PhysicalDeviceVulkan13Features,
+            };
+            PhysicalDeviceFeatures2 queriedFeatures = new()
+            {
+                SType = StructureType.PhysicalDeviceFeatures2,
+                PNext = &vulkan13Features,
+            };
+            vk.GetPhysicalDeviceFeatures2(device, &queriedFeatures);
+            if (!vulkan13Features.DynamicRendering || !vulkan13Features.Synchronization2)
+            {
+                List<string> missing = [];
+                if (!vulkan13Features.DynamicRendering)
+                    missing.Add("dynamicRendering feature");
+                if (!vulkan13Features.Synchronization2)
+                    missing.Add("synchronization2 feature");
+                rejected.Add($"{name} (required Vulkan 1.3 features unavailable: {string.Join(", ", missing)})");
+                continue;
+            }
+
             if (!TryFindQueueFamilies(vk, device, khrSurface, surface, out QueueFamilies families))
             {
                 rejected.Add($"{name} (no graphics/present queue pair)");
+                continue;
+            }
+
+            VulkanRayTracingCapabilities rayTracing = VulkanRayTracingCapabilities.Query(
+                vk, device, families.GraphicsSubmissionSupportsCompute);
+            if (rayTracingMode == RayTracingMode.Required && !rayTracing.Pipelines)
+            {
+                rejected.Add($"{name} (ray tracing required: {rayTracing.UnavailableReason})");
                 continue;
             }
 
@@ -119,7 +191,17 @@ internal unsafe sealed class VulkanPhysicalDevice
                 if (memoryProperties.MemoryHeaps[(int)h].Flags.HasFlag(MemoryHeapFlags.DeviceLocalBit))
                     score += (long)(memoryProperties.MemoryHeaps[(int)h].Size / (1024UL * 1024UL * 1024UL));
             }
-            score += SupportsDeviceExtension(vk, device, VulkanHelpers.ExtensionRayQuery) ? 300 : 0;
+
+            PhysicalDeviceFeatures coreFeatures = default;
+            vk.GetPhysicalDeviceFeatures(device, &coreFeatures);
+            FormatProperties hdrStorageFormatProperties = default;
+            vk.GetPhysicalDeviceFormatProperties(device, Format.R16G16B16A16Sfloat, &hdrStorageFormatProperties);
+            bool supportsStorageImageReadWithoutFormat = coreFeatures.ShaderStorageImageReadWithoutFormat;
+            bool supportsStorageImageWriteWithoutFormat = coreFeatures.ShaderStorageImageWriteWithoutFormat;
+            bool supportsHdrStorageImage = hdrStorageFormatProperties.OptimalTilingFeatures.HasFlag(FormatFeatureFlags.StorageImageBit);
+
+            if (rayTracingMode == RayTracingMode.Auto && rayTracing.Pipelines)
+                score += 300;
             if (preferredDeviceIndex.HasValue)
                 score += i == (uint)preferredDeviceIndex.Value ? 100000 : -100000;
 
@@ -129,7 +211,18 @@ internal unsafe sealed class VulkanPhysicalDevice
                 bestScore = score;
                 selected = new VulkanPhysicalDevice(
                     vk, instance, device, properties, memoryProperties,
-                    families.Graphics, families.Present, families.Compute, families.Transfer);
+                    families.Graphics,
+                    families.GraphicsSubmissionSupportsCompute,
+                    families.Present,
+                    families.Compute,
+                    families.Transfer,
+                    families.GraphicsTimestampValidBits,
+                    vulkan13Features.DynamicRendering,
+                    vulkan13Features.Synchronization2,
+                    supportsStorageImageReadWithoutFormat,
+                    supportsStorageImageWriteWithoutFormat,
+                    supportsHdrStorageImage,
+                    rayTracing);
             }
         }
 
@@ -208,16 +301,30 @@ internal unsafe sealed class VulkanPhysicalDevice
         if (transfer < 0)
             transfer = graphics;
 
-        families = new QueueFamilies((uint)graphics, (uint)present, (uint)compute, (uint)transfer);
+        families = new QueueFamilies(
+            (uint)graphics,
+            queueFamilies[graphics].QueueFlags.HasFlag(QueueFlags.ComputeBit),
+            (uint)present,
+            (uint)compute,
+            (uint)transfer,
+            queueFamilies[graphics].TimestampValidBits);
         return true;
     }
 
-    private struct QueueFamilies(uint graphics, uint present, uint compute, uint transfer)
+    private struct QueueFamilies(
+        uint graphics,
+        bool graphicsSubmissionSupportsCompute,
+        uint present,
+        uint compute,
+        uint transfer,
+        uint graphicsTimestampValidBits)
     {
         public uint Graphics = graphics;
+        public bool GraphicsSubmissionSupportsCompute = graphicsSubmissionSupportsCompute;
         public uint Present = present;
         public uint Compute = compute;
         public uint Transfer = transfer;
+        public uint GraphicsTimestampValidBits = graphicsTimestampValidBits;
     }
 
     public static bool SupportsDeviceExtension(Vk vk, PhysicalDevice device, string extensionName)

@@ -12,5 +12,6 @@ public sealed class RHIConfiguration
     public bool VSync { get; set; } = true;
     public uint FramesInFlight { get; set; } = 2;
     public int? PreferredDeviceIndex { get; set; }
+    public RayTracingMode RayTracing { get; set; } = RayTracingMode.Auto;
     public Size2D HeadlessExtent { get; set; } = new(1280, 720);
 }

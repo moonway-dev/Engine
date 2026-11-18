@@ -25,6 +25,10 @@ public interface IRHI : IDisposable
 
     uint FramesInFlight { get; }
 
+    bool SupportsGpuTimestamps { get; }
+
+    GpuFrameTiming? LatestGpuFrameTiming { get; }
+
     void Initialize(RHIConfiguration configuration, SurfaceSource? surfaceSource);
 
     FrameStatus BeginFrame();

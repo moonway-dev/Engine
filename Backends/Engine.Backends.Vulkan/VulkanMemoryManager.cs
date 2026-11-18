@@ -37,24 +37,26 @@ internal unsafe sealed class VulkanMemoryManager : IMemoryAllocator
         }
     }
 
-    public MemoryAllocation Allocate(MemoryRequirements requirements, MemoryUsage usage, string debugName)
+    public MemoryAllocation Allocate(MemoryRequirements requirements, MemoryUsage usage, string debugName, bool deviceAddress = false)
     {
         lock (_lock)
         {
             bool hostVisible = usage is MemoryUsage.CpuToGpu or MemoryUsage.CpuOnly or MemoryUsage.GpuToCpu;
             MemoryPropertyFlags requiredFlags = VulkanHelpers.ToVulkanMemoryFlags(usage);
+            if (deviceAddress && !_device.SupportsBufferDeviceAddress)
+                throw new NotSupportedException("Buffer device addresses are unavailable on this Vulkan device.");
             if (requirements.Size >= DedicatedAllocationThreshold)
-                return AllocateDedicated(requirements, requiredFlags, hostVisible, debugName);
+                return AllocateDedicated(requirements, requiredFlags, hostVisible, deviceAddress, debugName);
 
-            VulkanMemoryHeap? heap = FindHeap(hostVisible, requirements.Size, requirements.MemoryTypeBits, requiredFlags);
+            VulkanMemoryHeap? heap = FindHeap(hostVisible, deviceAddress, requirements.Size, requirements.MemoryTypeBits);
             if (heap is null)
             {
-                heap = CreateHeap(hostVisible ? HostHeapSize : DeviceHeapSize, hostVisible, requirements.MemoryTypeBits);
+                heap = CreateHeap(hostVisible ? HostHeapSize : DeviceHeapSize, hostVisible, deviceAddress, requirements.MemoryTypeBits);
                 _heaps.Add(heap);
             }
             if (!heap.Allocator.TryAllocate(requirements.Size, requirements.Alignment, out ulong offset))
             {
-                heap = CreateHeap(hostVisible ? HostHeapSize : DeviceHeapSize, hostVisible, requirements.MemoryTypeBits);
+                heap = CreateHeap(hostVisible ? HostHeapSize : DeviceHeapSize, hostVisible, deviceAddress, requirements.MemoryTypeBits);
                 _heaps.Add(heap);
                 if (!heap.Allocator.TryAllocate(requirements.Size, requirements.Alignment, out offset))
                     throw new VulkanException(Result.ErrorOutOfDeviceMemory, $"Suballocation of {requirements.Size} bytes for '{debugName}'");
@@ -66,13 +68,19 @@ internal unsafe sealed class VulkanMemoryManager : IMemoryAllocator
         }
     }
 
-    private MemoryAllocation AllocateDedicated(MemoryRequirements requirements, MemoryPropertyFlags requiredFlags, bool hostVisible, string debugName)
+    private MemoryAllocation AllocateDedicated(MemoryRequirements requirements, MemoryPropertyFlags requiredFlags, bool hostVisible, bool deviceAddress, string debugName)
     {
         if (!_physical.FindMemoryType(requirements.MemoryTypeBits, requiredFlags, out uint memoryTypeIndex))
             throw new VulkanException(Result.ErrorOutOfDeviceMemory, $"No memory type for dedicated allocation '{debugName}'");
+        MemoryAllocateFlagsInfo flagsInfo = new()
+        {
+            SType = StructureType.MemoryAllocateFlagsInfo,
+            Flags = deviceAddress ? MemoryAllocateFlags.DeviceAddressBit : 0,
+        };
         MemoryAllocateInfo allocateInfo = new()
         {
             SType = StructureType.MemoryAllocateInfo,
+            PNext = deviceAddress ? &flagsInfo : null,
             AllocationSize = requirements.Size,
             MemoryTypeIndex = memoryTypeIndex,
         };
@@ -91,11 +99,11 @@ internal unsafe sealed class VulkanMemoryManager : IMemoryAllocator
         return allocation;
     }
 
-    private VulkanMemoryHeap? FindHeap(bool hostVisible, ulong size, uint memoryTypeBits, MemoryPropertyFlags requiredFlags)
+    private VulkanMemoryHeap? FindHeap(bool hostVisible, bool deviceAddress, ulong size, uint memoryTypeBits)
     {
         foreach (VulkanMemoryHeap heap in _heaps)
         {
-            if (heap.HostVisible != hostVisible)
+            if (heap.HostVisible != hostVisible || heap.DeviceAddress != deviceAddress)
                 continue;
             if ((memoryTypeBits & (1u << (int)heap.MemoryTypeIndex)) == 0)
                 continue;
@@ -106,7 +114,7 @@ internal unsafe sealed class VulkanMemoryManager : IMemoryAllocator
         return null;
     }
 
-    private VulkanMemoryHeap CreateHeap(ulong capacity, bool hostVisible, uint memoryTypeBits)
+    private VulkanMemoryHeap CreateHeap(ulong capacity, bool hostVisible, bool deviceAddress, uint memoryTypeBits)
     {
         MemoryPropertyFlags flags = hostVisible
             ? MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit
@@ -114,9 +122,15 @@ internal unsafe sealed class VulkanMemoryManager : IMemoryAllocator
         if (!_physical.FindMemoryType(memoryTypeBits, flags, out uint memoryTypeIndex))
             throw new VulkanException(Result.ErrorOutOfDeviceMemory, "No memory type for heap allocation");
 
+        MemoryAllocateFlagsInfo allocateFlags = new()
+        {
+            SType = StructureType.MemoryAllocateFlagsInfo,
+            Flags = deviceAddress ? MemoryAllocateFlags.DeviceAddressBit : 0,
+        };
         MemoryAllocateInfo allocateInfo = new()
         {
             SType = StructureType.MemoryAllocateInfo,
+            PNext = deviceAddress ? &allocateFlags : null,
             AllocationSize = capacity,
             MemoryTypeIndex = memoryTypeIndex,
         };
@@ -128,8 +142,8 @@ internal unsafe sealed class VulkanMemoryManager : IMemoryAllocator
         if (hostVisible)
             VulkanHelpers.Throw(_vk.MapMemory(_device.Handle, memory, 0, ulong.MaxValue, 0, &mappedBase), "vkMapMemory (heap)");
 
-        _log.Debug($"GPU memory heap created: {capacity / (1024 * 1024)} MB {(hostVisible ? "host-visible" : "device-local")}");
-        return new VulkanMemoryHeap(_vk, _device, memory, capacity, hostVisible, mappedBase, memoryTypeIndex);
+        _log.Debug($"GPU memory heap created: {capacity / (1024 * 1024)} MB {(hostVisible ? "host-visible" : "device-local")}{(deviceAddress ? ", device-addressable" : string.Empty)}");
+        return new VulkanMemoryHeap(_vk, _device, memory, capacity, hostVisible, deviceAddress, mappedBase, memoryTypeIndex);
     }
 
     public void Free(MemoryAllocation allocation)
@@ -215,19 +229,22 @@ internal unsafe sealed class VulkanMemoryHeap : IDisposable
 
     public bool HostVisible { get; }
 
+    public bool DeviceAddress { get; }
+
     public uint MemoryTypeIndex { get; }
 
     public void* MappedBase { get; }
 
     public MemoryBlockAllocator Allocator { get; }
 
-    public VulkanMemoryHeap(Vk vk, VulkanDevice device, DeviceMemory memory, ulong capacity, bool hostVisible, void* mappedBase, uint memoryTypeIndex)
+    public VulkanMemoryHeap(Vk vk, VulkanDevice device, DeviceMemory memory, ulong capacity, bool hostVisible, bool deviceAddress, void* mappedBase, uint memoryTypeIndex)
     {
         _vk = vk;
         _device = device;
         Memory = memory;
         Capacity = capacity;
         HostVisible = hostVisible;
+        DeviceAddress = deviceAddress;
         MemoryTypeIndex = memoryTypeIndex;
         MappedBase = mappedBase;
         Allocator = new MemoryBlockAllocator(0, capacity);

@@ -1,0 +1,2552 @@
+{
+  "version": 1,
+  "name": "PhysicsPlayground",
+  "objects": [
+    {
+      "id": "a1000000-0000-0000-0000-000000000001",
+      "name": "GroundPlane",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.38,
+              0.42,
+              0.48
+            ],
+            "Metallic": 0.05,
+            "ResourceKey": "ground",
+            "Roughness": 0.88,
+            "UvScale": [
+              12,
+              12
+            ]
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              24,
+              0.5,
+              24
+            ],
+            "Center": [
+              0,
+              -0.25,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000001",
+      "name": "Box_01",
+      "active": true,
+      "transform": {
+        "position": [
+          -6.0,
+          2.4,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0.0,
+          0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000002",
+      "name": "Sphere_02",
+      "active": true,
+      "transform": {
+        "position": [
+          -4.0,
+          4.6,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000003",
+      "name": "Capsule_03",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.0,
+          6.800000000000001,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000004",
+      "name": "Box_04",
+      "active": true,
+      "transform": {
+        "position": [
+          0.0,
+          3.5,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0.5555702330196022,
+          0,
+          0.8314696123025452
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000005",
+      "name": "Sphere_05",
+      "active": true,
+      "transform": {
+        "position": [
+          2.0,
+          5.7,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000006",
+      "name": "Capsule_06",
+      "active": true,
+      "transform": {
+        "position": [
+          4.0,
+          2.4,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000007",
+      "name": "Box_07",
+      "active": true,
+      "transform": {
+        "position": [
+          6.0,
+          4.6,
+          -5.0
+        ],
+        "rotation": [
+          0,
+          0.3826834323650898,
+          0,
+          0.9238795325112867
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000008",
+      "name": "Sphere_08",
+      "active": true,
+      "transform": {
+        "position": [
+          -6.0,
+          6.800000000000001,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000009",
+      "name": "Capsule_09",
+      "active": true,
+      "transform": {
+        "position": [
+          -4.0,
+          3.5,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000a",
+      "name": "Box_10",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.0,
+          5.7,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0.19509032201612825,
+          0,
+          0.9807852804032304
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000b",
+      "name": "Sphere_11",
+      "active": true,
+      "transform": {
+        "position": [
+          0.0,
+          2.4,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000c",
+      "name": "Capsule_12",
+      "active": true,
+      "transform": {
+        "position": [
+          2.0,
+          4.6,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000d",
+      "name": "Box_13",
+      "active": true,
+      "transform": {
+        "position": [
+          4.0,
+          6.800000000000001,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0.0,
+          0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000e",
+      "name": "Sphere_14",
+      "active": true,
+      "transform": {
+        "position": [
+          6.0,
+          3.5,
+          -3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000f",
+      "name": "Capsule_15",
+      "active": true,
+      "transform": {
+        "position": [
+          -6.0,
+          5.7,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000010",
+      "name": "Box_16",
+      "active": true,
+      "transform": {
+        "position": [
+          -4.0,
+          2.4,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0.5555702330196022,
+          0,
+          0.8314696123025452
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000011",
+      "name": "Sphere_17",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.0,
+          4.6,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000012",
+      "name": "Capsule_18",
+      "active": true,
+      "transform": {
+        "position": [
+          0.0,
+          6.800000000000001,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000013",
+      "name": "Box_19",
+      "active": true,
+      "transform": {
+        "position": [
+          2.0,
+          3.5,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0.3826834323650898,
+          0,
+          0.9238795325112867
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000014",
+      "name": "Sphere_20",
+      "active": true,
+      "transform": {
+        "position": [
+          4.0,
+          5.7,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000015",
+      "name": "Capsule_21",
+      "active": true,
+      "transform": {
+        "position": [
+          6.0,
+          2.4,
+          -1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000016",
+      "name": "Box_22",
+      "active": true,
+      "transform": {
+        "position": [
+          -6.0,
+          4.6,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0.19509032201612825,
+          0,
+          0.9807852804032304
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000017",
+      "name": "Sphere_23",
+      "active": true,
+      "transform": {
+        "position": [
+          -4.0,
+          6.800000000000001,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000018",
+      "name": "Capsule_24",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.0,
+          3.5,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000019",
+      "name": "Box_25",
+      "active": true,
+      "transform": {
+        "position": [
+          0.0,
+          5.7,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0.0,
+          0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000001a",
+      "name": "Sphere_26",
+      "active": true,
+      "transform": {
+        "position": [
+          2.0,
+          2.4,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000001b",
+      "name": "Capsule_27",
+      "active": true,
+      "transform": {
+        "position": [
+          4.0,
+          4.6,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000001c",
+      "name": "Box_28",
+      "active": true,
+      "transform": {
+        "position": [
+          6.0,
+          6.800000000000001,
+          1.0
+        ],
+        "rotation": [
+          0,
+          0.5555702330196022,
+          0,
+          0.8314696123025452
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000001d",
+      "name": "Sphere_29",
+      "active": true,
+      "transform": {
+        "position": [
+          -6.0,
+          3.5,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000001e",
+      "name": "Capsule_30",
+      "active": true,
+      "transform": {
+        "position": [
+          -4.0,
+          5.7,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000001f",
+      "name": "Box_31",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.0,
+          2.4,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0.3826834323650898,
+          0,
+          0.9238795325112867
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000020",
+      "name": "Sphere_32",
+      "active": true,
+      "transform": {
+        "position": [
+          0.0,
+          4.6,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000021",
+      "name": "Capsule_33",
+      "active": true,
+      "transform": {
+        "position": [
+          2.0,
+          6.800000000000001,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000022",
+      "name": "Box_34",
+      "active": true,
+      "transform": {
+        "position": [
+          4.0,
+          3.5,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0.19509032201612825,
+          0,
+          0.9807852804032304
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000023",
+      "name": "Sphere_35",
+      "active": true,
+      "transform": {
+        "position": [
+          6.0,
+          5.7,
+          3.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000024",
+      "name": "Capsule_36",
+      "active": true,
+      "transform": {
+        "position": [
+          -6.0,
+          2.4,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000025",
+      "name": "Box_37",
+      "active": true,
+      "transform": {
+        "position": [
+          -4.0,
+          4.6,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0.0,
+          0,
+          1.0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.32,
+              0.24
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000026",
+      "name": "Sphere_38",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.0,
+          6.800000000000001,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.58,
+              0.9
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000027",
+      "name": "Capsule_39",
+      "active": true,
+      "transform": {
+        "position": [
+          0.0,
+          3.5,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.76,
+              0.48
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.5
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000028",
+      "name": "Box_40",
+      "active": true,
+      "transform": {
+        "position": [
+          2.0,
+          5.7,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0.5555702330196022,
+          0,
+          0.8314696123025452
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.92,
+              0.68,
+              0.22
+            ],
+            "Metallic": 0.12,
+            "ResourceKey": "cube",
+            "Roughness": 0.62,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.85
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000029",
+      "name": "Sphere_41",
+      "active": true,
+      "transform": {
+        "position": [
+          4.0,
+          2.4,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.68,
+              0.38,
+              0.82
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 0.8
+          }
+        },
+        {
+          "type": "SphereCollider",
+          "properties": {
+            "Radius": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000002a",
+      "name": "Capsule_42",
+      "active": true,
+      "transform": {
+        "position": [
+          6.0,
+          4.6,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          -0.03998933418663416,
+          0.9992001066609779
+        ],
+        "scale": [
+          0.48,
+          0.9,
+          0.48
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.25,
+              0.78,
+              0.78
+            ],
+            "Metallic": 0.28,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "Kind": 1,
+            "Mass": 1.15
+          }
+        },
+        {
+          "type": "CapsuleCollider",
+          "properties": {
+            "Radius": 1,
+            "Height": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "a1000000-0000-0000-0000-00000000000a",
+      "name": "Sun",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0.22923979,
+          0.77074516,
+          0.41759998,
+          -0.42309737
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Light",
+          "properties": {
+            "Color": [
+              1,
+              0.97,
+              0.92
+            ],
+            "Intensity": 3.2,
+            "Kind": 0,
+            "Range": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "a1000000-0000-0000-0000-00000000000b",
+      "name": "BlueLamp",
+      "active": true,
+      "transform": {
+        "position": [
+          -3.2,
+          5.2,
+          1.6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Light",
+          "properties": {
+            "Color": [
+              0.35,
+              0.55,
+              1
+            ],
+            "Intensity": 14,
+            "Kind": 1,
+            "Range": 18
+          }
+        }
+      ]
+    },
+    {
+      "id": "a1000000-0000-0000-0000-00000000000c",
+      "name": "MainCamera",
+      "active": true,
+      "transform": {
+        "position": [
+          10,
+          9,
+          15
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Camera",
+          "properties": {
+            "FarPlane": 500,
+            "FieldOfViewY": 0.9599311,
+            "NearPlane": 0.1
+          }
+        }
+      ]
+    }
+  ]
+}

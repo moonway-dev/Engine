@@ -9,6 +9,7 @@ using Engine.Platform;
 using Engine.RHI;
 using Engine.Rendering;
 using Engine.Scene;
+using Engine.Scripting;
 
 namespace Basic3D;
 
@@ -20,7 +21,9 @@ internal static class Program
         RhiModule rhiModule = CreateRhiModule(options);
         RendererModule renderer = new(rhiModule, Path.Combine(AppContext.BaseDirectory, "Shaders"));
         PhysicsModule physics = new();
-        Basic3DModule module = new(options, rhiModule, renderer, physics);
+        string projectRoot = ResolveProjectRoot();
+        ScriptingModule scripting = new(Path.Combine(projectRoot, "Scripts"));
+        Basic3DModule module = new(options, rhiModule, renderer, physics, scripting);
 
         ApplicationBuilder builder = ApplicationBuilder
             .Create()
@@ -33,9 +36,10 @@ internal static class Program
                 Height = options.Height,
             }))
             .AddModule(rhiModule)
-            .AddModule(renderer)
+            .AddModule(scripting)
             .AddModule(physics)
-            .AddModule(module);
+            .AddModule(module)
+            .AddModule(renderer);
         if (options.Editor)
         {
             EditorModule editor = new(
@@ -43,12 +47,38 @@ internal static class Program
                 renderer,
                 Path.Combine(AppContext.BaseDirectory, "Shaders"),
                 Path.Combine(AppContext.BaseDirectory, "Assets"));
+            editor.ScriptRuntime = scripting;
             builder.AddModule(editor);
             module.SetEditor(editor);
         }
         Application application = builder.Build();
         application.Run();
         return application.Context.ExitCode;
+    }
+
+    internal static string ResolveProjectRoot()
+    {
+        List<string> roots =
+        [
+            AppContext.BaseDirectory,
+            Directory.GetCurrentDirectory(),
+        ];
+        string? current = Directory.GetCurrentDirectory();
+        for (int i = 0; i < 6 && current is not null; i++)
+        {
+            roots.Add(current);
+            current = Path.GetDirectoryName(current.TrimEnd(Path.DirectorySeparatorChar));
+        }
+        List<string> candidates = [];
+        foreach (string root in roots)
+            candidates.Add(Path.Combine(root, "Projects", "SampleProject"));
+        foreach (string candidate in candidates)
+        {
+            if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "Models", "cube.obj")))
+                return candidate;
+        }
+        throw new DirectoryNotFoundException(
+            "Projects/SampleProject with Models/cube.obj not found. Searched: " + string.Join(", ", candidates.Select(c => Path.GetFullPath(c))));
     }
 
     private static RhiModule CreateRhiModule(SampleOptions options)
@@ -136,7 +166,8 @@ internal sealed class Basic3DModule(
     SampleOptions options,
     RhiModule rhiModule,
     RendererModule renderer,
-    PhysicsModule physics) : IUpdatableModule
+    PhysicsModule physics,
+    ScriptingModule scripting) : IUpdatableModule
 {
     private IEngineContext? _context;
     private IWindow? _window;
@@ -156,6 +187,7 @@ internal sealed class Basic3DModule(
     private float _orbitDistance = 9f;
     private readonly List<GameObject> _rotatingObjects = [];
     private readonly Dictionary<string, Mesh> _meshes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PhysicsMeshData> _physicsMeshes = new(StringComparer.OrdinalIgnoreCase);
     private AssetDatabase? _assets;
     private Scene? _scene;
     private GameObject? _cameraObject;
@@ -170,10 +202,16 @@ internal sealed class Basic3DModule(
     public void SetEditor(EditorModule editor)
     {
         _editor = editor;
+        editor.Physics = physics;
         editor.SceneHost.ActiveSceneChanged += (_, args) =>
         {
             if (args.Current is not null)
+            {
+                _scene = args.Current;
+                _cameraObject = null;
                 physics.AttachScene(args.Current);
+                scripting.AttachScene(args.Current);
+            }
         };
     }
 
@@ -183,6 +221,8 @@ internal sealed class Basic3DModule(
         _log = context.Logging.CreateLogger(Name);
         _window = context.Services.Resolve<IWindow>();
         _screenshotPath = options.ScreenshotPath;
+        scripting.AlwaysPlay = !options.Editor;
+        physics.SimulationActive = !options.Editor;
     }
 
     private void EnsureScene()
@@ -196,11 +236,15 @@ internal sealed class Basic3DModule(
 
         (Vertex[] groundVertices, uint[] groundIndices) = MeshPrimitives.Plane(24f, 24f);
         _meshes["ground"] = new Mesh(device, groundVertices, groundIndices, "Ground");
+        _physicsMeshes["ground"] = ToPhysicsMeshData(groundVertices, groundIndices);
         _assets = new AssetDatabase(device, ResolveAssetsDirectory());
         (Vertex[] cubeVertices, uint[] cubeIndices) = ObjModelLoader.Load(_assets.ResolvePath(Path.Combine("Models", "cube.obj")));
-        _meshes["cube"] = new Mesh(device, [.. cubeVertices.Select(static v => new Vertex { Position = v.Position * 1.4f, Normal = v.Normal, UV = v.UV, Tangent = v.Tangent })], cubeIndices, "Cube");
+        Vertex[] cubeScaled = [.. cubeVertices.Select(static v => new Vertex { Position = v.Position * 1.4f, Normal = v.Normal, UV = v.UV, Tangent = v.Tangent })];
+        _meshes["cube"] = new Mesh(device, cubeScaled, cubeIndices, "Cube");
+        _physicsMeshes["cube"] = ToPhysicsMeshData(cubeScaled, cubeIndices);
         (Vertex[] sphereVertices, uint[] sphereIndices) = MeshPrimitives.Sphere(1f, 32, 20);
         _meshes["sphere"] = new Mesh(device, sphereVertices, sphereIndices, "Sphere");
+        _physicsMeshes["sphere"] = ToPhysicsMeshData(sphereVertices, sphereIndices);
 
         if (options.ScenePath is not null && File.Exists(options.ScenePath))
         {
@@ -208,17 +252,25 @@ internal sealed class Basic3DModule(
         }
         else
         {
-            _scene = BuildScene();
-            string savePath = Path.Combine("Assets", "Scenes", "main.scene");
-            _scene.Save(savePath);
+            string defaultScene = Path.Combine(ResolveAssetsDirectory(), "Scenes", "PhysicsPlayground.scene");
+            _scene = File.Exists(defaultScene)
+                ? Scene.Load(defaultScene)
+                : new Scene("Untitled");
         }
 
         _cameraObject = _scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
         renderer.MeshResolver = ResolveMesh;
+        if (Environment.GetEnvironmentVariable("ENGINE_NOGI") == "1")
+            renderer.RayTracingGiEnabled = false;
+        if (Environment.GetEnvironmentVariable("ENGINE_NOREFL") == "1")
+            renderer.RayTracingReflectionsEnabled = false;
+        if (Environment.GetEnvironmentVariable("ENGINE_NOSHADOW") == "1")
+            renderer.RayTracingShadowsEnabled = false;
         renderer.MeshRequestResolver = key => _meshes.TryGetValue(key, out Mesh? mesh) ? mesh : _assets.RequestMesh(key);
         renderer.MeshImportFailedResolver = key => !_meshes.ContainsKey(key) && _assets.IsMeshImportFailed(key);
         renderer.ModelPartRequestResolver = (key, part) => _assets.RequestMesh(key, part);
         _assets.Diagnostic += message => _log!.Warning(message);
+        physics.MeshDataResolver = ResolvePhysicsMesh;
         renderer.TextureResolver = ResolveTexture;
         renderer.MaterialResolver = reference => _assets.Materials.Resolve(reference);
         renderer.TextureRevisionResolver = (reference, _) => _assets.GetTextureRevision(reference);
@@ -229,30 +281,11 @@ internal sealed class Basic3DModule(
         }
         renderer.AttachScene(_scene);
         physics.AttachScene(_scene);
+        scripting.AttachScene(_scene);
         _editor?.AttachScene(_scene);
     }
 
-    private static string ResolveAssetsDirectory()
-    {
-        List<string> candidates =
-        [
-            Path.Combine(AppContext.BaseDirectory, "Assets"),
-            Path.Combine(Directory.GetCurrentDirectory(), "Assets"),
-        ];
-        string? current = Directory.GetCurrentDirectory();
-        for (int i = 0; i < 4 && current is not null; i++)
-        {
-            candidates.Add(Path.Combine(current, "Assets"));
-            current = Path.GetDirectoryName(current.TrimEnd(Path.DirectorySeparatorChar));
-        }
-        foreach (string candidate in candidates)
-        {
-            if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "Models", "cube.obj")))
-                return candidate;
-        }
-        throw new DirectoryNotFoundException(
-            "Assets directory with Models/cube.obj not found. Searched: " + string.Join(", ", candidates.Select(c => Path.GetFullPath(c))));
-    }
+    private static string ResolveAssetsDirectory() => Program.ResolveProjectRoot();
 
     private Mesh ResolveMesh(string key)
     {
@@ -261,6 +294,22 @@ internal sealed class Basic3DModule(
         if (_assets is null)
             throw new InvalidOperationException("Asset database is not initialized.");
         return _assets.LoadMesh(key);
+    }
+
+    private PhysicsMeshData? ResolvePhysicsMesh(string key)
+    {
+        if (_physicsMeshes.TryGetValue(key, out PhysicsMeshData? primitive))
+            return primitive;
+        Mesh? assetMesh = _assets?.RequestMesh(key);
+        return assetMesh?.GetPhysicsData();
+    }
+
+    private static PhysicsMeshData ToPhysicsMeshData(Vertex[] vertices, uint[] indices)
+    {
+        Vector3[] positions = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            positions[i] = vertices[i].Position;
+        return new PhysicsMeshData(positions, indices);
     }
 
     private ITexture? ResolveTexture(AssetReference reference, MaterialTextureSlot slot)
@@ -286,106 +335,6 @@ internal sealed class Basic3DModule(
             _log?.Warning($"Texture '{reference}' could not be loaded: {exception.Message}");
             return null;
         }
-    }
-
-    private Scene BuildScene()
-    {
-        Scene scene = new("Main");
-
-        GameObject ground = scene.CreateObject("Ground");
-        ground.Transform.Position = new Vector3(0f, -0.75f, 0f);
-        MeshRendererComponent groundRenderer = ground.AddComponent<MeshRendererComponent>();
-        groundRenderer.ResourceKey = "ground";
-        RigidBodyComponent groundBody = ground.AddComponent<RigidBodyComponent>();
-        groundBody.Kind = RigidBodyKind.Static;
-        groundBody.Shape = ColliderShape.Box;
-        groundBody.Size = new Vector3(24f, 0.25f, 24f);
-        groundBody.Center = new Vector3(0f, -0.125f, 0f);
-        groundRenderer.AlbedoColor = new Vector3(1f, 0.1f, 0.1f);
-        groundRenderer.Metallic = 0.05f;
-        groundRenderer.Roughness = 0.85f;
-        groundRenderer.UvScale = new Vector2(10f, 10f);
-
-        GameObject metalCube = scene.CreateObject("MetalCube");
-        metalCube.Transform.Position = new Vector3(0f, 0.6f, 0f);
-        MeshRendererComponent metalRenderer = metalCube.AddComponent<MeshRendererComponent>();
-        metalRenderer.ResourceKey = "cube";
-        metalRenderer.AlbedoColor = new Vector3(0.85f, 0.45f, 0.2f);
-        metalRenderer.Metallic = 0.95f;
-        metalRenderer.Roughness = 0.25f;
-        _rotatingObjects.Add(metalCube);
-
-        GameObject physicsCrate = scene.CreateObject("PhysicsCrate");
-        physicsCrate.Transform.Position = new Vector3(0.4f, 4.5f, 0.6f);
-        MeshRendererComponent crateRenderer = physicsCrate.AddComponent<MeshRendererComponent>();
-        crateRenderer.ResourceKey = "cube";
-        crateRenderer.AlbedoColor = new Vector3(0.9f, 0.75f, 0.3f);
-        crateRenderer.Metallic = 0.1f;
-        crateRenderer.Roughness = 0.7f;
-        RigidBodyComponent crateBody = physicsCrate.AddComponent<RigidBodyComponent>();
-        crateBody.Kind = RigidBodyKind.Dynamic;
-        crateBody.Shape = ColliderShape.Box;
-        crateBody.Size = new Vector3(1.4f, 1.4f, 1.4f);
-        crateBody.Mass = 2f;
-
-        GameObject plasticSphere = scene.CreateObject("PlasticSphere");
-        plasticSphere.Transform.Position = new Vector3(-2.6f, 0.4f, 0.8f);
-        MeshRendererComponent plasticRenderer = plasticSphere.AddComponent<MeshRendererComponent>();
-        plasticRenderer.ResourceKey = "sphere";
-        plasticRenderer.AlbedoColor = new Vector3(0.2f, 0.5f, 0.9f);
-        plasticRenderer.Roughness = 0.45f;
-        _rotatingObjects.Add(plasticSphere);
-
-        GameObject roughCube = scene.CreateObject("RoughCube");
-        roughCube.Transform.Position = new Vector3(2.6f, 0.4f, 0.6f);
-        MeshRendererComponent roughRenderer = roughCube.AddComponent<MeshRendererComponent>();
-        roughRenderer.ResourceKey = "cube";
-        roughRenderer.AlbedoColor = new Vector3(0.35f, 0.85f, 0.4f);
-        roughRenderer.Metallic = 0.1f;
-        roughRenderer.Roughness = 0.8f;
-        _rotatingObjects.Add(roughCube);
-
-        GameObject glowingSphere = scene.CreateObject("GlowingSphere");
-        glowingSphere.Transform.Position = new Vector3(0.8f, 1.9f, -1.8f);
-        glowingSphere.Transform.LocalScale = new Vector3(0.55f, 0.55f, 0.55f);
-        MeshRendererComponent glowRenderer = glowingSphere.AddComponent<MeshRendererComponent>();
-        glowRenderer.ResourceKey = "sphere";
-        glowRenderer.AlbedoColor = new Vector3(0.9f, 0.75f, 0.25f);
-        glowRenderer.Roughness = 0.4f;
-        glowRenderer.EmissiveIntensity = 1.6f;
-
-        GameObject sun = scene.CreateObject("Sun");
-        sun.Transform.LocalRotation = Quaternion.LookRotation(new Vector3(0.55f, -1f, 0.35f).Normalized, Vector3.Up);
-        LightComponent sunLight = sun.AddComponent<LightComponent>();
-        sunLight.Kind = LightKind.Directional;
-        sunLight.Color = new Vector3(1f, 0.97f, 0.92f);
-        sunLight.Intensity = 3.2f;
-
-        GameObject blueLamp = scene.CreateObject("BlueLamp");
-        blueLamp.Transform.Position = new Vector3(-3.2f, 2.2f, 1.6f);
-        LightComponent blueLight = blueLamp.AddComponent<LightComponent>();
-        blueLight.Kind = LightKind.Point;
-        blueLight.Color = new Vector3(0.35f, 0.55f, 1f);
-        blueLight.Intensity = 14f;
-        blueLight.Range = 12f;
-
-        GameObject redLamp = scene.CreateObject("RedLamp");
-        redLamp.Transform.Position = new Vector3(3.4f, 1.8f, -1.2f);
-        LightComponent redLight = redLamp.AddComponent<LightComponent>();
-        redLight.Kind = LightKind.Point;
-        redLight.Color = new Vector3(1f, 0.4f, 0.3f);
-        redLight.Intensity = 10f;
-        redLight.Range = 10f;
-
-        GameObject cameraObject = scene.CreateObject("MainCamera");
-        cameraObject.Transform.Position = new Vector3(6f, 4f, 8f);
-        CameraComponent camera = cameraObject.AddComponent<CameraComponent>();
-        camera.FieldOfViewY = MathUtil.DegToRad * 55f;
-        camera.NearPlane = 0.1f;
-        camera.FarPlane = 500f;
-        _cameraObject = cameraObject;
-
-        return scene;
     }
 
     public void Update(in FrameTime frameTime)
@@ -431,28 +380,17 @@ internal sealed class Basic3DModule(
             }
         }
 
-        if (Environment.GetEnvironmentVariable("ENGINE_SKIP_SCENE") == "1")
-        {
-            if (frameTime.FrameIndex >= (ulong)Math.Max(5, options.Frames))
-                _context!.RequestExit();
-            return;
-        }
         if (options.Frames > 0 && frameTime.FrameIndex >= (ulong)options.Frames)
             _context!.RequestExit();
 
-        if (_screenshotPath is not null && frameTime.FrameIndex >= 15 && renderer.SwapchainTargetTexture is not null)
+        if (_screenshotPath is not null && frameTime.FrameIndex >= 90 && renderer.SwapchainTargetTexture is not null)
         {
             _rhi!.WaitIdle();
-            DumpTexture($"{_screenshotPath}.hdr.ppm", renderer.DebugHdrTexture!, renderer.DebugHdrLayout);
-            DumpTexture($"{_screenshotPath}.present.ppm", renderer.DebugPresentTexture!, renderer.DebugPresentLayout);
-            if (renderer.ViewTexture is not null)
-                DumpTexture($"{_screenshotPath}.view.ppm", renderer.ViewTexture, ImageLayout.ShaderReadOnlyOptimal);
-            DumpTexture($"{_screenshotPath}.shadow.ppm", renderer.DebugShadowTexture!, renderer.DebugShadowLayout);
-            _log!.Information($"Render items at screenshot: {renderer.DebugRenderItemCount}");
-            byte[]? pixels = _rhi.ReadSwapchainPixels();
+            ITexture screenshotTexture = renderer.DebugPresentTexture!;
+            byte[]? pixels = _rhi.ReadTexturePixels(screenshotTexture, renderer.DebugPresentLayout);
             if (pixels is not null)
             {
-                WritePpm(_screenshotPath, (int)_rhi.Swapchain.Extent.Width, (int)_rhi.Swapchain.Extent.Height, pixels);
+                WritePpm(_screenshotPath, (int)screenshotTexture.Width, (int)screenshotTexture.Height, pixels);
                 _log!.Information($"Screenshot saved to {Path.GetFullPath(_screenshotPath)}");
             }
             _screenshotPath = null;
@@ -462,11 +400,11 @@ internal sealed class Basic3DModule(
 
     private void HandleInput()
     {
-        if (_window!.Keyboard.IsPressed(KeyCode.Escape))
+        if (_editor is null && _window!.Keyboard.IsPressed(KeyCode.Escape))
             _context!.RequestExit();
 
         bool editorMode = _editor is not null;
-        bool viewportOwnsMouse = editorMode && (!_editor!.ViewportHovered || _editor.WantCaptureMouse);
+        bool viewportOwnsMouse = editorMode && (!_editor!.ViewportHovered || _editor.SceneViewMouseCaptured);
 
         if (editorMode)
         {
@@ -474,50 +412,65 @@ internal sealed class Basic3DModule(
             return;
         }
 
-        if (!viewportOwnsMouse && (_window.Mouse.IsDown(MouseButton.Right) || _window.Mouse.IsDown(MouseButton.Left)))
+        IWindow window = _window!;
+        if (!viewportOwnsMouse && (window.Mouse.IsDown(MouseButton.Right) || window.Mouse.IsDown(MouseButton.Left)))
         {
             if (!_mouseCaptured)
             {
                 _mouseCaptured = true;
-                _lastMousePosition = _window.Mouse.Position;
+                _lastMousePosition = window.Mouse.Position;
             }
-            Vector2 delta = _window.Mouse.Position - _lastMousePosition;
+            Vector2 delta = window.Mouse.Position - _lastMousePosition;
             _orbitYaw -= delta.X * 0.005f;
             _orbitPitch = MathUtil.Clamp(_orbitPitch - delta.Y * 0.005f, -MathUtil.HalfPi + 0.1f, MathUtil.HalfPi - 0.1f);
-            _lastMousePosition = _window.Mouse.Position;
+            _lastMousePosition = window.Mouse.Position;
         }
         else
         {
             _mouseCaptured = false;
         }
-        if (!viewportOwnsMouse && _window.Mouse.ScrollDelta.Y != 0f)
-            _orbitDistance = MathUtil.Clamp(_orbitDistance - _window.Mouse.ScrollDelta.Y * 0.7f, 3f, 30f);
+        if (!viewportOwnsMouse && window.Mouse.ScrollDelta.Y != 0f)
+            _orbitDistance = MathUtil.Clamp(_orbitDistance - window.Mouse.ScrollDelta.Y * 0.7f, 3f, 30f);
     }
 
     private void HandleFlyInput()
     {
-        bool overScene = _editor!.SceneViewFocused;
-        KeyboardState keyboard = _window!.Keyboard;
-        MouseState mouse = _window.Mouse;
+        IWindow window = _window!;
+        bool overScene = _editor!.ViewportHovered;
+        bool sceneFocused = _editor.SceneViewFocused;
+        bool hasSceneInput = overScene && _editor.ApplicationFocused;
+        bool canUseKeyboard = _editor.ApplicationFocused && sceneFocused && !_editor.WantTextInput;
+        KeyboardState keyboard = window.Keyboard;
+        MouseState mouse = window.Mouse;
+        bool looking = _editor.ApplicationFocused
+            && mouse.IsDown(MouseButton.Right)
+            && (_mouseCaptured || (overScene && sceneFocused && !_editor.SceneViewMouseCaptured));
 
-        if (overScene && mouse.IsDown(MouseButton.Right))
+        if (looking)
         {
             if (!_mouseCaptured)
             {
                 _mouseCaptured = true;
-                _lastMousePosition = mouse.Position;
+                window.CursorMode = CursorMode.Disabled;
+                window.ResetMouseDelta();
             }
-            Vector2 delta = mouse.Position - _lastMousePosition;
+            Vector2 delta = mouse.Delta;
             _flyYaw -= delta.X * 0.004f;
             _flyPitch = MathUtil.Clamp(_flyPitch - delta.Y * 0.004f, -MathUtil.HalfPi + 0.05f, MathUtil.HalfPi - 0.05f);
-            _lastMousePosition = mouse.Position;
         }
         else
         {
             _mouseCaptured = false;
+            if (window.CursorMode != CursorMode.Normal)
+                window.CursorMode = CursorMode.Normal;
         }
 
-        if (!overScene)
+        if (!hasSceneInput)
+            return;
+
+        if (mouse.ScrollDelta.Y != 0f && !_editor.SceneViewMouseCaptured && !_editor.WantCaptureMouse)
+            _flySpeed = MathUtil.Clamp(_flySpeed + mouse.ScrollDelta.Y * 0.5f, 0.5f, 40f);
+        if (!canUseKeyboard)
             return;
 
         float speed = _flySpeed * (keyboard.IsDown(KeyCode.LeftShift) ? 3f : 1f);
@@ -541,8 +494,6 @@ internal sealed class Basic3DModule(
         if (movement.Length > MathUtil.Epsilon)
             _flyPosition += movement.Normalized * speed * _lastFrameDelta;
 
-        if (mouse.ScrollDelta.Y != 0f)
-            _flySpeed = MathUtil.Clamp(_flySpeed + mouse.ScrollDelta.Y * 0.5f, 0.5f, 40f);
     }
 
     private static Quaternion EulerToQuaternion(float yaw, float pitch)
@@ -551,20 +502,17 @@ internal sealed class Basic3DModule(
             * Quaternion.FromAxisAngle(Vector3.UnitX, pitch);
     }
 
-    private Vector3 cameraPosForDebug;
-
     private void UpdateCamera(FrameTime frameTime)
     {
-        if (_cameraObject is null)
-            return;
         _lastFrameDelta = frameTime.DeltaTime;
-        Transform cameraTransform = _cameraObject.Transform;
+        _cameraObject = _scene?.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
+        Transform? cameraTransform = _cameraObject?.Transform;
         if (_editor is not null)
         {
             if (!_flyInitialized)
             {
                 _flyInitialized = true;
-                _flyPosition = cameraTransform.Position;
+                _flyPosition = cameraTransform?.Position ?? new Vector3(0f, 2.5f, 8f);
                 _flyYaw = MathUtil.DegToRad * 35f;
                 _flyPitch = -MathUtil.DegToRad * 25f;
             }
@@ -575,7 +523,7 @@ internal sealed class Basic3DModule(
                 : _window!.ClientSize;
             renderer.EditorCamera.AspectRatio = (float)editorExtent.Width / Math.Max(1, editorExtent.Height);
         }
-        else
+        else if (cameraTransform is not null)
         {
             float cosPitch = MathF.Cos(_orbitPitch);
             Vector3 orbitPosition = new(
@@ -585,7 +533,6 @@ internal sealed class Basic3DModule(
             cameraTransform.Position = orbitPosition;
             cameraTransform.LookAt(new Vector3(0f, 0.4f, 0f), Vector3.Up);
         }
-        cameraPosForDebug = _editor is null ? cameraTransform.Position : renderer.EditorCamera.Position;
 
         Size2D viewExtent = renderer.ViewTexture is not null ? new Size2D((int)renderer.ViewTexture.Width, (int)renderer.ViewTexture.Height) : _window!.ClientSize;
         renderer.Camera.AspectRatio = (float)viewExtent.Width / Math.Max(1, viewExtent.Height);
@@ -607,74 +554,6 @@ internal sealed class Basic3DModule(
             }
         }
     }
-
-    private void DumpTexture(string path, ITexture texture, ImageLayout layout)
-    {
-        try
-        {
-            byte[] pixels = _rhi!.ReadTexturePixels(texture, layout)!;
-            if (texture.Format is TextureFormat.D32Float or TextureFormat.D16Unorm)
-            {
-                int width = (int)texture.Width, height = (int)texture.Height;
-                using FileStream stream = File.Create(path);
-                using BinaryWriter writer = new(stream);
-                writer.Write(System.Text.Encoding.ASCII.GetBytes($"P6\n{width} {height}\n255\n"));
-                for (int i = 0; i < width * height; i++)
-                {
-                    float depth = texture.Format is TextureFormat.D32Float
-                        ? BitConverter.ToSingle(pixels, i * 4)
-                        : BitConverter.ToUInt16(pixels, i * 2) / 65535f;
-                    byte value = (byte)Math.Clamp(depth * 255f, 0f, 255f);
-                    writer.Write(value);
-                    writer.Write(value);
-                    writer.Write(value);
-                }
-            }
-            else if (texture.Format is TextureFormat.R16G16B16A16Float)
-            {
-                int width = (int)texture.Width, height = (int)texture.Height;
-                using FileStream stream = File.Create(path);
-                using BinaryWriter writer = new(stream);
-                writer.Write(System.Text.Encoding.ASCII.GetBytes($"P6\n{width} {height}\n255\n"));
-                for (int i = 0; i < width * height; i++)
-                {
-                    Vector4 value = DecodeHalfPixel(pixels, i * 8);
-                    writer.Write(ToByte(value.X));
-                    writer.Write(ToByte(value.Y));
-                    writer.Write(ToByte(value.Z));
-                }
-            }
-            else
-            {
-                WritePpm(path, (int)texture.Width, (int)texture.Height, pixels);
-            }
-            _log!.Information($"Dumped {path}");
-        }
-        catch (Exception exception)
-        {
-            _log!.Warning($"Dump {path} failed: {exception.Message}");
-        }
-    }
-
-    private static float HalfToFloat(ushort half)
-    {
-        uint sign = (uint)(half >> 15) & 0x1u;
-        uint exponent = (uint)(half >> 10) & 0x1Fu;
-        uint mantissa = half & 0x3FFu;
-        if (exponent == 0)
-            return mantissa == 0 ? 0f : MathF.Pow(2f, -14f) * (mantissa / 1024f);
-        if (exponent == 31)
-            return mantissa == 0 ? float.PositiveInfinity : float.NaN;
-        return MathF.Pow(2f, (int)exponent - 15) * (1f + mantissa / 1024f) * (sign == 1 ? -1f : 1f);
-    }
-
-    private static Vector4 DecodeHalfPixel(byte[] pixels, int offset)
-    {
-        ushort Read(int index) => (ushort)(pixels[offset + index] | (pixels[offset + index + 1] << 8));
-        return new Vector4(HalfToFloat(Read(0)), HalfToFloat(Read(2)), HalfToFloat(Read(4)), HalfToFloat(Read(6)));
-    }
-
-    private static byte ToByte(float value) => (byte)Math.Clamp(value * 255f, 0f, 255f);
 
     public void Shutdown()
     {

@@ -17,6 +17,7 @@ internal static unsafe class VulkanHelpers
     public const string ExtensionAccelerationStructure = "VK_KHR_acceleration_structure";
     public const string ExtensionRayTracingPipeline = "VK_KHR_ray_tracing_pipeline";
     public const string ExtensionRayQuery = "VK_KHR_ray_query";
+    public const string ExtensionDeferredHostOperations = "VK_KHR_deferred_host_operations";
     public const string ExtensionMeshShader = "VK_EXT_mesh_shader";
 
     public static uint MakeVersion(int major, int minor, int patch) =>
@@ -192,6 +193,14 @@ internal static unsafe class VulkanHelpers
             flags |= BufferUsageFlags.TransferSrcBit;
         if (usage.HasFlag(BufferUsage.TransferDestination))
             flags |= BufferUsageFlags.TransferDstBit;
+        if (usage.HasFlag(BufferUsage.DeviceAddress))
+            flags |= BufferUsageFlags.ShaderDeviceAddressBit;
+        if (usage.HasFlag(BufferUsage.AccelerationStructureBuildInput))
+            flags |= BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr;
+        if (usage.HasFlag(BufferUsage.AccelerationStructureStorage))
+            flags |= BufferUsageFlags.AccelerationStructureStorageBitKhr;
+        if (usage.HasFlag(BufferUsage.ShaderBindingTable))
+            flags |= BufferUsageFlags.ShaderBindingTableBitKhr;
         if (flags == 0)
             throw new ArgumentException("Buffer usage must specify at least one flag.", nameof(usage));
         return flags;
@@ -223,7 +232,55 @@ internal static unsafe class VulkanHelpers
         if (stages.HasFlag(PipelineStages.Host)) flags |= PipelineStageFlags.HostBit;
         if (stages.HasFlag(PipelineStages.AllGraphics)) flags |= PipelineStageFlags.AllGraphicsBit;
         if (stages.HasFlag(PipelineStages.AllCommands)) flags |= PipelineStageFlags.AllCommandsBit;
+        if (stages.HasFlag(PipelineStages.AccelerationStructureBuild)) flags |= PipelineStageFlags.AccelerationStructureBuildBitKhr;
+        if (stages.HasFlag(PipelineStages.RayTracingShader)) flags |= PipelineStageFlags.RayTracingShaderBitKhr;
         return flags == 0 ? PipelineStageFlags.AllCommandsBit : flags;
+    }
+
+    public static PipelineStageFlags2 ToVulkanPipelineStages2(PipelineStages stages)
+    {
+        PipelineStageFlags2 flags = 0;
+        if (stages.HasFlag(PipelineStages.Top)) flags |= PipelineStageFlags2.TopOfPipeBit;
+        if (stages.HasFlag(PipelineStages.DrawIndirect)) flags |= PipelineStageFlags2.DrawIndirectBit;
+        if (stages.HasFlag(PipelineStages.VertexInput)) flags |= PipelineStageFlags2.VertexInputBit;
+        if (stages.HasFlag(PipelineStages.VertexShader)) flags |= PipelineStageFlags2.VertexShaderBit;
+        if (stages.HasFlag(PipelineStages.FragmentShader)) flags |= PipelineStageFlags2.FragmentShaderBit;
+        if (stages.HasFlag(PipelineStages.EarlyDepth)) flags |= PipelineStageFlags2.EarlyFragmentTestsBit;
+        if (stages.HasFlag(PipelineStages.LateDepth)) flags |= PipelineStageFlags2.LateFragmentTestsBit;
+        if (stages.HasFlag(PipelineStages.ColorOutput)) flags |= PipelineStageFlags2.ColorAttachmentOutputBit;
+        if (stages.HasFlag(PipelineStages.ComputeShader)) flags |= PipelineStageFlags2.ComputeShaderBit;
+        if (stages.HasFlag(PipelineStages.Transfer)) flags |= PipelineStageFlags2.AllTransferBit;
+        if (stages.HasFlag(PipelineStages.Bottom)) flags |= PipelineStageFlags2.BottomOfPipeBit;
+        if (stages.HasFlag(PipelineStages.Host)) flags |= PipelineStageFlags2.HostBit;
+        if (stages.HasFlag(PipelineStages.AllGraphics)) flags |= PipelineStageFlags2.AllGraphicsBit;
+        if (stages.HasFlag(PipelineStages.AllCommands)) flags |= PipelineStageFlags2.AllCommandsBit;
+        if (stages.HasFlag(PipelineStages.AccelerationStructureBuild)) flags |= PipelineStageFlags2.AccelerationStructureBuildBitKhr;
+        if (stages.HasFlag(PipelineStages.RayTracingShader)) flags |= PipelineStageFlags2.RayTracingShaderBitKhr;
+        return flags;
+    }
+
+    public static AccessFlags2 ToVulkanAccess2(ResourceAccess access)
+    {
+        AccessFlags2 flags = 0;
+        if (access.HasFlag(ResourceAccess.IndirectRead)) flags |= AccessFlags2.IndirectCommandReadBit;
+        if (access.HasFlag(ResourceAccess.IndexRead)) flags |= AccessFlags2.IndexReadBit;
+        if (access.HasFlag(ResourceAccess.VertexRead)) flags |= AccessFlags2.VertexAttributeReadBit;
+        if (access.HasFlag(ResourceAccess.UniformRead)) flags |= AccessFlags2.UniformReadBit;
+        if (access.HasFlag(ResourceAccess.ShaderRead)) flags |= AccessFlags2.ShaderReadBit;
+        if (access.HasFlag(ResourceAccess.ShaderWrite)) flags |= AccessFlags2.ShaderWriteBit;
+        if (access.HasFlag(ResourceAccess.ColorRead)) flags |= AccessFlags2.ColorAttachmentReadBit;
+        if (access.HasFlag(ResourceAccess.ColorWrite)) flags |= AccessFlags2.ColorAttachmentWriteBit;
+        if (access.HasFlag(ResourceAccess.DepthRead)) flags |= AccessFlags2.DepthStencilAttachmentReadBit;
+        if (access.HasFlag(ResourceAccess.DepthWrite)) flags |= AccessFlags2.DepthStencilAttachmentWriteBit;
+        if (access.HasFlag(ResourceAccess.TransferRead)) flags |= AccessFlags2.TransferReadBit;
+        if (access.HasFlag(ResourceAccess.TransferWrite)) flags |= AccessFlags2.TransferWriteBit;
+        if (access.HasFlag(ResourceAccess.HostRead)) flags |= AccessFlags2.HostReadBit;
+        if (access.HasFlag(ResourceAccess.HostWrite)) flags |= AccessFlags2.HostWriteBit;
+        if (access.HasFlag(ResourceAccess.MemoryRead)) flags |= AccessFlags2.MemoryReadBit;
+        if (access.HasFlag(ResourceAccess.MemoryWrite)) flags |= AccessFlags2.MemoryWriteBit;
+        if (access.HasFlag(ResourceAccess.AccelerationStructureRead)) flags |= AccessFlags2.AccelerationStructureReadBitKhr;
+        if (access.HasFlag(ResourceAccess.AccelerationStructureWrite)) flags |= AccessFlags2.AccelerationStructureWriteBitKhr;
+        return flags;
     }
 
     public static AccessFlags ToVulkanAccess(ResourceAccess access)
@@ -245,6 +302,8 @@ internal static unsafe class VulkanHelpers
         if (access.HasFlag(ResourceAccess.HostWrite)) flags |= AccessFlags.HostWriteBit;
         if (access.HasFlag(ResourceAccess.MemoryRead)) flags |= AccessFlags.MemoryReadBit;
         if (access.HasFlag(ResourceAccess.MemoryWrite)) flags |= AccessFlags.MemoryWriteBit;
+        if (access.HasFlag(ResourceAccess.AccelerationStructureRead)) flags |= AccessFlags.AccelerationStructureReadBitKhr;
+        if (access.HasFlag(ResourceAccess.AccelerationStructureWrite)) flags |= AccessFlags.AccelerationStructureWriteBitKhr;
         return flags;
     }
 
@@ -269,6 +328,12 @@ internal static unsafe class VulkanHelpers
             flags |= ShaderStageFlags.MissBitKhr;
         if (stages.HasFlag(ShaderStages.ClosestHit))
             flags |= ShaderStageFlags.ClosestHitBitKhr;
+        if (stages.HasFlag(ShaderStages.AnyHit))
+            flags |= (ShaderStageFlags)0x200;
+        if (stages.HasFlag(ShaderStages.Intersection))
+            flags |= (ShaderStageFlags)0x1000;
+        if (stages.HasFlag(ShaderStages.Callable))
+            flags |= (ShaderStageFlags)0x2000;
         if (flags == 0)
             throw new ArgumentException("Shader stages must specify at least one flag.", nameof(stages));
         return flags;

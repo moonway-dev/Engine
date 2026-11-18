@@ -30,16 +30,21 @@ internal static class MaterialInspector
         MaterialAsset asset = document.Asset;
         AssetReference parent = asset.Parent;
         ImGui.SeparatorText("Parent");
-        string parentText = parent.Key ?? string.Empty;
-        ImGui.SetNextItemWidth(-1);
-        if (ImGui.InputText("##Parent", ref parentText, 1024, ImGuiInputTextFlags.EnterReturnsTrue))
-            document.Edit("Parent", value => value.Parent = Canonical(context, parentText), false);
-        if (ImGui.BeginDragDropTarget())
+        string parentName = string.Empty;
+        if (!parent.IsEmpty)
         {
-            if (ImGuiDragPayloads.AcceptAsset() is { Kind: AssetKind.Material } payload)
-                document.Edit("Parent", value => value.Parent = Canonical(context, payload.RelativePath), false);
-            ImGui.EndDragDropTarget();
+            try
+            {
+                parentName = Path.GetFileNameWithoutExtension(context.Materials.ResolvePath(parent));
+            }
+            catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+            {
+                parentName = "Missing Material";
+            }
         }
+        AssetDragPayload? parentDrop = AssetDropField.Draw("Parent", parentName, AssetKind.Material);
+        if (parentDrop is { } parentPayload)
+            document.Edit("Parent", value => value.Parent = Canonical(context, parentPayload.RelativePath), false);
         if (!parent.IsEmpty)
         {
             if (ImGui.SmallButton("Open Parent"))
@@ -90,16 +95,21 @@ internal static class MaterialInspector
     {
         if (current is AssetReference texture)
         {
-            string text = texture.Key ?? string.Empty;
-            object? result = null;
-            if (ImGui.InputText("##Value", ref text, 1024, ImGuiInputTextFlags.EnterReturnsTrue))
-                result = Canonical(context, text);
-            if (ImGui.BeginDragDropTarget())
+            string textureName = string.Empty;
+            if (!texture.IsEmpty)
             {
-                if (ImGuiDragPayloads.AcceptAsset() is { Kind: AssetKind.Texture } payload)
-                    result = Canonical(context, payload.RelativePath);
-                ImGui.EndDragDropTarget();
+                try
+                {
+                    textureName = Path.GetFileNameWithoutExtension(context.Materials.ResolvePath(texture));
+                }
+                catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+                {
+                    textureName = "Missing Texture";
+                }
             }
+            object? result = null;
+            if (AssetDropField.Draw(property.Name, textureName, AssetKind.Texture) is { } textureDrop)
+                result = Canonical(context, textureDrop.RelativePath);
             if (!texture.IsEmpty && ImGui.SmallButton("Clear Texture"))
                 result = AssetReference.Empty;
             return result;

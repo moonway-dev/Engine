@@ -1,0 +1,16 @@
+{
+  "Version": 1,
+  "Shader": "PBR Lit",
+  "Parent": "",
+  "Overrides": {
+    "AlbedoTexture": "Textures/checker.png",
+    "Metallic": 0.05,
+    "Roughness": 0.6,
+    "NormalScale": 1.0,
+    "AoStrength": 1.0,
+    "UvScale": { "X": 2.0, "Y": 2.0 },
+    "UvOffset": { "X": 0.0, "Y": 0.0 },
+    "EmissionColor": { "X": 1.0, "Y": 1.0, "Z": 1.0 },
+    "EmissiveIntensity": 0.0
+  }
+}

@@ -17,6 +17,7 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
     private readonly VulkanDevice _device;
     private readonly VulkanMemoryManager _memory;
     private readonly ILogger _log;
+    private readonly object _operationLock = new();
     private readonly CommandPool _commandPool;
     private readonly CommandBuffer _commandBuffer;
     private readonly Fence _fence;
@@ -25,6 +26,9 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
     private ulong _stagingOffset;
     private bool _recording;
     private bool _hasCommands;
+    private bool _unusable;
+    private bool _disposed;
+    private readonly HashSet<(ITexture Texture, uint Mip, uint Layer)> _initializedSubresources = [];
 
     public VulkanStagingUploader(Vk vk, VulkanDevice device, VulkanMemoryManager memory, ILogger log)
     {
@@ -84,14 +88,18 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
 
     public void UploadBuffer(IBuffer destination, ReadOnlySpan<byte> data, ulong destinationOffset)
     {
-        if (destinationOffset > destination.Size || (ulong)data.Length > destination.Size - destinationOffset)
-            throw new ArgumentOutOfRangeException(nameof(data));
-        while (!data.IsEmpty)
+        lock (_operationLock)
         {
-            int length = Math.Min(data.Length, (int)StagingBufferSize);
-            UploadBufferChunk(destination, data[..length], destinationOffset);
-            destinationOffset += (ulong)length;
-            data = data[length..];
+            EnsureUsable();
+            if (destinationOffset > destination.Size || (ulong)data.Length > destination.Size - destinationOffset)
+                throw new ArgumentOutOfRangeException(nameof(data));
+            while (!data.IsEmpty)
+            {
+                int length = Math.Min(data.Length, (int)StagingBufferSize);
+                UploadBufferChunk(destination, data[..length], destinationOffset);
+                destinationOffset += (ulong)length;
+                data = data[length..];
+            }
         }
     }
 
@@ -160,33 +168,53 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
         return stages == 0 ? PipelineStageFlags.AllCommandsBit : stages;
     }
 
-    public void UploadTexture(ITexture destination, ReadOnlySpan<byte> data)
+    public void UploadTextureSubresource(ITexture destination, TextureSubresourceData subresource)
     {
-        ulong stagingOffset = ReserveSpace((ulong)data.Length);
+        lock (_operationLock)
+        {
+            EnsureUsable();
+            UploadTextureSubresourceCore(destination, subresource);
+        }
+    }
+
+    private void UploadTextureSubresourceCore(ITexture destination, TextureSubresourceData subresource)
+    {
+        ulong stagingOffset = ReserveSpace((ulong)subresource.Data.Length);
         BeginRecording();
         StagingBuffer staging = _staging!.Value;
-        data.CopyTo(new Span<byte>((byte*)staging.Mapped + stagingOffset, data.Length));
+        subresource.Data.Span.CopyTo(new Span<byte>((byte*)staging.Mapped + stagingOffset, subresource.Data.Length));
 
         IVulkanTexture vkTexture = GetVkTexture(destination);
+        bool initialized = _initializedSubresources.Contains((destination, subresource.MipLevel, subresource.ArrayLayer));
+        ImageSubresourceRange range = new()
+        {
+            AspectMask = ImageAspectFlags.ColorBit,
+            BaseMipLevel = subresource.MipLevel,
+            LevelCount = 1,
+            BaseArrayLayer = subresource.ArrayLayer,
+            LayerCount = 1,
+        };
         ImageMemoryBarrier preBarrier = new()
         {
             SType = StructureType.ImageMemoryBarrier,
-            SrcAccessMask = 0,
+            SrcAccessMask = initialized ? AccessFlags.ShaderReadBit : 0,
             DstAccessMask = AccessFlags.TransferWriteBit,
-            OldLayout = VkImageLayout.Undefined,
+            OldLayout = initialized ? VkImageLayout.ShaderReadOnlyOptimal : VkImageLayout.Undefined,
             NewLayout = VkImageLayout.TransferDstOptimal,
             SrcQueueFamilyIndex = uint.MaxValue,
             DstQueueFamilyIndex = uint.MaxValue,
             Image = vkTexture.Handle,
-            SubresourceRange = FullColorRange,
+            SubresourceRange = range,
         };
         _vk.CmdPipelineBarrier(
             _commandBuffer,
-            PipelineStageFlags.TopOfPipeBit,
+            initialized ? PipelineStageFlags.FragmentShaderBit : PipelineStageFlags.TopOfPipeBit,
             PipelineStageFlags.TransferBit,
             DependencyFlags.None,
             0, null, 0, null, 1, &preBarrier);
 
+        uint width = Math.Max(1u, vkTexture.Width >> checked((int)subresource.MipLevel));
+        uint height = Math.Max(1u, vkTexture.Height >> checked((int)subresource.MipLevel));
         BufferImageCopy copy = new()
         {
             BufferOffset = stagingOffset,
@@ -195,12 +223,12 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
             ImageSubresource = new ImageSubresourceLayers
             {
                 AspectMask = ImageAspectFlags.ColorBit,
-                MipLevel = 0,
-                BaseArrayLayer = 0,
+                MipLevel = subresource.MipLevel,
+                BaseArrayLayer = subresource.ArrayLayer,
                 LayerCount = 1,
             },
             ImageOffset = new Offset3D(0, 0, 0),
-            ImageExtent = new Extent3D(vkTexture.Width, vkTexture.Height, 1),
+            ImageExtent = new Extent3D(width, height, 1),
         };
         _vk.CmdCopyBufferToImage(
             _commandBuffer,
@@ -220,25 +248,17 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
             SrcQueueFamilyIndex = uint.MaxValue,
             DstQueueFamilyIndex = uint.MaxValue,
             Image = vkTexture.Handle,
-            SubresourceRange = FullColorRange,
+            SubresourceRange = range,
         };
         _vk.CmdPipelineBarrier(
             _commandBuffer,
             PipelineStageFlags.TransferBit,
-            PipelineStageFlags.FragmentShaderBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
             DependencyFlags.None,
             0, null, 0, null, 1, &postBarrier);
+        _initializedSubresources.Add((destination, subresource.MipLevel, subresource.ArrayLayer));
         _hasCommands = true;
     }
-
-    private static ImageSubresourceRange FullColorRange => new()
-    {
-        AspectMask = ImageAspectFlags.ColorBit,
-        BaseMipLevel = 0,
-        LevelCount = 1,
-        BaseArrayLayer = 0,
-        LayerCount = 1,
-    };
 
     private void BeginRecording()
     {
@@ -254,6 +274,23 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
     }
 
     public void Execute()
+    {
+        lock (_operationLock)
+        {
+            EnsureUsable();
+            try
+            {
+                ExecuteCore();
+            }
+            catch
+            {
+                _unusable = true;
+                throw;
+            }
+        }
+    }
+
+    private void ExecuteCore()
     {
         if (!_recording)
             return;
@@ -272,7 +309,10 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
             CommandBufferCount = 1,
             PCommandBuffers = &commandBufferCopy,
         };
-        VulkanHelpers.Throw(_vk.QueueSubmit(_queue, 1, &submitInfo, _fence), "vkQueueSubmit (upload)");
+        Result submitResult;
+        lock (_device.QueueLock)
+            submitResult = _vk.QueueSubmit(_queue, 1, &submitInfo, _fence);
+        VulkanHelpers.Throw(submitResult, "vkQueueSubmit (upload)");
         fixed (Fence* fencePointer = &_fence)
         {
             VulkanHelpers.Throw(
@@ -286,6 +326,13 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
         _stagingOffset = 0;
     }
 
+    private void EnsureUsable()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_unusable)
+            throw new InvalidOperationException("Vulkan staging uploader is unusable after an upload submission failure.");
+    }
+
     internal IVulkanTexture GetVkTexture(ITexture texture) => texture as IVulkanTexture
         ?? throw new ArgumentException("Texture does not belong to the Vulkan backend.", nameof(texture));
 
@@ -295,9 +342,16 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
 
     public void Dispose()
     {
-        _staging?.Dispose();
-        _vk.DestroyFence(_device.Handle, _fence, null);
-        _vk.DestroyCommandPool(_device.Handle, _commandPool, null);
+        lock (_operationLock)
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            _staging?.Dispose();
+            _staging = null;
+            _vk.DestroyFence(_device.Handle, _fence, null);
+            _vk.DestroyCommandPool(_device.Handle, _commandPool, null);
+        }
     }
 }
 

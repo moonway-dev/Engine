@@ -5,6 +5,7 @@ using Engine.Platform;
 using Engine.RHI;
 using Engine.Rendering;
 using ImGuiNET;
+using System.Text.Json;
 
 namespace Engine.Editor;
 
@@ -29,6 +30,7 @@ public sealed class EditorModule : IUpdatableModule
     private ITexture? _viewTexture;
     private ITexture? _gameTexture;
     private bool _initialized;
+    private readonly Queue<(KeyCode Key, KeyModifiers Modifiers)> _pendingHotkeys = new();
 
     public string Name => "Editor";
 
@@ -41,6 +43,12 @@ public sealed class EditorModule : IUpdatableModule
     public Engine.Assets.MaterialAssetStore? MaterialStore { get; set; }
 
     public Engine.Assets.AssetDatabase? ModelAssets { get; set; }
+
+    public Engine.Scripting.ScriptingModule? ScriptRuntime { get; set; }
+
+    public Engine.Physics.PhysicsModule? Physics { get; set; }
+
+    public PlayModeController? PlayMode { get; private set; }
 
     public EditorModule(
         RhiModule rhiModule,
@@ -75,6 +83,8 @@ public sealed class EditorModule : IUpdatableModule
             throw new InvalidOperationException("Editor requires an initialized RHI module.");
         _window = context.Services.Resolve<IWindow>();
         _window.KeyPressed += OnKeyPressed;
+        _window.FocusChanged += OnFocusChanged;
+        Inspection.ScriptComponentInspector.Register();
         _backend = new ImGuiBackend(rhi.Device, _window, _log, _shaderDirectory, _renderer.OverlayFormat, ResolveLayoutPath());
         _renderer.EnableEditorMode(new Size2D(1280, 720));
         CreateOverlay();
@@ -85,7 +95,19 @@ public sealed class EditorModule : IUpdatableModule
 
     public bool SceneViewFocused => _overlay?.SceneViewFocused ?? false;
 
-    public bool WantCaptureMouse => _backend is not null && ImGui.GetIO().WantCaptureMouse;
+    public System.Numerics.Vector2 SceneViewCenter => _overlay?.SceneViewCenter ?? System.Numerics.Vector2.Zero;
+
+    public System.Numerics.Vector2 SceneViewWindowPosition => _overlay?.SceneViewWindowPosition ?? System.Numerics.Vector2.Zero;
+
+    public bool ApplicationFocused => _window?.IsFocused ?? false;
+
+    public bool WantCaptureMouse => _overlay?.WantCaptureMouse ?? false;
+
+    public bool WantCaptureKeyboard => _overlay?.WantCaptureKeyboard ?? false;
+
+    public bool WantTextInput => _overlay?.WantTextInput ?? false;
+
+    public bool SceneViewMouseCaptured => _overlay?.SceneViewMouseCaptured ?? false;
 
     private void CreateOverlay()
     {
@@ -108,13 +130,45 @@ public sealed class EditorModule : IUpdatableModule
         _sceneHostAdapter.ActiveSceneChanged += OnActiveSceneChanged;
         SceneDocument document = new(_sceneHostAdapter, _scene);
         EditorContext editorContext = new(document, ResolveAssetsPath(), MaterialStore) { ModelAssets = ModelAssets };
+        string projectSettingsPath = ResolveProjectSettingsPath();
+        ProjectSettings projectSettings = LoadProjectSettings(projectSettingsPath);
+        projectSettings.ApplyTo(_renderer);
+        OnVSyncChanged(projectSettings.VSync);
+        PlayMode?.Dispose();
+        PlayMode = null;
+        PlayMode = new PlayModeController(editorContext, ScriptRuntime, Physics);
         _overlay = new EditorOverlay(
             _renderer,
             editorContext,
             _memoryLogSink,
-            _rhiModule.Instance?.VSync ?? true,
-            _rhiModule.Instance?.Device.Features);
+            projectSettings,
+            projectSettingsPath,
+            _rhiModule.Instance?.Device.Features,
+            _rhiModule.Instance,
+            PlayMode);
         _overlay.VSyncChanged += OnVSyncChanged;
+    }
+
+    private string ResolveProjectSettingsPath()
+    {
+        string assetsRoot = ResolveAssetsPath();
+        string? projectRoot = Path.GetDirectoryName(assetsRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return string.IsNullOrEmpty(projectRoot)
+            ? Path.Combine(assetsRoot, "Project.project")
+            : Path.Combine(projectRoot, "Project.project");
+    }
+
+    private ProjectSettings LoadProjectSettings(string path)
+    {
+        try
+        {
+            return ProjectSettings.Load(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or JsonException)
+        {
+            _log?.Warning($"Failed to load project settings from '{path}': {exception.Message}");
+            return new ProjectSettings();
+        }
     }
 
     private void OnActiveSceneChanged(object? sender, SceneChangedEventArgs args)
@@ -124,7 +178,7 @@ public sealed class EditorModule : IUpdatableModule
     }
 
     private string ResolveAssetsPath() => string.IsNullOrWhiteSpace(_assetsDirectory)
-        ? ResolveProjectPath("Assets")
+        ? ResolveProjectPath(Path.Combine("Projects", "SampleProject"))
         : Path.GetFullPath(_assetsDirectory);
 
     private string ResolveLayoutPath() => string.IsNullOrWhiteSpace(_layoutPath)
@@ -146,10 +200,26 @@ public sealed class EditorModule : IUpdatableModule
 
     private void OnKeyPressed(KeyCode key, KeyModifiers modifiers)
     {
+        if (_overlay is not null && _pendingHotkeys.Count < 32)
+            _pendingHotkeys.Enqueue((key, modifiers));
+    }
+
+    private void OnFocusChanged(bool focused)
+    {
+        if (!focused)
+            _pendingHotkeys.Clear();
+    }
+
+    private void ProcessPendingHotkeys()
+    {
         if (_overlay is null || _backend is null)
+        {
+            _pendingHotkeys.Clear();
             return;
-        bool textInputActive = ImGui.GetIO().WantTextInput || ImGui.IsAnyItemActive();
-        _overlay.HandleHotkey(key, modifiers, textInputActive);
+        }
+        bool textInputActive = ImGui.GetIO().WantTextInput || ImGui.IsAnyItemActive() || ImGui.IsAnyItemFocused();
+        while (_pendingHotkeys.TryDequeue(out (KeyCode Key, KeyModifiers Modifiers) input))
+            _overlay.HandleHotkey(input.Key, input.Modifiers, textInputActive);
     }
 
     private void OnVSyncChanged(bool value)
@@ -163,6 +233,7 @@ public sealed class EditorModule : IUpdatableModule
         if (!_initialized || _backend is null)
             return;
         _renderer.SetViewExtent(_overlay?.DesiredViewExtent ?? new Size2D(1280, 720));
+        _renderer.RefreshTargets();
         if (_overlay is not null && _renderer.ViewTexture is ITexture viewTexture)
         {
             if (_viewTexture is not null && !ReferenceEquals(_viewTexture, viewTexture))
@@ -178,6 +249,7 @@ public sealed class EditorModule : IUpdatableModule
             _overlay.SetGameTexture(gameTexture, _backend.GetTextureId(gameTexture));
         }
         _backend.NewFrame(frameTime);
+        ProcessPendingHotkeys();
         _overlay?.Draw();
         ImGui.Render();
         _renderer.OverlayRender = _backend.Render;
@@ -197,6 +269,8 @@ public sealed class EditorModule : IUpdatableModule
             _sceneHostAdapter.Dispose();
             _sceneHostAdapter = null;
         }
+        PlayMode?.Dispose();
+        PlayMode = null;
         _rhiModule.Instance?.WaitIdle();
         if (_backend is not null && _viewTexture is not null)
             _backend.RemoveTexture(_viewTexture);
@@ -210,7 +284,11 @@ public sealed class EditorModule : IUpdatableModule
             _engineContext.Logging.RemoveSink(_memoryLogSink);
         _memoryLogSink = null;
         if (_window is not null)
+        {
             _window.KeyPressed -= OnKeyPressed;
+            _window.FocusChanged -= OnFocusChanged;
+        }
+        _pendingHotkeys.Clear();
         _window = null;
         _engineContext = null;
         _initialized = false;

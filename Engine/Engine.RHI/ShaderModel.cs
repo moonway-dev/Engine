@@ -9,6 +9,7 @@ public enum DescriptorType
     Sampler,
     CombinedImageSampler,
     InputAttachment,
+    AccelerationStructure,
 }
 
 public sealed record PipelineReflection
@@ -54,6 +55,9 @@ public enum ShaderStages
     RayGeneration = 64,
     Miss = 128,
     ClosestHit = 256,
+    AnyHit = 512,
+    Intersection = 1024,
+    Callable = 2048,
 }
 
 public sealed record ShaderStageCode

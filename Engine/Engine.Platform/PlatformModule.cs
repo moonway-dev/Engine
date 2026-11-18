@@ -25,8 +25,8 @@ public sealed class PlatformModule : IUpdatableModule
 
     public void Update(in FrameTime frameTime)
     {
-        _platform!.PollEvents();
-        _platform.UpdateWindowInputs();
+        _platform!.UpdateWindowInputs();
+        _platform.PollEvents();
     }
 
     public void Shutdown() => _platform?.Dispose();

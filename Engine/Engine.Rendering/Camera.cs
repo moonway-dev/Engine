@@ -41,6 +41,16 @@ public sealed class Camera
 
     public Matrix4x4 ViewProjection => ProjectionMatrix * ViewMatrix;
 
+    public Matrix4x4 CreateJitteredViewProjection(Vector2 jitterPixels, Size2D extent)
+    {
+        if (extent.Width <= 0 || extent.Height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(extent));
+        Matrix4x4 projection = ProjectionMatrix;
+        projection.M13 += 2f * jitterPixels.X / extent.Width;
+        projection.M23 += 2f * jitterPixels.Y / extent.Height;
+        return projection * ViewMatrix;
+    }
+
     public void LookAt(Vector3 target) => LookAt(target, Vector3.Up);
 
     public void LookAt(Vector3 target, Vector3 up)

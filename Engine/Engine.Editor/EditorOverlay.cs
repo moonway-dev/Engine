@@ -22,6 +22,8 @@ public sealed class EditorOverlay : IDisposable
     private readonly ProjectBrowserPanel _projectBrowser;
     private readonly ConsolePanel _console;
     private readonly StatsPanel _stats;
+    private readonly ProjectSettingsPanel _projectSettings;
+    private readonly SceneSettingsPanel _sceneSettings;
     private readonly ViewportPanel _sceneView;
     private readonly ViewportPanel _gameView;
     private readonly List<IEditorPanel> _panels;
@@ -29,6 +31,8 @@ public sealed class EditorOverlay : IDisposable
     private readonly RendererModule _renderer;
     private readonly TransformGizmo _gizmo;
     private readonly List<(Engine.Scene.Scene Scene, string Path, Vector3 Position)> _pendingModels = [];
+    private readonly PlayModeController? _playMode;
+    private EditorPlayState? _lastPlayState;
     private bool _showDemo;
     private bool _disposed;
 
@@ -36,13 +40,23 @@ public sealed class EditorOverlay : IDisposable
 
     public EditorContext Context => _context;
 
-    public bool SceneViewFocused => _sceneView.IsHovered;
+    public bool SceneViewFocused => _sceneView.IsWindowFocused;
 
     public Size2D DesiredViewExtent => _sceneView.DesiredExtent;
 
     public bool ViewportHovered => _sceneView.IsHovered;
 
+    public System.Numerics.Vector2 SceneViewCenter => _sceneView.ImageMinimum + _sceneView.ImageSize * 0.5f;
+
+    public System.Numerics.Vector2 SceneViewWindowPosition => _sceneView.WindowPosition;
+
     public bool WantCaptureMouse => ImGui.GetIO().WantCaptureMouse;
+
+    public bool WantCaptureKeyboard => ImGui.GetIO().WantCaptureKeyboard;
+
+    public bool WantTextInput => ImGui.GetIO().WantTextInput;
+
+    public bool SceneViewMouseCaptured => (WantCaptureMouse && !_sceneView.IsHovered) || _sceneView.OverlayItemActive;
 
     public GameObject? SelectedObject => _context.Document.SelectedObject;
 
@@ -50,22 +64,28 @@ public sealed class EditorOverlay : IDisposable
         RendererModule renderer,
         EditorContext context,
         MemoryLogSink logSink,
-        bool vsync,
-        FeatureInfo? graphicsFeatures = null)
+        ProjectSettings projectSettings,
+        string projectSettingsPath,
+        FeatureInfo? graphicsFeatures = null,
+        IRHI? rhi = null,
+        PlayModeController? playMode = null)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _playMode = playMode;
         _gizmo = new TransformGizmo(context, renderer);
-        _toolbar = new ToolbarPanel(context);
+        _toolbar = new ToolbarPanel(context, playMode);
         _hierarchy = new HierarchyPanel(context);
         _inspector = new InspectorPanel(context);
         _projectBrowser = new ProjectBrowserPanel(context);
         _console = new ConsolePanel(logSink);
-        _stats = new StatsPanel(context, renderer, vsync, graphicsFeatures);
-        _sceneView = new ViewportPanel("Scene View", tracksDesiredExtent: true);
+        _stats = new StatsPanel(context, renderer, graphicsFeatures, rhi);
+        _projectSettings = new ProjectSettingsPanel(renderer, projectSettings, projectSettingsPath);
+        _sceneSettings = new SceneSettingsPanel(context, renderer);
+        _sceneView = new ViewportPanel("Scene View", tracksDesiredExtent: true, context);
         _gameView = new ViewportPanel("Game View", tracksDesiredExtent: false);
-        _panels = [_hierarchy, _inspector, _projectBrowser, _console, _stats, _sceneView, _gameView];
-        _stats.VSyncChanged += OnVSyncChanged;
+        _panels = [_hierarchy, _inspector, _projectBrowser, _console, _stats, _projectSettings, _sceneSettings, _sceneView, _gameView];
+        _projectSettings.VSyncChanged += OnVSyncChanged;
         RegisterDefaultHotkeys();
     }
 
@@ -83,10 +103,13 @@ public sealed class EditorOverlay : IDisposable
         _context.ModelAssets?.PumpLodUploads();
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.None);
         _toolbar.Draw(DrawWindowMenu);
+        HandlePlayStateTransition();
         foreach (IEditorPanel panel in _panels)
             panel.Draw();
         _renderer.SceneViewVisible = _sceneView.IsRenderVisible;
         _renderer.GameViewVisible = _gameView.IsRenderVisible;
+        if (_gameView.IsOpen)
+            _renderer.SetGameViewExtent(_gameView.DesiredExtent);
         HandleSceneViewInteraction();
         if (_context.Error is { } error)
         {
@@ -106,20 +129,56 @@ public sealed class EditorOverlay : IDisposable
     public void SetGameTexture(ITexture texture, IntPtr textureId) =>
         _gameView.SetTexture(texture, textureId);
 
+    private void HandlePlayStateTransition()
+    {
+        if (_playMode is null || _playMode.State == _lastPlayState)
+            return;
+        EditorPlayState previous = _lastPlayState ?? EditorPlayState.Stopped;
+        _lastPlayState = _playMode.State;
+        if (previous == EditorPlayState.Stopped && _playMode.State == EditorPlayState.Playing)
+        {
+            _gameView.IsOpen = true;
+            ImGui.SetWindowFocus("Game View");
+        }
+    }
+
     private void HandleSceneViewInteraction()
     {
         HandleSceneViewAssetDrop();
-        if (_sceneView.ImageClicked)
+        if (!_sceneView.CanDrawOverlay)
+        {
+            _gizmo.CancelDrag();
+            return;
+        }
+        ImGuiIOPtr io = ImGui.GetIO();
+        bool sceneInputBlocked = io.WantCaptureMouse && !_sceneView.IsHovered;
+        bool sceneImageHovered = _sceneView.IsHovered && !sceneInputBlocked;
+        if (sceneInputBlocked)
+        {
+            _gizmo.CancelDrag();
+            return;
+        }
+        bool sceneImageClicked = _sceneView.ImageClicked && !sceneInputBlocked;
+        if (sceneImageClicked && !_sceneView.OverlayItemActive)
             _context.SelectScene();
-        bool gizmoConsumed = _context.SelectedMaterial is null && _gizmo.Draw(_sceneView);
-        if (_sceneView.ImageClicked && !gizmoConsumed)
+        if (sceneImageClicked && _sceneView.OverlayItemActive)
+            return;
+        if (_context.SelectedMaterial is not null)
+        {
+            _gizmo.CancelDrag();
+            return;
+        }
+        bool gizmoConsumed = _sceneView.CanDrawOverlay && _gizmo.Draw(_sceneView);
+        if (sceneImageClicked && !gizmoConsumed)
         {
             Vector2 normalized = new(_sceneView.MouseNormalized.X, _sceneView.MouseNormalized.Y);
             PickingHit? hit = _renderer.PickEditorView(normalized);
             _context.Document.Select(hit?.GameObject);
         }
         GameObject? selected = _context.Document.SelectedObject;
-        if (selected is null || _context.SelectedMaterial is not null || !_sceneView.IsHovered)
+        if (selected is null || _context.SelectedMaterial is not null || !sceneImageHovered || !_sceneView.IsWindowFocused)
+            return;
+        if (WantCaptureKeyboard || WantTextInput || ImGui.IsAnyItemActive() || ImGui.IsAnyItemFocused())
             return;
         Transform transform = selected.Transform;
         float grid = 0.25f;
@@ -147,10 +206,10 @@ public sealed class EditorOverlay : IDisposable
                 ExecuteTransform("Rotate", (selected.Id, "rotation"), () => transform.LocalRotation, value => transform.LocalRotation = value, Quaternion.FromAxisAngle(Vector3.Up, -MathUtil.DegToRad * 5f) * rotation);
                 break;
             case TransformMode.Scale when ImGui.IsKeyPressed(ImGuiKey.UpArrow):
-                ExecuteTransform("Scale", (selected.Id, "scale"), () => transform.LocalScale, value => transform.LocalScale = value, scale + Vector3.One * 0.1f);
+                ExecuteTransform("Scale", (selected.Id, "scale"), () => transform.LocalScale, value => transform.LocalScale = value, EditorContext.ClampScale(scale + Vector3.One * 0.1f));
                 break;
             case TransformMode.Scale when ImGui.IsKeyPressed(ImGuiKey.DownArrow):
-                ExecuteTransform("Scale", (selected.Id, "scale"), () => transform.LocalScale, value => transform.LocalScale = value, Vector3.Max(scale - Vector3.One * 0.1f, Vector3.One * 0.01f));
+                ExecuteTransform("Scale", (selected.Id, "scale"), () => transform.LocalScale, value => transform.LocalScale = value, EditorContext.ClampScale(scale - Vector3.One * 0.1f));
                 break;
         }
     }
@@ -383,6 +442,15 @@ public sealed class EditorOverlay : IDisposable
         _hotkeys.Register(new EditorHotkeyBinding("transform.translate", "Translate Mode", new EditorHotkey(KeyCode.W), () => _context.TransformMode = TransformMode.Translate));
         _hotkeys.Register(new EditorHotkeyBinding("transform.rotate", "Rotate Mode", new EditorHotkey(KeyCode.E), () => _context.TransformMode = TransformMode.Rotate));
         _hotkeys.Register(new EditorHotkeyBinding("transform.scale", "Scale Mode", new EditorHotkey(KeyCode.R), () => _context.TransformMode = TransformMode.Scale));
+        if (_playMode is not null)
+        {
+            _hotkeys.Register(new EditorHotkeyBinding("play.toggle", "Play / Stop", new EditorHotkey(KeyCode.P, KeyModifiers.Control), _playMode.TogglePlay));
+            _hotkeys.Register(new EditorHotkeyBinding("play.pause", "Pause / Resume", new EditorHotkey(KeyCode.P, KeyModifiers.Control | KeyModifiers.Shift), _playMode.TogglePause));
+            _hotkeys.Register(new EditorHotkeyBinding("play.step", "Step One Frame", new EditorHotkey(KeyCode.F10), _playMode.Step)
+            {
+                CanExecute = () => _playMode.State == EditorPlayState.Paused,
+            });
+        }
     }
 
     private void Save()
@@ -408,7 +476,7 @@ public sealed class EditorOverlay : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        _stats.VSyncChanged -= OnVSyncChanged;
+        _projectSettings.VSyncChanged -= OnVSyncChanged;
         _context.Dispose();
     }
 }

@@ -10,12 +10,12 @@
     <ProjectReference Include="..\..\Engine\Engine.Rendering\Engine.Rendering.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.Assets\Engine.Assets.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.Editor\Engine.Editor.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.ScriptingRuntime\Engine.ScriptingRuntime.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.Physics\Engine.Physics.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.Shaders\Engine.Shaders.csproj" />
     <ProjectReference Include="..\..\SDK\Engine.Mathematics\Engine.Mathematics.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Shaders/**" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

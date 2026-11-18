@@ -49,13 +49,13 @@ internal unsafe sealed class GlfwPlatform : IPlatform
         return window;
     }
 
-    public void PollEvents() => _glfw!.PollEvents();
-
     internal void UpdateWindowInputs()
     {
         foreach (GlfwWindow window in _windows)
             window.UpdateInputStates();
     }
+
+    public void PollEvents() => _glfw!.PollEvents();
 
     public bool IsVulkanSupported() => _glfw!.VulkanSupported();
 

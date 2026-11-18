@@ -15,6 +15,7 @@ public sealed class MemoryBlockAllocator
 
     private readonly List<FreeRange> _freeRanges = [];
     private readonly List<FreeRange> _freeRangePool = [];
+    private readonly Dictionary<ulong, (ulong ReservedOffset, ulong ReservedSize, ulong RequestedSize)> _allocations = [];
     private readonly object _lock = new();
     private readonly int _blockIndex;
 
@@ -31,6 +32,8 @@ public sealed class MemoryBlockAllocator
 
     public bool TryAllocate(ulong size, ulong alignment, out ulong offset)
     {
+        if (alignment == 0)
+            throw new ArgumentOutOfRangeException(nameof(alignment));
         if (size == 0)
         {
             offset = 0;
@@ -43,11 +46,12 @@ public sealed class MemoryBlockAllocator
                 FreeRange range = _freeRanges[i];
                 ulong alignedOffset = AlignUp(range.Offset, alignment);
                 ulong padding = alignedOffset - range.Offset;
-                ulong requiredTotal = padding + size;
+                ulong requiredTotal = checked(padding + size);
                 if (requiredTotal > range.Size)
                     continue;
 
                 offset = alignedOffset;
+                _allocations.Add(offset, (range.Offset, requiredTotal, size));
                 Used += requiredTotal;
                 if (requiredTotal == range.Size)
                 {
@@ -71,15 +75,25 @@ public sealed class MemoryBlockAllocator
             return;
         lock (_lock)
         {
-            ulong end = offset + size;
+            if (!_allocations.Remove(offset, out (ulong ReservedOffset, ulong ReservedSize, ulong RequestedSize) allocation))
+                throw new ArgumentException("The offset does not identify a live allocation.", nameof(offset));
+            if (allocation.RequestedSize != size)
+            {
+                _allocations.Add(offset, allocation);
+                throw new ArgumentException("The size does not match the live allocation.", nameof(size));
+            }
+
+            ulong freeOffset = allocation.ReservedOffset;
+            ulong freeSize = allocation.ReservedSize;
+            ulong end = checked(freeOffset + freeSize);
             int insertIndex = 0;
-            while (insertIndex < _freeRanges.Count && _freeRanges[insertIndex].Offset < offset)
+            while (insertIndex < _freeRanges.Count && _freeRanges[insertIndex].Offset < freeOffset)
                 insertIndex++;
 
             FreeRange? previous = insertIndex > 0 ? _freeRanges[insertIndex - 1] : null;
-            if (previous is not null && previous.Offset + previous.Size == offset)
+            if (previous is not null && previous.Offset + previous.Size == freeOffset)
             {
-                previous.Size += size;
+                previous.Size += freeSize;
                 if (insertIndex < _freeRanges.Count && _freeRanges[insertIndex].Offset == end)
                 {
                     previous.Size += _freeRanges[insertIndex].Size;
@@ -88,15 +102,15 @@ public sealed class MemoryBlockAllocator
             }
             else if (insertIndex < _freeRanges.Count && _freeRanges[insertIndex].Offset == end)
             {
-                _freeRanges[insertIndex].Offset = offset;
-                _freeRanges[insertIndex].Size += size;
+                _freeRanges[insertIndex].Offset = freeOffset;
+                _freeRanges[insertIndex].Size += freeSize;
             }
             else
             {
-                FreeRange range = RentRange(offset, size);
+                FreeRange range = RentRange(freeOffset, freeSize);
                 _freeRanges.Insert(insertIndex, range);
             }
-            Used -= size;
+            Used -= freeSize;
         }
     }
 

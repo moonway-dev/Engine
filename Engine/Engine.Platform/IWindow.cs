@@ -21,6 +21,10 @@ public interface IWindow : IDisposable
 
     CursorMode CursorMode { get; set; }
 
+    void SetCursorPosition(Vector2 position);
+
+    void ResetMouseDelta();
+
     KeyboardState Keyboard { get; }
 
     MouseState Mouse { get; }

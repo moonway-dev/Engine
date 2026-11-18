@@ -3,12 +3,34 @@ using Engine.Editor;
 using Engine.Editor.Commands;
 using Engine.Editor.Documents;
 using Engine.Editor.DragDrop;
+using Engine.Editor.Inspection;
 using Engine.Editor.Models;
 using Engine.Scene;
 using Xunit;
 using SceneModel = Engine.Scene.Scene;
 
 namespace Engine.Tests.Rendering;
+
+public sealed class ComponentPropertyInspectorTests
+{
+    private sealed class FloatComponent : Component
+    {
+        public float Value { get; set; }
+    }
+
+    [Fact]
+    public void FloatValueConversion_PreservesPropertyType()
+    {
+        object single = ComponentPropertyInspector.ConvertFloatValue(1.25f, typeof(float));
+        object doubleValue = ComponentPropertyInspector.ConvertFloatValue(1.25f, typeof(double));
+        FloatComponent component = new() { Value = (float)single };
+        typeof(FloatComponent).GetProperty(nameof(FloatComponent.Value))!.SetValue(component, single);
+
+        Assert.IsType<float>(single);
+        Assert.IsType<double>(doubleValue);
+        Assert.Equal(1.25f, component.Value);
+    }
+}
 
 public sealed class EditorCommandHistoryTests
 {

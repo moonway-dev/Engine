@@ -8,6 +8,8 @@ public interface IBuffer : IDisposable
 
     MemoryUsage Memory { get; }
 
+    ulong DeviceAddress => throw new NotSupportedException("Buffer device addresses are unavailable.");
+
     IntPtr Map();
 
     void Unmap();
@@ -24,11 +26,23 @@ public interface ITexture : IDisposable
     uint MipLevels { get; }
 
     uint ArrayLayers { get; }
+
+    TextureDimension Dimension { get; }
 }
 
 public interface ITextureView : IDisposable
 {
     ITexture Texture { get; }
+
+    TextureViewType Type { get; }
+
+    uint BaseMipLevel { get; }
+
+    uint MipLevelCount { get; }
+
+    uint BaseArrayLayer { get; }
+
+    uint ArrayLayerCount { get; }
 }
 
 public interface ISampler : IDisposable;
@@ -66,9 +80,19 @@ public interface IDescriptorSet : IDisposable
 
     void WriteTexture(uint binding, ITexture texture, ISampler? sampler = null);
 
+    void WriteTexture(uint binding, ITextureView view, ISampler? sampler = null);
+
     void WriteStorageImage(uint binding, ITexture texture);
 
+    void WriteStorageImage(uint binding, ITextureView view);
+
     void WriteSampler(uint binding, ISampler sampler);
+
+    void WriteAccelerationStructure(uint binding, IAccelerationStructure accelerationStructure) =>
+        throw new NotSupportedException("Acceleration-structure descriptors are unavailable.");
+
+    void WriteTextureArray(uint binding, IReadOnlyList<ITexture> textures) =>
+        throw new NotSupportedException("Texture array descriptors are unavailable.");
 }
 
 public interface IRenderPass : IDisposable;
@@ -93,4 +117,17 @@ public interface IMemoryAllocator : IDisposable
     ulong AllocatedMemory { get; }
 }
 
-public interface IAccelerationStructure : IDisposable;
+public interface IAccelerationStructure : IDisposable
+{
+    AccelerationStructureType Type { get; }
+    ulong Size { get; }
+    ulong DeviceAddress { get; }
+    bool IsBuilt { get; }
+}
+
+public interface IRayTracingPipeline : IPipeline
+{
+    IShaderProgram ShaderProgram { get; }
+    RayTracingPipelineDescription Description { get; }
+    byte[] GetShaderGroupHandles();
+}

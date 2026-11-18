@@ -11,6 +11,8 @@
     <ProjectReference Include="..\Engine.RHI\Engine.RHI.csproj" />
     <ProjectReference Include="..\Engine.Rendering\Engine.Rendering.csproj" />
     <ProjectReference Include="..\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\Engine.Physics\Engine.Physics.csproj" />
+    <ProjectReference Include="..\Engine.ScriptingRuntime\Engine.ScriptingRuntime.csproj" />
     <ProjectReference Include="..\..\SDK\Engine.Mathematics\Engine.Mathematics.csproj" />
   </ItemGroup>
   <ItemGroup>

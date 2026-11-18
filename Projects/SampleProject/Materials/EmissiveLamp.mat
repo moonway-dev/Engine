@@ -1,0 +1,16 @@
+{
+  "Version": 1,
+  "Shader": "PBR Lit",
+  "Parent": "",
+  "Overrides": {
+    "AlbedoColor": { "X": 0.05, "Y": 0.05, "Z": 0.05 },
+    "Metallic": 0.0,
+    "Roughness": 0.8,
+    "NormalScale": 1.0,
+    "AoStrength": 1.0,
+    "UvScale": { "X": 1.0, "Y": 1.0 },
+    "UvOffset": { "X": 0.0, "Y": 0.0 },
+    "EmissionColor": { "X": 1.0, "Y": 0.85, "Z": 0.55 },
+    "EmissiveIntensity": 2.5
+  }
+}

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Engine.Mathematics;
 using Engine.RHI;
+using Engine.Scene;
 
 namespace Engine.Rendering;
 
@@ -124,6 +125,51 @@ public sealed class Mesh : IDisposable
     private readonly List<(Mesh Mesh, float Error)> _lods = [];
     private float[]? _lodErrors;
     private bool _disposed;
+    private bool _resourcesDisposed;
+    private int _rayTracingReferences;
+    internal Vertex[]? RayTracingVertices { get; }
+    internal uint[]? RayTracingIndices { get; }
+
+    public PhysicsMeshData? GetPhysicsData()
+    {
+        if (RayTracingVertices is not { } vertices || RayTracingIndices is not { } indices)
+            return null;
+        Vector3[] positions = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            positions[i] = vertices[i].Position;
+        return new PhysicsMeshData(positions, indices);
+    }
+
+    internal IDisposable RetainForRayTracing()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _rayTracingReferences++;
+        return new MeshReference(this);
+    }
+
+    private sealed class MeshReference(Mesh mesh) : IDisposable
+    {
+        private Mesh? _mesh = mesh;
+
+        public void Dispose()
+        {
+            if (_mesh is null)
+                return;
+            _mesh._rayTracingReferences--;
+            if (_mesh._disposed && _mesh._rayTracingReferences == 0)
+                _mesh.DisposeResources();
+            _mesh = null;
+        }
+    }
+
+    private void DisposeResources()
+    {
+        if (_resourcesDisposed)
+            return;
+        _resourcesDisposed = true;
+        VertexBuffer.Dispose();
+        IndexBuffer.Dispose();
+    }
 
     public int LodCount => _lods.Count + 1;
 
@@ -170,6 +216,11 @@ public sealed class Mesh : IDisposable
     public Mesh(IDevice device, Vertex[] vertices, uint[] indices, string debugName)
     {
         _device = device;
+        if (device.Features.SupportsAccelerationStructures)
+        {
+            RayTracingVertices = (Vertex[])vertices.Clone();
+            RayTracingIndices = (uint[])indices.Clone();
+        }
         IndexCount = (uint)indices.Length;
         VertexCount = vertices.Length;
         if (vertices.Length > 0)
@@ -187,7 +238,8 @@ public sealed class Mesh : IDisposable
         VertexBuffer = device.CreateBuffer(new BufferDescription
         {
             Size = checked((ulong)vertices.Length * (ulong)Marshal.SizeOf<Vertex>()),
-            Usage = BufferUsage.Vertex | BufferUsage.TransferDestination,
+            Usage = BufferUsage.Vertex | BufferUsage.TransferDestination
+                | (device.Features.SupportsAccelerationStructures ? BufferUsage.DeviceAddress | BufferUsage.AccelerationStructureBuildInput | BufferUsage.Storage : BufferUsage.None),
             Memory = MemoryUsage.GpuOnly,
         });
         try
@@ -195,7 +247,8 @@ public sealed class Mesh : IDisposable
             IndexBuffer = device.CreateBuffer(new BufferDescription
             {
                 Size = checked((ulong)indices.Length * sizeof(uint)),
-                Usage = BufferUsage.Index | BufferUsage.TransferDestination,
+                Usage = BufferUsage.Index | BufferUsage.TransferDestination
+                    | (device.Features.SupportsAccelerationStructures ? BufferUsage.DeviceAddress | BufferUsage.AccelerationStructureBuildInput | BufferUsage.Storage : BufferUsage.None),
                 Memory = MemoryUsage.GpuOnly,
             });
             try
@@ -240,7 +293,7 @@ public sealed class Mesh : IDisposable
         foreach (var level in _lods)
             level.Mesh.Dispose();
         _lods.Clear();
-        VertexBuffer.Dispose();
-        IndexBuffer.Dispose();
+        if (_rayTracingReferences == 0)
+            DisposeResources();
     }
 }

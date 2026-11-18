@@ -17,7 +17,7 @@ public sealed class NullDevice : IDevice
         VendorName = "Engine",
         ApiVersion = "Null 1.0",
         DedicatedVideoMemory = 0,
-        SupportsCompute = true,
+        SupportsCompute = false,
         SupportsRayTracing = false,
         SupportsMeshShaders = false,
     };
@@ -27,6 +27,10 @@ public sealed class NullDevice : IDevice
     public IBuffer CreateBuffer(in BufferDescription description) => new NullBuffer(description);
 
     public ITexture CreateTexture(in TextureDescription description) => new NullTexture(description);
+
+    public ITextureView CreateTextureView(ITexture texture, TextureViewType type) => CreateTextureView(texture, new TextureViewDescription { Type = type });
+
+    public ITextureView CreateTextureView(ITexture texture, in TextureViewDescription description) => new NullTextureView(texture, description);
 
     public ISampler CreateSampler(in SamplerDescription description) => new NullSampler();
 
@@ -45,7 +49,18 @@ public sealed class NullDevice : IDevice
 
     public void UploadTextureData(ITexture texture, ReadOnlySpan<byte> data)
     {
+        ArgumentNullException.ThrowIfNull(texture);
+        TextureSubresourceData subresource = new()
+        {
+            MipLevel = 0,
+            ArrayLayer = 0,
+            Data = data.ToArray(),
+        };
+        UploadTextureSubresources(texture, [subresource]);
     }
+
+    public void UploadTextureSubresources(ITexture texture, ReadOnlySpan<TextureSubresourceData> subresources) =>
+        TextureUploadValidation.ValidateSubresources(texture, subresources);
 
     public void FlushUploads()
     {
@@ -111,7 +126,14 @@ public sealed class NullTexture : ITexture
         Width = (uint)description.Extent.Width;
         Height = (uint)description.Extent.Height;
         MipLevels = description.MipLevels == 0 ? 1 : description.MipLevels;
-        ArrayLayers = description.ArrayLayers == 0 ? 1 : description.ArrayLayers;
+        ArrayLayers = description.ArrayLayers == 0 ? (description.Dimension == TextureDimension.Cube ? 6u : 1u) : description.ArrayLayers;
+        Dimension = description.Dimension;
+        if (Dimension == TextureDimension.Cube && (Width != Height || ArrayLayers != 6))
+            throw new ArgumentException("Cube textures must be square and have exactly six array layers.", nameof(description));
+        if (Dimension == TextureDimension.Texture2D && ArrayLayers != 1)
+            throw new ArgumentException("2D textures must have exactly one array layer.", nameof(description));
+        if (Dimension is < TextureDimension.Texture2D or > TextureDimension.Cube)
+            throw new ArgumentOutOfRangeException(nameof(description), "Texture dimension is not supported.");
     }
 
     public TextureFormat Format { get; }
@@ -123,6 +145,43 @@ public sealed class NullTexture : ITexture
     public uint MipLevels { get; }
 
     public uint ArrayLayers { get; }
+
+    public TextureDimension Dimension { get; }
+
+    public void Dispose()
+    {
+    }
+}
+
+public sealed class NullTextureView : ITextureView
+{
+    public NullTextureView(ITexture texture, TextureViewType type)
+        : this(texture, new TextureViewDescription { Type = type })
+    {
+    }
+
+    public NullTextureView(ITexture texture, in TextureViewDescription description)
+    {
+        Texture = texture ?? throw new ArgumentNullException(nameof(texture));
+        TextureViewDescription normalized = TextureViewValidation.ValidateAndNormalize(texture, description);
+        Type = normalized.Type;
+        BaseMipLevel = normalized.BaseMipLevel;
+        MipLevelCount = normalized.MipLevelCount;
+        BaseArrayLayer = normalized.BaseArrayLayer;
+        ArrayLayerCount = normalized.ArrayLayerCount;
+    }
+
+    public ITexture Texture { get; }
+
+    public TextureViewType Type { get; }
+
+    public uint BaseMipLevel { get; }
+
+    public uint MipLevelCount { get; }
+
+    public uint BaseArrayLayer { get; }
+
+    public uint ArrayLayerCount { get; }
 
     public void Dispose()
     {
@@ -207,7 +266,15 @@ public sealed class NullDescriptorSet : IDescriptorSet
     {
     }
 
+    public void WriteTexture(uint binding, ITextureView view, ISampler? sampler = null)
+    {
+    }
+
     public void WriteStorageImage(uint binding, ITexture texture)
+    {
+    }
+
+    public void WriteStorageImage(uint binding, ITextureView view)
     {
     }
 
@@ -224,6 +291,7 @@ public sealed class NullCommandBuffer : ICommandBuffer
 {
     private bool _recording;
     private bool _renderPassActive;
+    private readonly Stack<string> _timestampScopes = new();
     private Vector4? _lastClearColor;
     private uint _drawCalls;
     private uint _drawIndexedCalls;
@@ -235,6 +303,10 @@ public sealed class NullCommandBuffer : ICommandBuffer
     public uint DispatchCalls => _dispatchCalls;
     public bool HasRecorded { get; private set; }
 
+    public int TimestampScopeCount => _timestampScopes.Count;
+
+    public int CompletedTimestampScopeCount { get; private set; }
+
     public void Begin() => _recording = true;
 
     public void End()
@@ -243,6 +315,8 @@ public sealed class NullCommandBuffer : ICommandBuffer
             throw new InvalidOperationException("Command buffer is not recording.");
         if (_renderPassActive)
             throw new InvalidOperationException("Render pass is still active.");
+        if (_timestampScopes.Count > 0)
+            throw new InvalidOperationException("Timestamp scopes are still active.");
         _recording = false;
     }
 
@@ -262,6 +336,23 @@ public sealed class NullCommandBuffer : ICommandBuffer
         if (!_renderPassActive)
             throw new InvalidOperationException("No active render pass.");
         _renderPassActive = false;
+    }
+
+    public void BeginTimestamp(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Timestamp name must not be empty.", nameof(name));
+        if (!_recording)
+            throw new InvalidOperationException("Command buffer is not recording.");
+        _timestampScopes.Push(name);
+    }
+
+    public void EndTimestamp()
+    {
+        if (!_recording || _timestampScopes.Count == 0)
+            throw new InvalidOperationException("No timestamp scope is active.");
+        _timestampScopes.Pop();
+        CompletedTimestampScopeCount++;
     }
 
     public void SetViewport(in Viewport viewport)

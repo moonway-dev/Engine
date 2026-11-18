@@ -16,6 +16,23 @@ public readonly record struct TextureDescription
     public TextureUsage Usage { get; init; }
     public uint MipLevels { get; init; }
     public uint ArrayLayers { get; init; }
+    public TextureDimension Dimension { get; init; }
+}
+
+public readonly record struct TextureViewDescription
+{
+    public required TextureViewType Type { get; init; }
+    public uint BaseMipLevel { get; init; }
+    public uint MipLevelCount { get; init; }
+    public uint BaseArrayLayer { get; init; }
+    public uint ArrayLayerCount { get; init; }
+}
+
+public readonly record struct TextureSubresourceData
+{
+    public required uint MipLevel { get; init; }
+    public required uint ArrayLayer { get; init; }
+    public required ReadOnlyMemory<byte> Data { get; init; }
 }
 
 public readonly record struct RenderPassBeginInfo

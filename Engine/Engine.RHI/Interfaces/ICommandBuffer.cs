@@ -12,6 +12,10 @@ public interface ICommandBuffer : IDisposable
 
     void EndRendering();
 
+    void BeginTimestamp(string name);
+
+    void EndTimestamp();
+
     void SetViewport(in Viewport viewport);
 
     void SetScissor(in Rect scissor);
@@ -19,6 +23,20 @@ public interface ICommandBuffer : IDisposable
     void BindGraphicsPipeline(IGraphicsPipeline pipeline);
 
     void BindComputePipeline(IComputePipeline pipeline);
+
+    void BindRayTracingPipeline(IRayTracingPipeline pipeline) =>
+        throw new NotSupportedException("Ray tracing pipelines are unavailable.");
+
+    void BuildAccelerationStructure(IAccelerationStructure destination, AccelerationStructureBuildDescription description,
+        IBuffer scratch, ulong scratchOffset = 0, bool update = false) =>
+        throw new NotSupportedException("Acceleration structure builds are unavailable.");
+
+    void TraceRays(ShaderBindingTable table, uint width, uint height = 1, uint depth = 1) =>
+        throw new NotSupportedException("Ray tracing dispatch is unavailable.");
+
+    void MemoryBarrier(PipelineStages sourceStages, ResourceAccess sourceAccess,
+        PipelineStages destinationStages, ResourceAccess destinationAccess) =>
+        throw new NotSupportedException("Global memory barriers are unavailable.");
 
     void BindDescriptorSet(IDescriptorSet set, uint setIndex, ReadOnlySpan<uint> dynamicOffsets = default);
 

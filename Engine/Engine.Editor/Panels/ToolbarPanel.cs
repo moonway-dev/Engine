@@ -1,20 +1,24 @@
 using Engine.Editor.Documents;
 using Engine.Scene;
 using ImGuiNET;
+using NumericsVector2 = System.Numerics.Vector2;
 
 namespace Engine.Editor.Panels;
 
 public sealed class ToolbarPanel
 {
     private readonly EditorContext _context;
+    private readonly PlayModeController? _playMode;
     private string _pathBuffer = string.Empty;
     private bool _showOpen;
     private bool _showSaveAs;
     private string? _error;
+    private const float PlayButtonWidth = 58f;
 
-    public ToolbarPanel(EditorContext context)
+    public ToolbarPanel(EditorContext context, PlayModeController? playMode = null)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _playMode = playMode;
     }
 
     public void Draw(Action? drawAdditionalMenus = null)
@@ -58,31 +62,8 @@ public sealed class ToolbarPanel
                 ImGui.EndMenu();
             }
             drawAdditionalMenus?.Invoke();
+            DrawPlayControls();
             ImGui.Separator();
-            ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new System.Numerics.Vector2(10f, 4f));
-            DrawModeButton("Move", TransformMode.Translate);
-            ImGui.SameLine(0f, 4f);
-            DrawModeButton("Rotate", TransformMode.Rotate);
-            ImGui.SameLine(0f, 4f);
-            DrawModeButton("Scale", TransformMode.Scale);
-            ImGui.SameLine(0f, 14f);
-            bool localScale = _context.TransformMode == TransformMode.Scale;
-            ImGui.BeginDisabled(localScale);
-            bool local = localScale || _context.TransformSpace == TransformSpace.Local;
-            EditorTheme.PushSelectedButton(local);
-            if (ImGui.SmallButton("Local"))
-                _context.TransformSpace = TransformSpace.Local;
-            EditorTheme.PopSelectedButton(local);
-            ImGui.SameLine(0f, 4f);
-            EditorTheme.PushSelectedButton(!local);
-            if (ImGui.SmallButton("Global"))
-                _context.TransformSpace = TransformSpace.Global;
-            EditorTheme.PopSelectedButton(!local);
-            ImGui.EndDisabled();
-            if (localScale && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Scale uses local axes.");
-            ImGui.PopStyleVar();
-            ImGui.SameLine(0f, 14f);
             ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
             ImGui.TextUnformatted(_context.ActiveTitle);
             ImGui.PopStyleColor();
@@ -95,13 +76,54 @@ public sealed class ToolbarPanel
 
     public void RequestSaveAs() => OpenPathDialog(saveAs: true);
 
-    private void DrawModeButton(string label, TransformMode mode)
+    private void DrawPlayControls()
     {
-        bool selected = _context.TransformMode == mode;
-        EditorTheme.PushSelectedButton(selected);
-        if (ImGui.SmallButton(label))
-            _context.TransformMode = mode;
-        EditorTheme.PopSelectedButton(selected);
+        if (_playMode is null)
+            return;
+        EditorPlayState state = _playMode.State;
+        float totalWidth = PlayButtonWidth * 4 + ImGui.GetStyle().ItemSpacing.X * 3;
+        float centered = ImGui.GetWindowWidth() * 0.5f - totalWidth * 0.5f;
+        if (centered > ImGui.GetCursorPosX() + 16f)
+            ImGui.SetCursorPosX(centered);
+
+        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Stopped ? EditorTheme.Success : EditorTheme.MutedText);
+        if (ImGui.Button("Play", new NumericsVector2(PlayButtonWidth, 0)) && state == EditorPlayState.Stopped)
+            _playMode.EnterPlay();
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Playing ? EditorTheme.Warning : EditorTheme.MutedText);
+        if (ImGui.Button(state == EditorPlayState.Paused ? "Resume" : "Pause", new NumericsVector2(PlayButtonWidth, 0)))
+        {
+            if (state == EditorPlayState.Playing)
+                _playMode.Pause();
+            else if (state == EditorPlayState.Paused)
+                _playMode.Resume();
+        }
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Paused ? EditorTheme.MutedText : EditorTheme.MutedText * 0.55f);
+        if (ImGui.Button("Step", new NumericsVector2(PlayButtonWidth, 0)) && state == EditorPlayState.Paused)
+            _playMode.Step();
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Stopped ? EditorTheme.MutedText : EditorTheme.Error);
+        if (ImGui.Button("Stop", new NumericsVector2(PlayButtonWidth, 0)) && state != EditorPlayState.Stopped)
+            _playMode.ExitPlay();
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, state switch
+        {
+            EditorPlayState.Playing => EditorTheme.Success,
+            EditorPlayState.Paused => EditorTheme.Warning,
+            _ => EditorTheme.MutedText,
+        });
+        ImGui.TextUnformatted(state switch
+        {
+            EditorPlayState.Playing => "Playing",
+            EditorPlayState.Paused => "Paused",
+            _ => "Editing",
+        });
+        ImGui.PopStyleColor();
     }
 
     private void OpenPathDialog(bool saveAs)
@@ -129,7 +151,7 @@ public sealed class ToolbarPanel
         if (!ImGui.BeginPopupModal(title, ref visible, ImGuiWindowFlags.AlwaysAutoResize))
             return;
         requested = false;
-        ImGui.SetNextItemWidth(560f);
+        ImGui.SetNextItemWidth(420f);
         ImGui.InputText("Path", ref _pathBuffer, 2048);
         if (_error is not null)
         {

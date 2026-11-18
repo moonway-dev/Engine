@@ -1,0 +1,440 @@
+{
+  "version": 1,
+  "name": "Main",
+  "objects": [
+    {
+      "id": "55dcfe1a-624e-40b4-a866-9115a1ab586e",
+      "name": "Ground",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          -0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.55,
+              0.6,
+              0.65
+            ],
+            "EmissiveIntensity": 0,
+            "Metallic": 0.05,
+            "ResourceKey": "ground",
+            "Roughness": 0.85,
+            "UvScale": [
+              10,
+              10
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "IsAwake": true,
+            "Kind": 0,
+            "Mass": 1
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Center": [0, -0.125, 0],
+            "Size": [24, 0.25, 24]
+          }
+        }
+      ]
+    },
+    {
+      "id": "27770257-aa7c-4ff8-af06-da76433e08aa",
+      "name": "MetalCube",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0.6,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.45,
+              0.2
+            ],
+            "EmissiveIntensity": 0,
+            "Metallic": 0.95,
+            "ResourceKey": "cube",
+            "Roughness": 0.25,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "1d6eff61-686a-49d6-9734-efb86e5b8e17",
+      "name": "PhysicsCrate",
+      "active": true,
+      "transform": {
+        "position": [
+          0.4,
+          4.5,
+          0.6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.9,
+              0.75,
+              0.3
+            ],
+            "EmissiveIntensity": 0,
+            "Metallic": 0.1,
+            "ResourceKey": "cube",
+            "Roughness": 0.7,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "RigidBody",
+          "properties": {
+            "IsAwake": true,
+            "Kind": 1,
+            "Mass": 2
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "properties": {
+            "Size": [1.4, 1.4, 1.4]
+          }
+        }
+      ]
+    },
+    {
+      "id": "95e02101-915c-42ab-b048-e841dbc8af44",
+      "name": "PlasticSphere",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.6,
+          0.4,
+          0.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.2,
+              0.5,
+              0.9
+            ],
+            "EmissiveIntensity": 0,
+            "Metallic": 0,
+            "ResourceKey": "sphere",
+            "Roughness": 0.45,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "729f248f-3572-41be-8fb0-4bd466f169fb",
+      "name": "RoughCube",
+      "active": true,
+      "transform": {
+        "position": [
+          2.6,
+          0.4,
+          0.6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.35,
+              0.85,
+              0.4
+            ],
+            "EmissiveIntensity": 0,
+            "Metallic": 0.1,
+            "ResourceKey": "cube",
+            "Roughness": 0.8,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "48ccb7d3-4fa4-492f-bb1a-da5ed892cf1b",
+      "name": "GlowingSphere",
+      "active": true,
+      "transform": {
+        "position": [
+          0.8,
+          1.9,
+          -1.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.55,
+          0.55,
+          0.55
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "properties": {
+            "AlbedoColor": [
+              0.9,
+              0.75,
+              0.25
+            ],
+            "EmissiveIntensity": 1.6,
+            "Metallic": 0,
+            "ResourceKey": "sphere",
+            "Roughness": 0.4,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "85d50378-3b95-4100-b95d-75c17ff751a0",
+      "name": "Sun",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0.22923979,
+          0.77074516,
+          0.41759998,
+          -0.42309737
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Light",
+          "properties": {
+            "Color": [
+              1,
+              0.97,
+              0.92
+            ],
+            "Intensity": 3.2,
+            "Kind": 0,
+            "Range": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "ff99e72a-b509-4600-8853-3b3ad426243e",
+      "name": "BlueLamp",
+      "active": true,
+      "transform": {
+        "position": [
+          -3.2,
+          2.2,
+          1.6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Light",
+          "properties": {
+            "Color": [
+              0.35,
+              0.55,
+              1
+            ],
+            "Intensity": 14,
+            "Kind": 1,
+            "Range": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "fe58af93-c9ba-4a2c-83a0-d282c45fba85",
+      "name": "RedLamp",
+      "active": true,
+      "transform": {
+        "position": [
+          3.4,
+          1.8,
+          -1.2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Light",
+          "properties": {
+            "Color": [
+              1,
+              0.4,
+              0.3
+            ],
+            "Intensity": 10,
+            "Kind": 1,
+            "Range": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "97b19483-6d9e-4c04-b7b6-a9864b0adada",
+      "name": "MainCamera",
+      "active": true,
+      "transform": {
+        "position": [
+          6,
+          4,
+          8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "Camera",
+          "properties": {
+            "FarPlane": 500,
+            "FieldOfViewY": 0.9599311,
+            "NearPlane": 0.1
+          }
+        }
+      ]
+    }
+  ]
+}

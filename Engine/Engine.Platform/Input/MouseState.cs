@@ -25,6 +25,8 @@ public sealed class MouseState
         Position = position;
     }
 
+    internal void ResetDelta() => Delta = Vector2.Zero;
+
     internal void SetInsideWindow(bool inside) => IsInsideWindow = inside;
 
     internal void AddScroll(Vector2 delta) => ScrollDelta += delta;

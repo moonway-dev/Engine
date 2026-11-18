@@ -9,6 +9,9 @@ public sealed class Transform
     private Vector3 _localScale = Vector3.One;
     private Matrix4x4 _localMatrix = Matrix4x4.Identity;
     private Matrix4x4 _worldMatrix = Matrix4x4.Identity;
+    private Vector3 _renderPosition;
+    private Quaternion _renderRotation = Quaternion.Identity;
+    private bool _hasRenderPose;
     private bool _localDirty = true;
     private bool _worldDirty = true;
 
@@ -143,6 +146,27 @@ public sealed class Transform
             return _worldMatrix;
         }
     }
+
+    public Matrix4x4 RenderWorldMatrix
+    {
+        get
+        {
+            UpdateWorld();
+            if (!_hasRenderPose)
+                return _worldMatrix;
+            _worldMatrix.Decompose(out Vector3 scale, out _, out _);
+            return Matrix4x4.CreateTRS(_renderPosition, _renderRotation, scale);
+        }
+    }
+
+    public void SetRenderPose(Vector3 position, Quaternion rotation)
+    {
+        _renderPosition = position;
+        _renderRotation = rotation;
+        _hasRenderPose = true;
+    }
+
+    public void ClearRenderPose() => _hasRenderPose = false;
 
     public void SetLocalTRS(Vector3 position, Quaternion rotation, Vector3 scale)
     {

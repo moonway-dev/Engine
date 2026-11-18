@@ -61,22 +61,51 @@ internal unsafe sealed class GlfwWindow : IWindow
     public bool ShouldClose => _closeRequested || _glfw.WindowShouldClose(_handle);
 
     private CursorMode _cursorMode = CursorMode.Normal;
+    private bool _rawMouseMotionEnabled;
+    private readonly bool _rawMouseMotionSupported;
 
     public CursorMode CursorMode
     {
         get => _cursorMode;
         set
         {
-            _cursorMode = value;
-            _glfw.SetInputMode(_handle, CursorStateAttribute.Cursor, value switch
+            if (_cursorMode == value)
+                return;
+
+            if (value == CursorMode.Disabled)
             {
-                CursorMode.Normal => CursorModeValue.CursorNormal,
-                CursorMode.Hidden => CursorModeValue.CursorHidden,
-                CursorMode.Disabled => CursorModeValue.CursorDisabled,
-                _ => CursorModeValue.CursorNormal,
-            });
+                _glfw.SetInputMode(_handle, CursorStateAttribute.Cursor, CursorModeValue.CursorDisabled);
+                if (_rawMouseMotionSupported)
+                {
+                    _glfw.SetInputMode(_handle, CursorStateAttribute.RawMouseMotion, true);
+                    _rawMouseMotionEnabled = true;
+                }
+            }
+            else
+            {
+                if (_rawMouseMotionEnabled)
+                {
+                    _glfw.SetInputMode(_handle, CursorStateAttribute.RawMouseMotion, false);
+                    _rawMouseMotionEnabled = false;
+                }
+                _glfw.SetInputMode(_handle, CursorStateAttribute.Cursor, value switch
+                {
+                    CursorMode.Normal => CursorModeValue.CursorNormal,
+                    CursorMode.Hidden => CursorModeValue.CursorHidden,
+                    _ => CursorModeValue.CursorNormal,
+                });
+            }
+
+            _cursorMode = value;
         }
     }
+
+    public void SetCursorPosition(Vector2 position)
+    {
+        _glfw.SetCursorPos(_handle, position.X, position.Y);
+    }
+
+    public void ResetMouseDelta() => _mouse.ResetDelta();
 
     public KeyboardState Keyboard => _keyboard;
 
@@ -96,6 +125,7 @@ internal unsafe sealed class GlfwWindow : IWindow
     public GlfwWindow(Glfw glfw, WindowDescription description)
     {
         _glfw = glfw;
+        _rawMouseMotionSupported = _glfw.RawMouseMotionSupported();
         _title = description.Title;
 
         _glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
@@ -184,7 +214,16 @@ internal unsafe sealed class GlfwWindow : IWindow
             _framebufferSize = new Size2D(width, height);
             Resized?.Invoke(_framebufferSize);
         };
-        _focusCallback = (window, focused) => FocusChanged?.Invoke(focused);
+        _focusCallback = (window, focused) =>
+        {
+            if (!focused)
+            {
+                CursorMode = CursorMode.Normal;
+                _keyboard.Reset();
+                _mouse.Reset();
+            }
+            FocusChanged?.Invoke(focused);
+        };
         _keyCallback = (window, key, scancode, action, mods) =>
         {
             KeyCode keyCode = (KeyCode)(int)key;
@@ -312,6 +351,8 @@ internal unsafe sealed class GlfwWindow : IWindow
         if (_disposed)
             return;
         _disposed = true;
+        if (_cursorMode != CursorMode.Normal)
+            CursorMode = CursorMode.Normal;
         CloseRequested = null;
         Resized = null;
         FocusChanged = null;

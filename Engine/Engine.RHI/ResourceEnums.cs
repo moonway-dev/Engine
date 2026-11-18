@@ -11,6 +11,10 @@ public enum BufferUsage
     Indirect = 16,
     TransferSource = 32,
     TransferDestination = 64,
+    DeviceAddress = 128,
+    AccelerationStructureBuildInput = 256,
+    AccelerationStructureStorage = 512,
+    ShaderBindingTable = 1024,
 }
 
 public enum MemoryUsage
@@ -34,6 +38,20 @@ public enum TextureUsage
     TransferDestination = 32,
 }
 
+public enum TextureDimension
+{
+    Texture2D,
+    Texture2DArray,
+    Cube,
+}
+
+public enum TextureViewType
+{
+    Texture2D,
+    Texture2DArray,
+    Cube,
+}
+
 [Flags]
 public enum PipelineStages
 {
@@ -52,6 +70,8 @@ public enum PipelineStages
     Host = 2048,
     AllGraphics = 4096,
     AllCommands = 8192,
+    AccelerationStructureBuild = 16384,
+    RayTracingShader = 32768,
 }
 
 [Flags]
@@ -74,6 +94,8 @@ public enum ResourceAccess
     HostWrite = 8192,
     MemoryRead = 16384,
     MemoryWrite = 32768,
+    AccelerationStructureRead = 65536,
+    AccelerationStructureWrite = 131072,
 }
 
 public readonly record struct TextureSubresourceRange(

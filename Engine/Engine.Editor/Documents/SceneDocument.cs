@@ -10,6 +10,7 @@ public sealed class SceneDocument : IEditorSnapshotSource, IDisposable
     private bool _disposed;
     private bool _suppressHostChange;
     private Guid? _selectedObjectId;
+    private bool _dirtyBeforePlay;
 
     public event EventHandler? Changed;
 
@@ -114,6 +115,25 @@ public sealed class SceneDocument : IEditorSnapshotSource, IDisposable
         SceneModel restored = snapshot.Restore(CloneIdPolicy.PreserveIds, Scene.ComponentRegistry).Scene;
         ReplaceScene(restored);
         SetSelection(selection is Guid id && restored.FindById(id) is not null ? id : null);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void EnterPlayMode(Scene.Scene playScene)
+    {
+        ArgumentNullException.ThrowIfNull(playScene);
+        _dirtyBeforePlay = IsDirty;
+        ReplaceScene(playScene);
+        SetSelection(_selectedObjectId is Guid playId && playScene.FindById(playId) is not null ? playId : null);
+        History.Reset(markSaved: true);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void ExitPlayMode(Scene.Scene editScene)
+    {
+        ArgumentNullException.ThrowIfNull(editScene);
+        ReplaceScene(editScene);
+        SetSelection(_selectedObjectId is Guid editId && editScene.FindById(editId) is not null ? editId : null);
+        History.Reset(markSaved: !_dirtyBeforePlay);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

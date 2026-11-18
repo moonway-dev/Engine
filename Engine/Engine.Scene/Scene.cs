@@ -1,5 +1,7 @@
 namespace Engine.Scene;
 
+using Engine.Mathematics;
+
 public sealed class Scene
 {
     private readonly Dictionary<Guid, GameObject> _objectsById = [];
@@ -9,6 +11,8 @@ public sealed class Scene
     private readonly List<SceneDiagnostic> _diagnostics = [];
 
     public string Name { get; set; } = "Scene";
+
+    public Vector4 SkyColor { get; set; } = new(0.35f, 0.55f, 0.85f, 1f);
 
     public int SourceVersion { get; internal set; } = SceneSerializer.CurrentVersion;
 
@@ -253,19 +257,28 @@ public sealed class ComponentRegistry
         RegisterGlobal(typeof(TComponent), () => factory(), key);
     }
 
-    public static void RegisterGlobal(Type componentType, Func<Component> factory, string? key = null)
+    public static void RegisterGlobal(Type componentType, Func<Component> factory, string? key = null, bool overwrite = false)
     {
         ComponentRegistration registration = CreateRegistration(componentType, factory, key);
         lock (GlobalLock)
         {
-            if (GlobalRegistrations.TryGetValue(registration.Key, out ComponentRegistration? byKey)
-                && byKey.ComponentType != registration.ComponentType)
-                throw new InvalidOperationException(
-                    $"Component key '{registration.Key}' is already registered for type '{byKey.ComponentType.FullName}'.");
-            if (GlobalKeysByType.TryGetValue(registration.ComponentType, out string? existingKey)
-                && !existingKey.Equals(registration.Key, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException(
-                    $"Component type '{registration.ComponentType.FullName}' is already registered with key '{existingKey}'.");
+            if (!overwrite)
+            {
+                if (GlobalRegistrations.TryGetValue(registration.Key, out ComponentRegistration? byKey)
+                    && byKey.ComponentType != registration.ComponentType)
+                    throw new InvalidOperationException(
+                        $"Component key '{registration.Key}' is already registered for type '{byKey.ComponentType.FullName}'.");
+                if (GlobalKeysByType.TryGetValue(registration.ComponentType, out string? existingKey)
+                    && !existingKey.Equals(registration.Key, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        $"Component type '{registration.ComponentType.FullName}' is already registered with key '{existingKey}'.");
+            }
+            if (GlobalRegistrations.TryGetValue(registration.Key, out ComponentRegistration? replacedKey)
+                && replacedKey.ComponentType != registration.ComponentType)
+                GlobalKeysByType.Remove(replacedKey.ComponentType);
+            if (GlobalKeysByType.TryGetValue(registration.ComponentType, out string? replacedType)
+                && !replacedType.Equals(registration.Key, StringComparison.OrdinalIgnoreCase))
+                GlobalRegistrations.Remove(replacedType);
             GlobalRegistrations[registration.Key] = registration;
             GlobalKeysByType[registration.ComponentType] = registration.Key;
         }
@@ -277,17 +290,26 @@ public sealed class ComponentRegistry
         Register(typeof(TComponent), () => factory(), key);
     }
 
-    public void Register(Type componentType, Func<Component> factory, string? key = null)
+    public void Register(Type componentType, Func<Component> factory, string? key = null, bool overwrite = false)
     {
         ComponentRegistration registration = CreateRegistration(componentType, factory, key);
-        if (_registrations.TryGetValue(registration.Key, out ComponentRegistration? byKey)
-            && byKey.ComponentType != registration.ComponentType)
-            throw new InvalidOperationException(
-                $"Component key '{registration.Key}' is already registered for type '{byKey.ComponentType.FullName}'.");
-        if (_registrationsByType.TryGetValue(registration.ComponentType, out ComponentRegistration? byType)
-            && !byType.Key.Equals(registration.Key, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                $"Component type '{registration.ComponentType.FullName}' is already registered with key '{byType.Key}'.");
+        if (!overwrite)
+        {
+            if (_registrations.TryGetValue(registration.Key, out ComponentRegistration? byKey)
+                && byKey.ComponentType != registration.ComponentType)
+                throw new InvalidOperationException(
+                    $"Component key '{registration.Key}' is already registered for type '{byKey.ComponentType.FullName}'.");
+            if (_registrationsByType.TryGetValue(registration.ComponentType, out ComponentRegistration? byType)
+                && !byType.Key.Equals(registration.Key, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"Component type '{registration.ComponentType.FullName}' is already registered with key '{byType.Key}'.");
+        }
+        if (_registrations.TryGetValue(registration.Key, out ComponentRegistration? replacedKey)
+            && replacedKey.ComponentType != registration.ComponentType)
+            _registrationsByType.Remove(replacedKey.ComponentType);
+        if (_registrationsByType.TryGetValue(registration.ComponentType, out ComponentRegistration? replacedType)
+            && !replacedType.Key.Equals(registration.Key, StringComparison.OrdinalIgnoreCase))
+            _registrations.Remove(replacedType.Key);
         _registrations[registration.Key] = registration;
         _registrationsByType[registration.ComponentType] = registration;
     }

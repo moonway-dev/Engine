@@ -1,5 +1,7 @@
 using Engine.Editor;
 using Engine.Mathematics;
+using Engine.Editor.Panels;
+using System;
 using Xunit;
 
 namespace Engine.Tests.Rendering;
@@ -37,5 +39,15 @@ public sealed class GizmoFrameTests
             Quaternion.FromAxisAngle(Vector3.UnitZ, MathF.PI / 2));
         Assert.Equal(TransformSpace.Local, frame.EffectiveSpace);
         Assert.True((frame.Axis(0) - Vector3.UnitY).Length < 0.0001f);
+    }
+
+    [Fact]
+    public void ClampScale_RepairsZeroOrNonFiniteComponentsWithoutChangingValidSigns()
+    {
+        Vector3 scale = EditorContext.ClampScale(new Vector3(2f, 0f, float.NaN));
+
+        Assert.Equal(new Vector3(2f, EditorContext.MinimumScaleMagnitude, EditorContext.MinimumScaleMagnitude), scale);
+        Assert.Equal(new Vector3(-EditorContext.MinimumScaleMagnitude, -2f, 3f),
+            EditorContext.ClampScale(new Vector3(-0.001f, -2f, 3f)));
     }
 }

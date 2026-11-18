@@ -70,7 +70,7 @@ public sealed class Application
             _lastRawTime = rawTime;
             Context.Clock.Tick(rawDelta);
             Context.Dispatcher.Process();
-            FrameTime frameTime = new(
+            FrameTime fixedFrameTime = new(
                 Context.Clock.DeltaTime,
                 Context.Clock.UnscaledDeltaTime,
                 Context.Clock.TotalTime,
@@ -79,8 +79,18 @@ public sealed class Application
             while (Context.Clock.ConsumeFixedStep())
             {
                 foreach (IFixedUpdateModule module in _fixedUpdateModules)
-                    module.FixedUpdate(frameTime);
+                    module.FixedUpdate(fixedFrameTime);
             }
+            FrameTime frameTime = new(
+                Context.Clock.DeltaTime,
+                Context.Clock.UnscaledDeltaTime,
+                Context.Clock.TotalTime,
+                Context.Clock.FixedDeltaTime,
+                Context.Clock.FrameIndex,
+                Context.Clock.FixedInterpolationAlpha,
+                Context.Clock.FixedStepsTakenThisFrame,
+                Context.Clock.FixedStepsPending,
+                Context.Clock.DroppedFixedTimeSecondsThisFrame);
             foreach (IUpdatableModule module in _updatableModules)
                 module.Update(frameTime);
         }

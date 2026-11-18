@@ -27,6 +27,10 @@ public sealed class NullRHI : IRHI
 
     public uint FramesInFlight { get; private set; } = 1;
 
+    public bool SupportsGpuTimestamps => _device.Features.SupportsGpuTimestamps;
+
+    public GpuFrameTiming? LatestGpuFrameTiming => null;
+
     public NullRHI(ILogger log)
     {
         _log = log;

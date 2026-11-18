@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Engine\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Platform\Engine.Platform.csproj" />
+  </ItemGroup>
+</Project>
