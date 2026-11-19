@@ -1,5 +1,6 @@
 using BepuPhysics;
 using BepuPhysics.Collidables;
+using BepuPhysics.Trees;
 using BepuUtilities.Memory;
 using Engine.Mathematics;
 using Engine.Scene;
@@ -14,6 +15,8 @@ public enum RigidBodyKind
     Dynamic,
     Kinematic,
 }
+
+public readonly record struct PhysicsRayHit(float Distance, Vector3 Normal);
 
 public sealed class PhysicsWorld : IDisposable
 {
@@ -313,7 +316,80 @@ public sealed class PhysicsWorld : IDisposable
         _simulation.Bodies[handle].Velocity = new BodyVelocity(ToSystem(linearVelocity), ToSystem(angularVelocity));
     }
 
+    public void ApplyImpulse(BodyHandle handle, Vector3 impulse)
+    {
+        BodyReference body = _simulation.Bodies[handle];
+        if (body.LocalInertia.InverseMass <= 0f)
+            return;
+        body.Awake = true;
+        body.ApplyImpulse(ToSystem(impulse), NVector3.Zero);
+    }
+
+    public void ApplyImpulseAtPoint(BodyHandle handle, Vector3 impulse, Vector3 point)
+    {
+        BodyReference body = _simulation.Bodies[handle];
+        if (body.LocalInertia.InverseMass <= 0f)
+            return;
+        body.Awake = true;
+        body.ApplyImpulse(ToSystem(impulse), ToSystem(point - GetBodyPosition(handle)));
+    }
+
+    public void ApplyAngularImpulse(BodyHandle handle, Vector3 impulse)
+    {
+        BodyReference body = _simulation.Bodies[handle];
+        if (body.LocalInertia.InverseMass <= 0f)
+            return;
+        body.Awake = true;
+        body.ApplyAngularImpulse(ToSystem(impulse));
+    }
+
+    public float GetBodyMass(BodyHandle handle)
+    {
+        float inverseMass = _simulation.Bodies[handle].LocalInertia.InverseMass;
+        return inverseMass > 0f ? 1f / inverseMass : 0f;
+    }
+
+    public bool RayCast(Vector3 origin, Vector3 direction, float maximumDistance, out PhysicsRayHit hit, BodyHandle? ignore = null)
+    {
+        hit = default;
+        if (_disposed || maximumDistance <= 0f)
+            return false;
+        NVector3 normalized = ToSystem(direction);
+        float length = normalized.Length();
+        if (length < Epsilon)
+            return false;
+        normalized /= length;
+        ClosestRayHitHandler handler = new(ignore);
+        _simulation.RayCast(ToSystem(origin), normalized, maximumDistance, ref handler);
+        if (!handler.Hit)
+            return false;
+        hit = new PhysicsRayHit(handler.T, ToEngine(handler.Normal));
+        return true;
+    }
+
     public void Step(float deltaTime) => _simulation.Timestep(deltaTime);
+
+    private sealed class ClosestRayHitHandler(BodyHandle? ignore) : IRayHitHandler
+    {
+        public bool Hit;
+        public float T = float.MaxValue;
+        public NVector3 Normal;
+
+        public bool AllowTest(CollidableReference collidable) =>
+            !ignore.HasValue || !(collidable.Mobility != CollidableMobility.Static && collidable.BodyHandle == ignore.Value);
+
+        public bool AllowTest(CollidableReference collidable, int child) => AllowTest(collidable);
+
+        public void OnRayHit(in RayData ray, ref float maximumT, float t, in NVector3 normal, CollidableReference collidable, int childIndex)
+        {
+            if (t >= T)
+                return;
+            T = t;
+            Normal = normal;
+            Hit = true;
+            maximumT = t;
+        }
+    }
 
     private static NVector3 ToSystem(Vector3 value) => new(value.X, value.Y, value.Z);
 

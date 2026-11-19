@@ -22,7 +22,10 @@ internal static class Program
         RendererModule renderer = new(rhiModule, Path.Combine(AppContext.BaseDirectory, "Shaders"));
         PhysicsModule physics = new();
         string projectRoot = ResolveProjectRoot();
-        ScriptingModule scripting = new(Path.Combine(projectRoot, "Scripts"));
+        ScriptingModule scripting = new(Path.Combine(projectRoot, "Scripts"))
+{
+    Physics = physics,
+};
         Basic3DModule module = new(options, rhiModule, renderer, physics, scripting);
 
         ApplicationBuilder builder = ApplicationBuilder

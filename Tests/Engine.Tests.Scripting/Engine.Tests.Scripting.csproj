@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Engine\Engine.ScriptingRuntime\Engine.ScriptingRuntime.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Physics\Engine.Physics.csproj" />
     <ProjectReference Include="..\..\Engine\Engine.Editor\Engine.Editor.csproj" />
   </ItemGroup>
   <ItemGroup>

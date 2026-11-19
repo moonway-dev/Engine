@@ -125,6 +125,72 @@ public sealed class ScriptRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void PhysicsFacade_WithWiredModule_DrivesBodies()
+    {
+        File.WriteAllText(Path.Combine(_root, "FacadeScript.cs"), """
+            public sealed class FacadeScript : ScriptBehaviour
+            {
+                public bool GroundedOnStart;
+
+                public override void OnStart()
+                {
+                    GroundedOnStart = IsGrounded(1.2f);
+                }
+            }
+            """);
+        using ScriptingModule scripting = CreateModule();
+        Engine.Physics.PhysicsModule physics = new();
+        physics.Initialize(ApplicationBuilder.Create().AddLoggerSink(new MemoryLogSink()).Build().Context);
+        scripting.Physics = physics;
+        scripting.Recompile();
+
+        SceneModel scene = new("Facade");
+        GameObject ground = scene.CreateObject("Ground");
+        ground.AddComponent<Engine.Physics.RigidBodyComponent>().Kind = Engine.Physics.RigidBodyKind.Static;
+        ground.AddComponent<Engine.Physics.BoxColliderComponent>().Size = new Vector3(24f, 0.5f, 24f);
+        ground.Transform.Position = new Vector3(0f, -0.25f, 0f);
+        GameObject player = scene.CreateObject("Player");
+        player.Transform.Position = new Vector3(0f, 1f, 0f);
+        Engine.Physics.RigidBodyComponent rigidBody = player.AddComponent<Engine.Physics.RigidBodyComponent>();
+        rigidBody.Kind = Engine.Physics.RigidBodyKind.Dynamic;
+        rigidBody.Mass = 2f;
+        player.AddComponent<Engine.Physics.BoxColliderComponent>().Size = new Vector3(1.4f, 1.4f, 1.4f);
+        ScriptComponent script = Assert.IsAssignableFrom<ScriptComponent>(player.AddComponent("FacadeScript"));
+
+        physics.AttachScene(scene);
+        scripting.AttachScene(scene);
+        FrameTime time = new(1f / 60f, 1f / 60f, 0f, 1f / 60f, 0);
+        physics.Update(time);
+        scripting.AlwaysPlay = true;
+        scripting.Update(time);
+
+        Assert.True(ScriptPhysics.HasBody(player));
+        Assert.Equal(2f, ScriptPhysics.GetMass(player), 2f);
+        ScriptPhysics.AddImpulse(player, Vector3.Up * 10f);
+        Assert.InRange(ScriptPhysics.GetLinearVelocity(player).Y, 4.9f, 5.1f);
+        Assert.True(ScriptPhysics.IsGrounded(player, 1.2f));
+        Assert.True(script.HasInstance);
+        ScriptBehaviour behaviour = Assert.IsAssignableFrom<ScriptBehaviour>(script.Instance)!;
+        Assert.True((bool)behaviour.GetType().GetField("GroundedOnStart")!.GetValue(behaviour)!);
+    }
+
+    [Fact]
+    public void PhysicsFacade_WithoutModule_ReturnsDefaults()
+    {
+        using ScriptingModule module = CreateModule();
+        SceneModel scene = new("Facade");
+        GameObject gameObject = scene.CreateObject("Actor");
+        Assert.Equal(Vector3.Zero, ScriptPhysics.GetLinearVelocity(gameObject));
+        Assert.Equal(0f, ScriptPhysics.GetMass(gameObject));
+        Assert.False(ScriptPhysics.HasBody(gameObject));
+        Assert.False(ScriptPhysics.IsGrounded(gameObject, 1f));
+        Assert.Null(ScriptPhysics.RayCast(Vector3.Up, Vector3.Down, 5f));
+        ScriptPhysics.SetLinearVelocity(gameObject, Vector3.Up);
+        ScriptPhysics.AddImpulse(gameObject, Vector3.Up);
+        ScriptPhysics.Wake(gameObject);
+    }
+
+    [Fact]
     public void AlwaysPlay_TicksAttachedScenes()
     {
         File.WriteAllText(Path.Combine(_root, "LifecycleScript.cs"), LifecycleSource);

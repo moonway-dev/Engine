@@ -61,4 +61,27 @@ public abstract class ScriptBehaviour
     public void Destroy(GameObject gameObject) => gameObject.Destroy();
 
     public void Log(string message) => ScriptLog.Info(Name, message);
+
+    public Vector3 GetLinearVelocity() => ScriptPhysics.GetLinearVelocity(Owner);
+
+    public void SetLinearVelocity(Vector3 velocity) => ScriptPhysics.SetLinearVelocity(Owner, velocity);
+
+    public Vector3 GetAngularVelocity() => ScriptPhysics.GetAngularVelocity(Owner);
+
+    public void SetAngularVelocity(Vector3 velocity) => ScriptPhysics.SetAngularVelocity(Owner, velocity);
+
+    public void AddImpulse(Vector3 impulse) => ScriptPhysics.AddImpulse(Owner, impulse);
+
+    public void AddImpulseAtPoint(Vector3 impulse, Vector3 point) => ScriptPhysics.AddImpulseAtPoint(Owner, impulse, point);
+
+    public void AddAngularImpulse(Vector3 impulse) => ScriptPhysics.AddAngularImpulse(Owner, impulse);
+
+    public float GetMass() => ScriptPhysics.GetMass(Owner);
+
+    public bool HasRigidBody() => ScriptPhysics.HasBody(Owner);
+
+    public bool IsGrounded(float distance = 0.2f) => ScriptPhysics.IsGrounded(Owner, distance);
+
+    public ScriptRayHit? RayCast(Vector3 direction, float maximumDistance, GameObject? ignore = null) =>
+        ScriptPhysics.RayCast(Transform.Position, direction, maximumDistance, ignore);
 }

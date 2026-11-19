@@ -1,3 +1,4 @@
+using BepuPhysics;
 using Engine.Mathematics;
 using Engine.Physics;
 using Engine.Scene;
@@ -165,5 +166,60 @@ public class PhysicsWorldTests
 
         Vector3 position = world.GetBodyPosition(handle);
         Assert.True(position.Y > 0.2f && position.Y < 1.2f, $"Compound body should rest near ground, but Y is {position.Y}");
+    }
+}
+
+public sealed class PhysicsWorldRayCastTests
+{
+    private static PhysicsColliderSpec BoxSpec(Vector3 size) => new(
+        PhysicsColliderKind.Box, Vector3.Zero, Quaternion.Identity, size, 0f, string.Empty, null);
+
+    [Fact]
+    public void RayCast_HitsStaticBoxTopSurface()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        world.AddStatic(new Vector3(0f, -0.25f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(8f, 0.5f, 8f))]);
+
+        Assert.True(world.RayCast(new Vector3(0f, 5f, 0f), Vector3.Down, 10f, out PhysicsRayHit hit));
+        Assert.InRange(hit.Distance, 4.9f, 5.1f);
+        Assert.InRange(hit.Normal.Y, 0.99f, 1.01f);
+        Assert.False(world.RayCast(new Vector3(20f, 5f, 0f), Vector3.Down, 10f, out PhysicsRayHit miss));
+    }
+
+    [Fact]
+    public void RayCast_IgnoresExcludedBody()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        StaticHandle floor = world.AddStatic(new Vector3(0f, -0.25f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(8f, 0.5f, 8f))]);
+        BodyHandle crate = world.AddDynamic(new Vector3(0f, 2f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 1f, 1f))], 1f);
+
+        Assert.True(world.RayCast(new Vector3(0f, 5f, 0f), Vector3.Down, 10f, out PhysicsRayHit hit));
+        Assert.InRange(hit.Distance, 2.4f, 2.6f);
+
+        Assert.True(world.RayCast(new Vector3(0f, 5f, 0f), Vector3.Down, 10f, out PhysicsRayHit ignored, crate));
+        Assert.InRange(ignored.Distance, 4.9f, 5.1f);
+        _ = floor;
+    }
+
+    [Fact]
+    public void ApplyImpulse_ChangesLinearVelocityByImpulseOverMass()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        BodyHandle handle = world.AddDynamic(new Vector3(0f, 5f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 1f, 1f))], 2f);
+
+        world.ApplyImpulse(handle, new Vector3(0f, 10f, 0f));
+        Vector3 velocity = world.GetBodyLinearVelocity(handle);
+        Assert.InRange(velocity.Y, 4.9f, 5.1f);
+        Assert.Equal(2f, world.GetBodyMass(handle), 2f);
+    }
+
+    [Fact]
+    public void ApplyAngularImpulse_SpinsBody()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        BodyHandle handle = world.AddDynamic(new Vector3(0f, 5f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 1f, 1f))], 1f);
+
+        world.ApplyAngularImpulse(handle, new Vector3(0f, 2f, 0f));
+        Assert.NotEqual(Vector3.Zero, world.GetBodyAngularVelocity(handle));
     }
 }

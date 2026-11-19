@@ -44,6 +44,28 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
 
     public PhysicsWorld World => _world ?? throw new InvalidOperationException("Physics module is not initialized.");
 
+    public bool TryGetBodyHandle(GameObject gameObject, out BodyHandle body)
+    {
+        body = default;
+        if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
+            return false;
+        if (!registration.HasBody || registration.Configuration.Kind == RigidBodyKind.Static)
+            return false;
+        body = registration.Body;
+        return true;
+    }
+
+    public bool TryGetStaticHandle(GameObject gameObject, out StaticHandle staticBody)
+    {
+        staticBody = default;
+        if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
+            return false;
+        if (!registration.HasBody || registration.Configuration.Kind != RigidBodyKind.Static)
+            return false;
+        staticBody = registration.Static;
+        return true;
+    }
+
     public void AttachScene(Scene.Scene scene)
     {
         ArgumentNullException.ThrowIfNull(scene);

@@ -1,6 +1,8 @@
 namespace Engine.Scripting;
 
 using System.Text.Json;
+using BepuPhysics;
+using Engine.Mathematics;
 using Engine.Core;
 using Engine.Platform;
 using Engine.Scene;
@@ -32,6 +34,14 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     public string Name => "Scripting";
 
     public string ScriptsRoot => _scriptsRoot;
+
+    private Engine.Physics.PhysicsModule? _physics;
+
+    public Engine.Physics.PhysicsModule? Physics
+    {
+        get => _physics;
+        set => _physics = value;
+    }
 
     public bool AlwaysPlay { get; set; }
 
@@ -87,6 +97,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptHost.InstanceFactory = CreateInstance;
         ScriptHost.InstanceReleaser = ReleaseInstance;
         ScriptHost.ScriptsProvider = ListScripts;
+        ConfigureScriptPhysics();
         Recompile();
         StartWatcher();
     }
@@ -248,6 +259,72 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
                 continue;
             _activeInstances.Add((component, behaviour));
             SafeRun(component, behaviour, behaviour.OnEnable);
+        }
+    }
+
+    private void ConfigureScriptPhysics()
+    {
+        ScriptPhysics.LinearVelocityGetter = gameObject => WithBody(gameObject, (world, handle) => world.GetBodyLinearVelocity(handle), Vector3.Zero);
+        ScriptPhysics.LinearVelocitySetter = (gameObject, velocity) => WithBodyVoid(gameObject, (world, handle) => world.SetBodyVelocity(handle, velocity));
+        ScriptPhysics.AngularVelocityGetter = gameObject => WithBody(gameObject, (world, handle) => world.GetBodyAngularVelocity(handle), Vector3.Zero);
+        ScriptPhysics.AngularVelocitySetter = (gameObject, velocity) => WithBodyVoid(gameObject, (world, handle) => world.SetBodyVelocity(handle, world.GetBodyLinearVelocity(handle), velocity));
+        ScriptPhysics.ImpulseApplier = (gameObject, impulse) => WithBodyVoid(gameObject, (world, handle) => world.ApplyImpulse(handle, impulse));
+        ScriptPhysics.ImpulseAtPointApplier = (gameObject, impulse, point) => WithBodyVoid(gameObject, (world, handle) => world.ApplyImpulseAtPoint(handle, impulse, point));
+        ScriptPhysics.AngularImpulseApplier = (gameObject, impulse) => WithBodyVoid(gameObject, (world, handle) => world.ApplyAngularImpulse(handle, impulse));
+        ScriptPhysics.MassGetter = gameObject => WithBody(gameObject, (world, handle) => world.GetBodyMass(handle), 0f);
+        ScriptPhysics.Waker = gameObject => WithBodyVoid(gameObject, (world, handle) => world.SetBodyAwake(handle, true));
+        ScriptPhysics.BodyChecker = gameObject => _physics is not null && _physics.TryGetBodyHandle(gameObject, out _);
+        ScriptPhysics.GroundedChecker = (gameObject, distance) =>
+        {
+            Engine.Scene.ScriptRayHit? hit = RayCastInternal(gameObject.Transform.Position, Vector3.Down, distance, gameObject);
+            return hit is not null;
+        };
+        ScriptPhysics.RayCaster = (origin, direction, maximumDistance, ignore) => RayCastInternal(origin, direction, maximumDistance, ignore);
+    }
+
+    private Engine.Scene.ScriptRayHit? RayCastInternal(Vector3 origin, Vector3 direction, float maximumDistance, GameObject? ignore)
+    {
+        if (_physics is null)
+            return null;
+        BodyHandle? ignored = null;
+        if (ignore is not null && _physics.TryGetBodyHandle(ignore, out BodyHandle ignoreHandle))
+            ignored = ignoreHandle;
+        try
+        {
+            return _physics.World.RayCast(origin, direction, maximumDistance, out Engine.Physics.PhysicsRayHit hit, ignored)
+                ? new Engine.Scene.ScriptRayHit(origin + direction * hit.Distance, hit.Normal, hit.Distance)
+                : null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private T WithBody<T>(GameObject gameObject, Func<Engine.Physics.PhysicsWorld, BodyHandle, T> action, T fallback)
+    {
+        if (_physics is null || !_physics.TryGetBodyHandle(gameObject, out BodyHandle handle))
+            return fallback;
+        try
+        {
+            return action(_physics.World, handle);
+        }
+        catch (InvalidOperationException)
+        {
+            return fallback;
+        }
+    }
+
+    private void WithBodyVoid(GameObject gameObject, Action<Engine.Physics.PhysicsWorld, BodyHandle> action)
+    {
+        if (_physics is null || !_physics.TryGetBodyHandle(gameObject, out BodyHandle handle))
+            return;
+        try
+        {
+            action(_physics.World, handle);
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 
@@ -420,6 +497,18 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptHost.InstanceFactory = null;
         ScriptHost.InstanceReleaser = null;
         ScriptHost.ScriptsProvider = null;
+        ScriptPhysics.LinearVelocityGetter = null;
+        ScriptPhysics.LinearVelocitySetter = null;
+        ScriptPhysics.AngularVelocityGetter = null;
+        ScriptPhysics.AngularVelocitySetter = null;
+        ScriptPhysics.ImpulseApplier = null;
+        ScriptPhysics.ImpulseAtPointApplier = null;
+        ScriptPhysics.AngularImpulseApplier = null;
+        ScriptPhysics.MassGetter = null;
+        ScriptPhysics.Waker = null;
+        ScriptPhysics.BodyChecker = null;
+        ScriptPhysics.GroundedChecker = null;
+        ScriptPhysics.RayCaster = null;
         ScriptInput.Window = null;
         ScriptLog.Sink = null;
         _scenes.Clear();

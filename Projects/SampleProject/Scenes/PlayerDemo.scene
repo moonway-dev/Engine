@@ -100,9 +100,9 @@
       "active": true,
       "transform": {
         "position": [
-          -0.32085168,
-          3.0420115,
-          -4.2928734
+          0,
+          1,
+          0
         ],
         "rotation": [
           0,
@@ -155,8 +155,8 @@
           "enabled": true,
           "properties": {
             "IsAwake": true,
-            "Kind": "Kinematic",
-            "Mass": 1
+            "Kind": "Dynamic",
+            "Mass": 2
           }
         },
         {
@@ -194,7 +194,14 @@
           "properties": {
             "Script": "PlayerController",
             "Enabled": true,
-            "Speed": 4
+            "MoveSpeed": 6,
+            "AirControl": 0.3,
+            "JumpImpulse": 16,
+            "GroundCheckDistance": 0.95,
+            "MouseSensitivity": 0.0022,
+            "MaxPitchDegrees": 85,
+            "LockCursor": true,
+            "KeepUpright": true
           }
         }
       ],
@@ -208,14 +215,14 @@
       "transform": {
         "position": [
           0,
-          40,
+          0.5,
           0
         ],
         "rotation": [
-          -0.70710677,
           0,
           0,
-          0.70710677
+          0,
+          1
         ],
         "scale": [
           1,
@@ -230,8 +237,221 @@
           "enabled": true,
           "properties": {
             "FarPlane": 500,
-            "FieldOfViewY": 0.8,
+            "FieldOfViewY": 0.9,
             "NearPlane": 0.1
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000004",
+      "name": "Platform_01",
+      "active": true,
+      "transform": {
+        "position": [
+          4,
+          0.7,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.72,
+              0.55,
+              0.32
+            ],
+            "Metallic": 0.05,
+            "ResourceKey": "cube",
+            "Roughness": 0.7,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000005",
+      "name": "Platform_02",
+      "active": true,
+      "transform": {
+        "position": [
+          6.4,
+          1.6,
+          -5
+        ],
+        "rotation": [
+          0,
+          0.2,
+          0,
+          0.98
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.55,
+              0.72,
+              0.4
+            ],
+            "Metallic": 0.05,
+            "ResourceKey": "cube",
+            "Roughness": 0.7,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000006",
+      "name": "Platform_03",
+      "active": true,
+      "transform": {
+        "position": [
+          8.6,
+          2.5,
+          -7
+        ],
+        "rotation": [
+          0,
+          -0.15,
+          0,
+          0.99
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.6,
+              0.42,
+              0.6
+            ],
+            "Metallic": 0.05,
+            "ResourceKey": "cube",
+            "Roughness": 0.7,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1.4,
+              1.4,
+              1.4
+            ]
           }
         }
       ],
