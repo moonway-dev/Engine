@@ -23,6 +23,10 @@ public static class ScriptPhysics
 
     public static Action<GameObject>? Waker { get; set; }
 
+    public static Action<GameObject>? Sleeper { get; set; }
+
+    public static Func<GameObject, bool>? SleepingChecker { get; set; }
+
     public static Func<GameObject, bool>? BodyChecker { get; set; }
 
     public static Func<GameObject, float, bool>? GroundedChecker { get; set; }
@@ -53,6 +57,10 @@ public static class ScriptPhysics
     public static float GetMass(GameObject gameObject) => MassGetter?.Invoke(gameObject) ?? 0f;
 
     public static void Wake(GameObject gameObject) => Waker?.Invoke(gameObject);
+
+    public static void Sleep(GameObject gameObject) => Sleeper?.Invoke(gameObject);
+
+    public static bool IsSleeping(GameObject gameObject) => SleepingChecker?.Invoke(gameObject) ?? false;
 
     public static bool HasBody(GameObject gameObject) => BodyChecker?.Invoke(gameObject) ?? false;
 

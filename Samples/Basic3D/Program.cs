@@ -248,6 +248,9 @@ internal sealed class Basic3DModule(
         (Vertex[] sphereVertices, uint[] sphereIndices) = MeshPrimitives.Sphere(1f, 32, 20);
         _meshes["sphere"] = new Mesh(device, sphereVertices, sphereIndices, "Sphere");
         _physicsMeshes["sphere"] = ToPhysicsMeshData(sphereVertices, sphereIndices);
+        (Vertex[] capsuleVertices, uint[] capsuleIndices) = MeshPrimitives.Capsule(0.35f, 1.8f);
+        _meshes["capsule"] = new Mesh(device, capsuleVertices, capsuleIndices, "Capsule");
+        _physicsMeshes["capsule"] = ToPhysicsMeshData(capsuleVertices, capsuleIndices);
 
         if (options.ScenePath is not null && File.Exists(options.ScenePath))
         {

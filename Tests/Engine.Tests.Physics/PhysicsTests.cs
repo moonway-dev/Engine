@@ -202,6 +202,126 @@ public sealed class PhysicsWorldRayCastTests
     }
 
     [Fact]
+    public void BodySettingsApplyGravityDampingAndAxisConstraints()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        BodyHandle handle = world.AddDynamic(new Vector3(0f, 5f, 0f), Quaternion.Identity, [BoxSpec(Vector3.One)], 1f);
+        world.ConfigureBody(handle, new RigidbodySettings(
+            LinearDamping: 1f,
+            AngularDamping: 0f,
+            UseGravity: false,
+            DetectCollisions: true,
+            Constraints: RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezeRotation));
+        world.SetBodyVelocity(handle, new Vector3(3f, 0f, 0f));
+
+        for (int i = 0; i < 60; i++)
+            world.Step(1f / 60f);
+
+        Assert.Equal(0f, world.GetBodyPosition(handle).X, 4);
+        Assert.Equal(5f, world.GetBodyPosition(handle).Y, 4);
+        Assert.Equal(0f, world.GetBodyLinearVelocity(handle).X, 4);
+        Assert.Equal(Quaternion.Identity, world.GetBodyRotation(handle));
+        Assert.Equal(0f, world.GetBodyAngularVelocity(handle).Length, 4);
+        Assert.Equal(1f, world.GetBodySettings(handle).LinearDamping);
+    }
+
+    [Fact]
+    public void PartialRotationConstraintAllowsOnlyUnfrozenLocalAxis()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, 0f, 0f));
+        Quaternion initialRotation = Quaternion.FromAxisAngle(Vector3.UnitY, MathF.PI * 0.5f);
+        BodyHandle handle = world.AddDynamic(Vector3.Zero, initialRotation, [BoxSpec(Vector3.One)], 1f);
+        world.ConfigureBody(handle, new RigidbodySettings(
+            LinearDamping: 0f,
+            AngularDamping: 0f,
+            UseGravity: false,
+            Constraints: RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ));
+        Vector3 worldAngularVelocity = initialRotation.Rotate(Vector3.UnitY);
+        world.SetBodyVelocity(handle, Vector3.Zero, worldAngularVelocity);
+
+        for (int i = 0; i < 60; i++)
+            world.Step(1f / 60f);
+
+        Quaternion expected = initialRotation * Quaternion.FromAxisAngle(Vector3.UnitY, 1f);
+        Quaternion actual = world.GetBodyRotation(handle);
+        Assert.InRange(Quaternion.Angle(expected, actual), 0f, 0.01f);
+        Vector3 localAngularVelocity = actual.Inverse.Rotate(world.GetBodyAngularVelocity(handle));
+        Assert.InRange(MathF.Abs(localAngularVelocity.X), 0f, 0.001f);
+        Assert.InRange(localAngularVelocity.Y, 0.99f, 1.01f);
+        Assert.InRange(MathF.Abs(localAngularVelocity.Z), 0f, 0.001f);
+    }
+
+    [Fact]
+    public void PositionConstraintLocksOnlySelectedWorldAxis()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        BodyHandle handle = world.AddDynamic(new Vector3(2f, 5f, 3f), Quaternion.Identity, [BoxSpec(Vector3.One)], 1f);
+        world.ConfigureBody(handle, new RigidbodySettings(
+            LinearDamping: 0f,
+            AngularDamping: 0f,
+            UseGravity: true,
+            Constraints: RigidbodyConstraints.FreezePositionX));
+        world.SetBodyVelocity(handle, new Vector3(4f, 0f, 2f));
+
+        for (int i = 0; i < 60; i++)
+            world.Step(1f / 60f);
+
+        Vector3 position = world.GetBodyPosition(handle);
+        Assert.Equal(2f, position.X, 4);
+        Assert.InRange(position.Y, -0.02f, 0.02f);
+        Assert.InRange(position.Z, 4.9f, 5.1f);
+    }
+
+    [Fact]
+    public void BodyCanDisableGravityAndKeepLinearVelocityWithoutDamping()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        BodyHandle handle = world.AddDynamic(new Vector3(0f, 5f, 0f), Quaternion.Identity, [BoxSpec(Vector3.One)], 1f);
+        world.ConfigureBody(handle, new RigidbodySettings(0f, 0f, UseGravity: false));
+        world.SetBodyVelocity(handle, new Vector3(2f, 0f, 0f));
+
+        for (int i = 0; i < 60; i++)
+            world.Step(1f / 60f);
+
+        Assert.InRange(world.GetBodyPosition(handle).X, 1.99f, 2.01f);
+        Assert.Equal(5f, world.GetBodyPosition(handle).Y, 4);
+        Assert.Equal(2f, world.GetBodyLinearVelocity(handle).X, 4);
+    }
+
+    [Fact]
+    public void CollisionDetectionSettingsAreStoredOnBody()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        BodyHandle handle = world.AddDynamic(new Vector3(0f, 5f, 0f), Quaternion.Identity, [BoxSpec(Vector3.One)], 1f);
+        world.ConfigureBody(handle, new RigidbodySettings(CollisionDetection: RigidbodyCollisionDetection.Continuous));
+
+        Assert.Equal(RigidbodyCollisionDetection.Continuous, world.GetBodySettings(handle).CollisionDetection);
+    }
+
+    [Fact]
+    public void ContinuousCollisionPreventsFastBodyPassingThroughThinWall()
+    {
+        using PhysicsWorld world = new(Vector3.Zero);
+        PhysicsColliderSpec wall = new(
+            PhysicsColliderKind.Box, Vector3.Zero, Quaternion.Identity, new Vector3(0.1f, 10f, 10f), 0f, string.Empty, null);
+        world.AddStatic(Vector3.Zero, Quaternion.Identity, [wall]);
+        PhysicsColliderSpec sphere = new(
+            PhysicsColliderKind.Sphere, Vector3.Zero, Quaternion.Identity, Vector3.Zero, 0.25f, string.Empty, null);
+        BodyHandle handle = world.AddDynamic(new Vector3(-5f, 0f, 0f), Quaternion.Identity, [sphere], 1f);
+        world.ConfigureBody(handle, new RigidbodySettings(
+            LinearDamping: 0f,
+            AngularDamping: 0f,
+            UseGravity: false,
+            CollisionDetection: RigidbodyCollisionDetection.Continuous));
+        world.SetBodyVelocity(handle, new Vector3(600f, 0f, 0f));
+
+        world.Step(1f / 60f);
+
+        Assert.True(world.GetBodyPosition(handle).X < 0f);
+        Assert.True(world.GetBodyLinearVelocity(handle).X < 600f);
+    }
+
+    [Fact]
     public void ApplyImpulse_ChangesLinearVelocityByImpulseOverMass()
     {
         using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));

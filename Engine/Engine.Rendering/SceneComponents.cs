@@ -7,6 +7,9 @@ namespace Engine.Rendering;
 [InspectorTooltip("Renders a mesh from the project assets with a PBR material.")]
 public sealed class MeshRendererComponent : Component
 {
+    [InspectorTooltip("Full renders in cameras and casts shadows. Off disables rendering. Shadows Only hides the mesh from cameras but keeps shadows and reflections. Render Only renders without casting shadows.")]
+    public MeshRenderingMode RenderingMode { get; set; } = MeshRenderingMode.Full;
+
     [InspectorTooltip("Material asset used to shade the mesh.")]
     public AssetReference MaterialAsset { get; set; }
     private string _resourceKey = string.Empty;

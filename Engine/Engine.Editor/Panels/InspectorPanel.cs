@@ -18,6 +18,7 @@ public sealed class InspectorPanel : EditorPanel
     static InspectorPanel()
     {
         MeshRendererInspector.Register();
+        RigidbodyInspector.Register();
     }
 
     public override string Title => "Inspector";

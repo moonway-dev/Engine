@@ -38,6 +38,8 @@ struct RayTracingSurfaceData
 #define RT_MATERIAL_TEXTURE_COUNT 96
 #endif
 static const uint RtMaterialTextureCount = RT_MATERIAL_TEXTURE_COUNT;
+static const uint RtSurfaceRayMask = 1u;
+static const uint RtShadowRayMask = 2u;
 static const uint RtMaximumSamples = 8;
 static const float RtDistanceOffsetScale = 0.0025f;
 

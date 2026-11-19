@@ -22,6 +22,13 @@ internal static class MeshRendererInspector
     private static void Draw(EditorContext context, MeshRendererComponent mesh)
     {
         Guid id = mesh.Id;
+        InspectorEditing.PrepareField("Rendering Rules");
+        int renderingMode = (int)mesh.RenderingMode;
+        string[] renderingModes = ["Full (Default)", "Off", "Shadows Only", "Render Only"];
+        if (ImGui.Combo("##RenderingMode", ref renderingMode, renderingModes, renderingModes.Length))
+            InspectorEditing.SetComponentProperty(context, id, nameof(MeshRendererComponent.RenderingMode), current => ((MeshRendererComponent)current).RenderingMode, (current, value) => ((MeshRendererComponent)current).RenderingMode = value, (MeshRenderingMode)renderingMode, false);
+        InspectorEditing.DrawItemTooltip("Full renders in cameras and casts shadows. Off disables rendering. Shadows Only hides the mesh from cameras but keeps shadows and reflections. Render Only renders without casting shadows.");
+
         string resourceKey = mesh.ResourceKey;
         InspectorEditing.PrepareField("Resource");
         if (ImGui.InputText("##Resource", ref resourceKey, 1024))

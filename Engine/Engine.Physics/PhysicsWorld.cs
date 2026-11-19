@@ -24,16 +24,24 @@ public sealed class PhysicsWorld : IDisposable
 
     private readonly BufferPool _bufferPool;
     private readonly Simulation _simulation;
+    private readonly PhysicsBodySettings _settings;
     private bool _disposed;
 
     public PhysicsWorld(Vector3 gravity)
     {
         _bufferPool = new BufferPool();
+        _settings = new PhysicsBodySettings { Gravity = ToSystem(gravity) };
         _simulation = Simulation.Create(
             _bufferPool,
-            new NarrowPhaseCallbacks(),
-                new PoseIntegratorCallbacks(new NVector3(gravity.X, gravity.Y, gravity.Z)),
-                new SolveDescription(8, 2));
+            new NarrowPhaseCallbacks(_settings),
+            new PoseIntegratorCallbacks(_settings),
+            new SolveDescription(8, 2));
+    }
+
+    public Vector3 Gravity
+    {
+        get => ToEngine(_settings.Gravity);
+        set => _settings.Gravity = ToSystem(value);
     }
 
     public Simulation Simulation => _simulation;
@@ -66,7 +74,9 @@ public sealed class PhysicsWorld : IDisposable
             pose.Position += ToSystem(rotation.Rotate(centerOfMass));
             description = BodyDescription.CreateDynamic(pose, inertia, new CollidableDescription(compoundIndex, 0.1f), new BodyActivityDescription(0.01f));
         }
-        return _simulation.Bodies.Add(description);
+        BodyHandle handle = _simulation.Bodies.Add(description);
+        _settings.Bodies.Add(handle, new PhysicsBodyState(description.LocalInertia, ToEngine(description.Pose.Position), ToEngine(description.Pose.Orientation)));
+        return handle;
     }
 
     public BodyHandle AddKinematic(Vector3 position, Quaternion rotation, IReadOnlyList<PhysicsColliderSpec> colliders)
@@ -98,7 +108,9 @@ public sealed class PhysicsWorld : IDisposable
             TypedIndex compoundIndex = _simulation.Shapes.Add(new Compound(children));
             description = BodyDescription.CreateKinematic(pose, new CollidableDescription(compoundIndex, 0.1f), new BodyActivityDescription(0.01f));
         }
-        return _simulation.Bodies.Add(description);
+        BodyHandle handle = _simulation.Bodies.Add(description);
+        _settings.Bodies.Add(handle, new PhysicsBodyState(description.LocalInertia, ToEngine(description.Pose.Position), ToEngine(description.Pose.Orientation)));
+        return handle;
     }
 
     public StaticHandle AddStatic(Vector3 position, Quaternion rotation, IReadOnlyList<PhysicsColliderSpec> colliders)
@@ -248,6 +260,7 @@ public sealed class PhysicsWorld : IDisposable
     {
         TypedIndex shape = _simulation.Bodies[handle].Collidable.Shape;
         _simulation.Bodies.Remove(handle);
+        _settings.Bodies.Remove(handle);
         _simulation.Shapes.RecursivelyRemoveAndDispose(shape, _bufferPool);
     }
 
@@ -255,6 +268,7 @@ public sealed class PhysicsWorld : IDisposable
     {
         TypedIndex shape = _simulation.Statics[handle].Shape;
         _simulation.Statics.Remove(handle);
+        _settings.StaticCollisions.Remove(handle);
         _simulation.Shapes.RecursivelyRemoveAndDispose(shape, _bufferPool);
     }
 
@@ -270,6 +284,11 @@ public sealed class PhysicsWorld : IDisposable
         BodyReference body = _simulation.Bodies[handle];
         body.Awake = true;
         body.Pose = new RigidPose(ToSystem(position), ToSystemQuaternion(rotation));
+        if (_settings.Bodies.TryGetValue(handle, out PhysicsBodyState? state))
+        {
+            state.PositionAnchor = position;
+            state.RotationAnchor = rotation;
+        }
         body.Velocity = default;
         body.UpdateBounds();
     }
@@ -279,6 +298,11 @@ public sealed class PhysicsWorld : IDisposable
         BodyReference body = _simulation.Bodies[handle];
         body.Awake = true;
         body.Pose = new RigidPose(ToSystem(position), ToSystemQuaternion(rotation));
+        if (_settings.Bodies.TryGetValue(handle, out PhysicsBodyState? state))
+        {
+            state.PositionAnchor = position;
+            state.RotationAnchor = rotation;
+        }
         body.UpdateBounds();
     }
 
@@ -287,6 +311,8 @@ public sealed class PhysicsWorld : IDisposable
         BodyReference body = _simulation.Bodies[handle];
         body.Awake = awake;
     }
+
+    public bool IsBodyAwake(BodyHandle handle) => _simulation.Bodies[handle].Awake;
 
     public Vector3 GetBodyPosition(BodyHandle handle) => ToEngine(_simulation.Bodies[handle].Pose.Position);
 
@@ -308,12 +334,20 @@ public sealed class PhysicsWorld : IDisposable
 
     public void SetBodyVelocity(BodyHandle handle, Vector3 linearVelocity)
     {
-        _simulation.Bodies[handle].Velocity.Linear = ToSystem(linearVelocity);
+        SetBodyVelocity(handle, linearVelocity, GetBodyAngularVelocity(handle));
     }
 
     public void SetBodyVelocity(BodyHandle handle, Vector3 linearVelocity, Vector3 angularVelocity)
     {
-        _simulation.Bodies[handle].Velocity = new BodyVelocity(ToSystem(linearVelocity), ToSystem(angularVelocity));
+        BodyReference body = _simulation.Bodies[handle];
+        if (_settings.Bodies.TryGetValue(handle, out PhysicsBodyState? state))
+        {
+            linearVelocity = state.FilterLinear(linearVelocity);
+            angularVelocity = state.FilterAngularWorld(angularVelocity, ToEngine(body.Pose.Orientation));
+        }
+        if (linearVelocity.LengthSquared > 0f || angularVelocity.LengthSquared > 0f)
+            body.Awake = true;
+        body.Velocity = new BodyVelocity(ToSystem(linearVelocity), ToSystem(angularVelocity));
     }
 
     public void ApplyImpulse(BodyHandle handle, Vector3 impulse)
@@ -323,6 +357,7 @@ public sealed class PhysicsWorld : IDisposable
             return;
         body.Awake = true;
         body.ApplyImpulse(ToSystem(impulse), NVector3.Zero);
+        EnforceConstraints(handle, _settings.Bodies[handle]);
     }
 
     public void ApplyImpulseAtPoint(BodyHandle handle, Vector3 impulse, Vector3 point)
@@ -332,6 +367,7 @@ public sealed class PhysicsWorld : IDisposable
             return;
         body.Awake = true;
         body.ApplyImpulse(ToSystem(impulse), ToSystem(point - GetBodyPosition(handle)));
+        EnforceConstraints(handle, _settings.Bodies[handle]);
     }
 
     public void ApplyAngularImpulse(BodyHandle handle, Vector3 impulse)
@@ -341,6 +377,7 @@ public sealed class PhysicsWorld : IDisposable
             return;
         body.Awake = true;
         body.ApplyAngularImpulse(ToSystem(impulse));
+        EnforceConstraints(handle, _settings.Bodies[handle]);
     }
 
     public float GetBodyMass(BodyHandle handle)
@@ -359,7 +396,7 @@ public sealed class PhysicsWorld : IDisposable
         if (length < Epsilon)
             return false;
         normalized /= length;
-        ClosestRayHitHandler handler = new(ignore);
+        ClosestRayHitHandler handler = new(ignore, _settings);
         _simulation.RayCast(ToSystem(origin), normalized, maximumDistance, ref handler);
         if (!handler.Hit)
             return false;
@@ -367,16 +404,136 @@ public sealed class PhysicsWorld : IDisposable
         return true;
     }
 
-    public void Step(float deltaTime) => _simulation.Timestep(deltaTime);
+    public RigidbodySettings GetBodySettings(BodyHandle handle) => _settings.Bodies[handle].Settings;
 
-    private sealed class ClosestRayHitHandler(BodyHandle? ignore) : IRayHitHandler
+    public void ConfigureBody(BodyHandle handle, RigidbodySettings settings, bool force = false)
+    {
+        settings.Validate();
+        PhysicsBodyState state = _settings.Bodies[handle];
+        if (!force && state.Settings == settings)
+            return;
+        BodyReference body = _simulation.Bodies[handle];
+        if (state.Settings.Constraints != settings.Constraints)
+        {
+            state.PositionAnchor = ToEngine(body.Pose.Position);
+            state.RotationAnchor = ToEngine(body.Pose.Orientation);
+        }
+        state.Settings = settings;
+        BodyInertia inertia = state.Inertia;
+        if ((settings.Constraints & RigidbodyConstraints.FreezeRotationX) != 0)
+        {
+            inertia.InverseInertiaTensor.XX = 0f;
+            inertia.InverseInertiaTensor.YX = 0f;
+            inertia.InverseInertiaTensor.ZX = 0f;
+        }
+        if ((settings.Constraints & RigidbodyConstraints.FreezeRotationY) != 0)
+        {
+            inertia.InverseInertiaTensor.YY = 0f;
+            inertia.InverseInertiaTensor.YX = 0f;
+            inertia.InverseInertiaTensor.ZY = 0f;
+        }
+        if ((settings.Constraints & RigidbodyConstraints.FreezeRotationZ) != 0)
+        {
+            inertia.InverseInertiaTensor.ZZ = 0f;
+            inertia.InverseInertiaTensor.ZX = 0f;
+            inertia.InverseInertiaTensor.ZY = 0f;
+        }
+        body.SetLocalInertia(inertia);
+        body.GetDescription(out BodyDescription description);
+        description.Collidable.Continuity = settings.CollisionDetection switch
+        {
+            RigidbodyCollisionDetection.Continuous => ContinuousDetection.Continuous(1e-3f, 1e-2f),
+            RigidbodyCollisionDetection.Discrete => ContinuousDetection.Discrete,
+            _ => ContinuousDetection.Passive,
+        };
+        description.Collidable.MaximumSpeculativeMargin = settings.CollisionDetection == RigidbodyCollisionDetection.Continuous
+            ? 0.1f
+            : float.MaxValue;
+        body.ApplyDescription(description);
+        body.Awake = true;
+        EnforceConstraints(handle, state);
+    }
+
+    public void SetBodyMass(BodyHandle handle, float mass)
+    {
+        if (!float.IsFinite(mass) || mass <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(mass));
+        PhysicsBodyState state = _settings.Bodies[handle];
+        if (state.Inertia.InverseMass <= 0f)
+            return;
+        float scale = (1f / mass) / state.Inertia.InverseMass;
+        state.Inertia.InverseMass = 1f / mass;
+        state.Inertia.InverseInertiaTensor.XX *= scale;
+        state.Inertia.InverseInertiaTensor.YX *= scale;
+        state.Inertia.InverseInertiaTensor.YY *= scale;
+        state.Inertia.InverseInertiaTensor.ZX *= scale;
+        state.Inertia.InverseInertiaTensor.ZY *= scale;
+        state.Inertia.InverseInertiaTensor.ZZ *= scale;
+        ConfigureBody(handle, state.Settings, true);
+    }
+
+    public void SetStaticCollisionEnabled(StaticHandle handle, bool enabled)
+    {
+        bool wasEnabled = !_settings.StaticCollisions.TryGetValue(handle, out bool previous) || previous;
+        if (wasEnabled == enabled)
+            return;
+        _settings.StaticCollisions[handle] = enabled;
+        _simulation.Statics.GetDescription(handle, out StaticDescription description);
+        _simulation.Statics.ApplyDescription(handle, description);
+    }
+
+    public void Step(float deltaTime)
+    {
+        if (!float.IsFinite(deltaTime) || deltaTime <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(deltaTime));
+        foreach ((BodyHandle handle, PhysicsBodyState state) in _settings.Bodies)
+            if (state.Settings.Constraints != RigidbodyConstraints.None)
+                EnforceConstraints(handle, state);
+        _simulation.Timestep(deltaTime);
+        foreach ((BodyHandle handle, PhysicsBodyState state) in _settings.Bodies)
+            if (state.Settings.Constraints != RigidbodyConstraints.None)
+                EnforceConstraints(handle, state);
+    }
+
+    private void EnforceConstraints(BodyHandle handle, PhysicsBodyState state)
+    {
+        BodyReference body = _simulation.Bodies[handle];
+        RigidbodyConstraints constraints = state.Settings.Constraints;
+        Vector3 position = ToEngine(body.Pose.Position);
+        Quaternion rotation = ToEngine(body.Pose.Orientation);
+        if ((constraints & RigidbodyConstraints.FreezePositionX) != 0)
+            position.X = state.PositionAnchor.X;
+        if ((constraints & RigidbodyConstraints.FreezePositionY) != 0)
+            position.Y = state.PositionAnchor.Y;
+        if ((constraints & RigidbodyConstraints.FreezePositionZ) != 0)
+            position.Z = state.PositionAnchor.Z;
+        if ((constraints & RigidbodyConstraints.FreezeRotation) == RigidbodyConstraints.FreezeRotation)
+            rotation = state.RotationAnchor;
+        else if ((constraints & RigidbodyConstraints.FreezeRotation) != 0)
+        {
+            Quaternion delta = state.RotationAnchor.Inverse * rotation;
+            if (delta.W < 0f)
+                delta = -delta;
+            Vector3 vector = state.FilterAngular(new Vector3(delta.X, delta.Y, delta.Z));
+            delta = new Quaternion(vector.X, vector.Y, vector.Z, delta.W).Normalized;
+            rotation = state.RotationAnchor * delta;
+        }
+        bool poseChanged = position != ToEngine(body.Pose.Position) || rotation != ToEngine(body.Pose.Orientation);
+        body.Pose = new RigidPose(ToSystem(position), ToSystemQuaternion(rotation));
+        body.Velocity.Linear = ToSystem(state.FilterLinear(ToEngine(body.Velocity.Linear)));
+        body.Velocity.Angular = ToSystem(state.FilterAngularWorld(ToEngine(body.Velocity.Angular), rotation));
+        if (poseChanged)
+            body.UpdateBounds();
+    }
+
+    private sealed class ClosestRayHitHandler(BodyHandle? ignore, PhysicsBodySettings settings) : IRayHitHandler
     {
         public bool Hit;
         public float T = float.MaxValue;
         public NVector3 Normal;
 
         public bool AllowTest(CollidableReference collidable) =>
-            !ignore.HasValue || !(collidable.Mobility != CollidableMobility.Static && collidable.BodyHandle == ignore.Value);
+            settings.AllowsCollision(collidable) && (!ignore.HasValue || !(collidable.Mobility != CollidableMobility.Static && collidable.BodyHandle == ignore.Value));
 
         public bool AllowTest(CollidableReference collidable, int child) => AllowTest(collidable);
 

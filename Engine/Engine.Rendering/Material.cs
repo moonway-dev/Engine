@@ -276,6 +276,7 @@ public sealed class RenderItem
     public Quaternion Rotation { get; set; } = Quaternion.Identity;
     public Vector3 Scale { get; set; } = Vector3.One;
     public MeshLodSettings Lod { get; set; } = new();
+    public MeshRenderingMode RenderingMode { get; set; } = MeshRenderingMode.Full;
 
     internal readonly MeshLodState SceneLodState = new();
     internal readonly MeshLodState GameLodState = new();
@@ -287,23 +288,8 @@ public sealed class RenderItem
 
     public Matrix4x4 ModelMatrix
     {
-        get
-        {
-            if (BoundTransform is null)
-                return Matrix4x4.CreateTRS(Position, Rotation, Scale);
-            Matrix4x4 current = BoundTransform.WorldMatrix;
-            float alpha = Math.Clamp(RenderInterpolationAlpha, 0f, 1f);
-            if (alpha >= 1f)
-                return current;
-            Matrix4x4 previous = BoundTransform.RenderWorldMatrix;
-            if (previous == current)
-                return current;
-            current.Decompose(out Vector3 scale, out Quaternion rotation, out Vector3 position);
-            previous.Decompose(out _, out Quaternion previousRotation, out Vector3 previousPosition);
-            return Matrix4x4.CreateTRS(
-                Vector3.Lerp(previousPosition, position, alpha),
-                Quaternion.Slerp(previousRotation, rotation, alpha),
-                scale);
-        }
+        get => BoundTransform is null
+            ? Matrix4x4.CreateTRS(Position, Rotation, Scale)
+            : BoundTransform.GetInterpolatedWorldMatrix(RenderInterpolationAlpha);
     }
 }

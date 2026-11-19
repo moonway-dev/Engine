@@ -74,7 +74,7 @@ void rayGen()
         payload.roughness = roughness;
         payload.environmentDirection = environmentDirection;
         payload.padding = 0.0;
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, RtSurfaceRayMask, 0, 0, 0, ray, payload);
         radiance += payload.radiance;
     }
     reflectionOutput[pixel] = float4(max(radiance / float(sampleCount), float3(0.0)) * primarySpecularResponse.Load(int3(sourcePixel, 0)).rgb, replacement);

@@ -12,6 +12,7 @@ public sealed class Transform
     private Vector3 _renderPosition;
     private Quaternion _renderRotation = Quaternion.Identity;
     private bool _hasRenderPose;
+    private bool _renderPoseOverridesCurrent;
     private bool _localDirty = true;
     private bool _worldDirty = true;
 
@@ -147,26 +148,53 @@ public sealed class Transform
         }
     }
 
+    public bool RenderPoseOverridesCurrent =>
+        (_hasRenderPose && _renderPoseOverridesCurrent) || Parent?.RenderPoseOverridesCurrent == true;
+
     public Matrix4x4 RenderWorldMatrix
     {
         get
         {
             UpdateWorld();
-            if (!_hasRenderPose)
-                return _worldMatrix;
-            _worldMatrix.Decompose(out Vector3 scale, out _, out _);
-            return Matrix4x4.CreateTRS(_renderPosition, _renderRotation, scale);
+            if (_hasRenderPose)
+            {
+                _worldMatrix.Decompose(out Vector3 scale, out _, out _);
+                return Matrix4x4.CreateTRS(_renderPosition, _renderRotation, scale);
+            }
+            return Parent is { } parent ? parent.RenderWorldMatrix * LocalMatrix : _worldMatrix;
         }
     }
 
-    public void SetRenderPose(Vector3 position, Quaternion rotation)
+    public Matrix4x4 GetInterpolatedWorldMatrix(float alpha)
+    {
+        Matrix4x4 current = WorldMatrix;
+        float interpolation = Math.Clamp(alpha, 0f, 1f);
+        Matrix4x4 previous = RenderWorldMatrix;
+        if (RenderPoseOverridesCurrent)
+            return previous;
+        if (interpolation >= 1f || previous == current)
+            return current;
+        current.Decompose(out Vector3 scale, out Quaternion rotation, out Vector3 position);
+        previous.Decompose(out _, out Quaternion previousRotation, out Vector3 previousPosition);
+        return Matrix4x4.CreateTRS(
+            Vector3.Lerp(previousPosition, position, interpolation),
+            Quaternion.Slerp(previousRotation, rotation, interpolation),
+            scale);
+    }
+
+    public void SetRenderPose(Vector3 position, Quaternion rotation, bool overridesCurrent = false)
     {
         _renderPosition = position;
         _renderRotation = rotation;
+        _renderPoseOverridesCurrent = overridesCurrent;
         _hasRenderPose = true;
     }
 
-    public void ClearRenderPose() => _hasRenderPose = false;
+    public void ClearRenderPose()
+    {
+        _hasRenderPose = false;
+        _renderPoseOverridesCurrent = false;
+    }
 
     public void SetLocalTRS(Vector3 position, Quaternion rotation, Vector3 scale)
     {

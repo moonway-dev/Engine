@@ -169,6 +169,44 @@ public class ScenePickingTests
     }
 
     [Fact]
+    public void InterpolatedWorldMatrix_UsesInterpolatedParentPoseForChildCamera()
+    {
+        Scene.Scene scene = new("Interpolated camera pose");
+        GameObject player = scene.CreateObject("Player");
+        player.Transform.Position = new Vector3(0f, 4f, 0f);
+        player.Transform.Rotation = Quaternion.FromYawPitchRoll(90f * MathUtil.DegToRad, 0f, 0f);
+        player.Transform.SetRenderPose(new Vector3(0f, 2f, 0f), Quaternion.Identity);
+        GameObject camera = scene.CreateObject("Camera", player);
+        camera.Transform.LocalPosition = new Vector3(0f, 0.65f, 0f);
+
+        Matrix4x4 cameraPose = camera.Transform.GetInterpolatedWorldMatrix(0.25f);
+
+        Assert.Equal(3.15f, cameraPose.Translation.Y, 4);
+        Assert.Equal(4.65f, camera.Transform.Position.Y, 4);
+        cameraPose.Decompose(out _, out Quaternion cameraRotation, out _);
+        Assert.Equal(22.5f * MathUtil.DegToRad, cameraRotation.ToYawPitchRoll().X, 4);
+    }
+
+    [Fact]
+    public void ModelMatrix_UsesExtrapolatedRenderPoseWithoutLerpingItAgain()
+    {
+        Scene.Scene scene = new("Render extrapolation");
+        GameObject gameObject = scene.CreateObject("Body");
+        gameObject.Transform.Position = new Vector3(0f, 4f, 0f);
+        gameObject.Transform.SetRenderPose(new Vector3(0f, 5f, 0f), Quaternion.Identity, overridesCurrent: true);
+        RenderItem item = new()
+        {
+            Mesh = null!,
+            Material = null!,
+            BoundTransform = gameObject.Transform,
+            RenderInterpolationAlpha = 0.25f,
+        };
+
+        Assert.Equal(5f, item.ModelMatrix.Translation.Y, 4);
+        Assert.Equal(4f, gameObject.Transform.Position.Y);
+    }
+
+    [Fact]
     public void ModelMatrix_InterpolatesWorldPoseWithTransformedParent()
     {
         Scene.Scene scene = new("Parent interpolation");

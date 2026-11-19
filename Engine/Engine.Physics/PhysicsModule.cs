@@ -24,32 +24,28 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         public BodyHandle Body;
         public StaticHandle Static;
         public bool HasBody;
+        public float Mass;
         public Vector3 Position;
         public Quaternion Rotation;
-        public bool IsAwake;
         public Vector3 CenterOfMassOffset;
         public Vector3 PreviousPosition;
         public Quaternion PreviousRotation = Quaternion.Identity;
     }
 
     public string Name => "Physics";
-
     public Vector3 Gravity { get; set; } = new(0f, -9.81f, 0f);
-
     public bool SimulationActive { get; set; } = true;
-
     public Func<string, PhysicsMeshData?>? MeshDataResolver { get; set; }
-
     public float RenderInterpolationAlpha { get; private set; } = 1f;
-
     public PhysicsWorld World => _world ?? throw new InvalidOperationException("Physics module is not initialized.");
 
     public bool TryGetBodyHandle(GameObject gameObject, out BodyHandle body)
     {
         body = default;
+        Synchronize();
         if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
             return false;
-        if (!registration.HasBody || registration.Configuration.Kind == RigidBodyKind.Static)
+        if (!registration.HasBody || registration.Configuration.Kind == RigidBodyKind.Static || registration.RigidBody is { IsActiveInHierarchy: false })
             return false;
         body = registration.Body;
         return true;
@@ -58,12 +54,19 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     public bool TryGetStaticHandle(GameObject gameObject, out StaticHandle staticBody)
     {
         staticBody = default;
+        Synchronize();
         if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
             return false;
-        if (!registration.HasBody || registration.Configuration.Kind != RigidBodyKind.Static)
+        if (!registration.HasBody || registration.Configuration.Kind != RigidBodyKind.Static || registration.RigidBody is { IsActiveInHierarchy: false })
             return false;
         staticBody = registration.Static;
         return true;
+    }
+
+    public void Synchronize()
+    {
+        if (_world is not null && _attachedScene is not null)
+            SyncBodies();
     }
 
     public void AttachScene(Scene.Scene scene)
@@ -92,87 +95,100 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
 
     public void Update(in FrameTime frameTime)
     {
-        if (_world is null || _attachedScene is null || !SimulationActive)
+        if (_world is null || _attachedScene is null)
             return;
         SyncBodies();
-        RenderInterpolationAlpha = Math.Clamp(frameTime.FixedInterpolationAlpha, 0f, 1f);
+        RenderInterpolationAlpha = SimulationActive ? Math.Clamp(frameTime.FixedInterpolationAlpha, 0f, 1f) : 1f;
         foreach ((GameObject gameObject, Registration registration) in _bodies)
         {
-            if (registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody)
+            RigidbodyInterpolation interpolation = registration.RigidBody?.Interpolation ?? RigidbodyInterpolation.Interpolate;
+            if (!SimulationActive || registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody || interpolation == RigidbodyInterpolation.None)
             {
                 gameObject.Transform.ClearRenderPose();
                 continue;
             }
-            gameObject.Transform.SetRenderPose(registration.PreviousPosition, registration.PreviousRotation);
+            if (interpolation == RigidbodyInterpolation.Extrapolate)
+            {
+                float dt = frameTime.FixedDeltaTime * RenderInterpolationAlpha;
+                Vector3 position = gameObject.Transform.Position + _world.GetBodyLinearVelocity(registration.Body) * dt;
+                Vector3 angular = _world.GetBodyAngularVelocity(registration.Body);
+                Quaternion rotation = angular.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon
+                    ? Quaternion.FromAxisAngle(angular.Normalized, angular.Length * dt) * gameObject.Transform.Rotation
+                    : gameObject.Transform.Rotation;
+                gameObject.Transform.SetRenderPose(position, rotation, overridesCurrent: true);
+            }
+            else
+            {
+                gameObject.Transform.SetRenderPose(registration.PreviousPosition, registration.PreviousRotation);
+            }
         }
     }
 
     public void FixedUpdate(in FrameTime frameTime)
     {
-        if (_world is null || _attachedScene is null || !SimulationActive)
+        if (_world is null || _attachedScene is null)
             return;
-        DoFixedUpdate(frameTime);
+        SyncBodies();
+        if (SimulationActive)
+            DoFixedUpdate(frameTime);
     }
 
     public void SimulateOnce(in FrameTime frameTime)
     {
         if (_world is null || _attachedScene is null)
             return;
+        SyncBodies();
         DoFixedUpdate(frameTime);
     }
 
     private void DoFixedUpdate(in FrameTime frameTime)
     {
-        SyncBodies();
         foreach ((GameObject gameObject, Registration registration) in _bodies)
             if (registration.Configuration.Kind == RigidBodyKind.Dynamic && registration.HasBody)
                 SetPreviousPose(gameObject, registration);
-        _world.Step(frameTime.FixedDeltaTime);
+        _world!.Step(frameTime.FixedDeltaTime);
         ReadBackTransforms();
     }
 
     private void SyncBodies()
     {
+        _world!.Gravity = Gravity;
         List<GameObject> active = [];
         foreach (GameObject gameObject in _attachedScene!.EnumerateHierarchy())
         {
             if (!gameObject.IsActiveInHierarchy)
                 continue;
-            bool hasRigidBody = gameObject.Components.OfType<RigidBodyComponent>().Any(body => body.IsActiveInHierarchy);
+            RigidBodyComponent? rigidBody = gameObject.GetComponent<RigidBodyComponent>();
+            if (rigidBody is { Enabled: false })
+                continue;
             bool hasCollider = gameObject.Components.OfType<ColliderComponent>().Any(collider => collider.IsActiveInHierarchy);
-            if (hasRigidBody || hasCollider)
+            if (rigidBody is not null || hasCollider)
                 active.Add(gameObject);
         }
-
         HashSet<GameObject> activeSet = [.. active];
         foreach (GameObject gameObject in _bodies.Keys.Where(gameObject => !activeSet.Contains(gameObject)).ToArray())
         {
             RemoveWorldBody(gameObject, _bodies[gameObject]);
             _bodies.Remove(gameObject);
         }
-
         foreach (GameObject gameObject in active)
         {
-            RigidBodyComponent? rigidBody = gameObject.Components.OfType<RigidBodyComponent>().FirstOrDefault(body => body.IsActiveInHierarchy);
+            RigidBodyComponent? rigidBody = gameObject.GetComponent<RigidBodyComponent>();
             RigidBodyKind kind = rigidBody?.Kind ?? RigidBodyKind.Static;
             float mass = rigidBody?.Mass ?? 1f;
             List<PhysicsColliderSpec> specs = CollectSpecs(gameObject, kind);
-            Configuration configuration = new(kind, BuildConfigKey(kind, mass, specs));
+            Configuration configuration = new(kind, BuildConfigKey(kind, specs));
             if (!_bodies.TryGetValue(gameObject, out Registration? registration))
             {
                 registration = new Registration(configuration) { RigidBody = rigidBody };
                 _bodies.Add(gameObject, registration);
                 CreateWorldBody(gameObject, registration, specs, mass);
             }
-            else if (registration.RigidBody != rigidBody
-                || registration.Configuration.Kind != configuration.Kind
-                || registration.Configuration.ConfigKey != configuration.ConfigKey)
+            else if (registration.RigidBody != rigidBody || registration.Configuration != configuration)
             {
-                bool preserveVelocity = registration.HasBody
-                    && registration.Configuration.Kind == RigidBodyKind.Dynamic
-                    && configuration.Kind == RigidBodyKind.Dynamic;
-                Vector3 linearVelocity = preserveVelocity ? _world!.GetBodyLinearVelocity(registration.Body) : Vector3.Zero;
-                Vector3 angularVelocity = preserveVelocity ? _world!.GetBodyAngularVelocity(registration.Body) : Vector3.Zero;
+                bool preserveVelocity = registration.HasBody && registration.Configuration.Kind != RigidBodyKind.Static && kind != RigidBodyKind.Static;
+                Vector3 linear = preserveVelocity ? _world.GetBodyLinearVelocity(registration.Body) : Vector3.Zero;
+                Vector3 angular = preserveVelocity ? _world.GetBodyAngularVelocity(registration.Body) : Vector3.Zero;
                 RemoveWorldBody(gameObject, registration);
                 registration.Configuration = configuration;
                 registration.RigidBody = rigidBody;
@@ -180,35 +196,36 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 CreateWorldBody(gameObject, registration, specs, mass);
                 if (preserveVelocity && registration.HasBody)
                 {
-                    _world!.SetBodyVelocity(registration.Body, linearVelocity, angularVelocity);
-                    if (registration.RigidBody is not null)
-                        registration.RigidBody.IsAwake = true;
+                    _world.SetBodyVelocity(registration.Body, linear, angular);
                 }
                 SetPreviousPose(gameObject, registration);
             }
+            if (!registration.HasBody)
+                continue;
+            if (kind != RigidBodyKind.Static)
+            {
+                if (kind == RigidBodyKind.Dynamic && registration.Mass != mass)
+                    _world.SetBodyMass(registration.Body, mass);
+                registration.Mass = mass;
+                _world.ConfigureBody(registration.Body, rigidBody?.Settings ?? RigidbodySettings.Default);
+            }
             else
             {
-                if (!registration.HasBody)
-                    continue;
-                Vector3 position = gameObject.Transform.Position;
-                Quaternion rotation = gameObject.Transform.Rotation;
-                if (position != registration.Position || rotation != registration.Rotation)
-                {
-                    gameObject.Transform.ClearRenderPose();
-                    Vector3 physicsPosition = position + rotation.Rotate(registration.CenterOfMassOffset);
-
-                    if (configuration.Kind == RigidBodyKind.Static)
-                        _world!.SetStaticPose(registration.Static, physicsPosition, rotation);
-                    else if (configuration.Kind == RigidBodyKind.Dynamic)
-                        _world!.SetBodyPosePreservingVelocity(registration.Body, physicsPosition, rotation);
-                    else
-                        _world!.SetBodyPose(registration.Body, physicsPosition, rotation);
-                    SetPreviousPose(gameObject, registration);
-                }
-                if (configuration.Kind != RigidBodyKind.Static && rigidBody is not null && rigidBody.IsAwake != registration.IsAwake)
-                    _world!.SetBodyAwake(registration.Body, rigidBody.IsAwake);
-                CaptureTransform(gameObject, registration);
+                _world.SetStaticCollisionEnabled(registration.Static, rigidBody?.DetectCollisions ?? true);
             }
+            Vector3 position = gameObject.Transform.Position;
+            Quaternion rotation = gameObject.Transform.Rotation;
+            if (position != registration.Position || rotation != registration.Rotation)
+            {
+                gameObject.Transform.ClearRenderPose();
+                Vector3 physicsPosition = position + rotation.Rotate(registration.CenterOfMassOffset);
+                if (kind == RigidBodyKind.Static)
+                    _world.SetStaticPose(registration.Static, physicsPosition, rotation);
+                else
+                    _world.SetBodyPosePreservingVelocity(registration.Body, physicsPosition, rotation);
+                SetPreviousPose(gameObject, registration);
+            }
+            CaptureTransform(gameObject, registration);
         }
     }
 
@@ -240,26 +257,23 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         return specs;
     }
 
-    private static string BuildConfigKey(RigidBodyKind kind, float mass, IReadOnlyList<PhysicsColliderSpec> specs)
-    {
-        return $"{kind}:{mass:R}|{string.Join(";", specs.Select(spec =>
-            $"{spec.Kind}:{spec.Center}:{spec.Rotation}:{spec.Size}:{spec.Radius:R}:{spec.MeshKey}"))}";
-    }
+    private static string BuildConfigKey(RigidBodyKind kind, IReadOnlyList<PhysicsColliderSpec> specs) =>
+        $"{kind}|{string.Join(";", specs.Select(spec => $"{spec.Kind}:{spec.Center}:{spec.Rotation}:{spec.Size}:{spec.Radius:R}:{spec.MeshKey}"))}";
 
     private void CreateWorldBody(GameObject gameObject, Registration registration, IReadOnlyList<PhysicsColliderSpec> specs, float mass)
     {
         if (specs.Count == 0)
         {
-            string source = registration.RigidBody is null ? "Collider" : "RigidBody";
-            WarnOnce(gameObject, $"{source} on '{gameObject.Name}' has no valid collider; object is not simulated.");
+            WarnOnce(gameObject, $"{(registration.RigidBody is null ? "Collider" : "RigidBody")} on '{gameObject.Name}' has no valid collider; object is not simulated.");
             return;
         }
-
         Quaternion rotation = gameObject.Transform.Rotation;
+        bool awake = registration.RigidBody?.InitialAwake ?? true;
         switch (registration.Configuration.Kind)
         {
             case RigidBodyKind.Static:
                 registration.Static = _world!.AddStatic(gameObject.Transform.Position, rotation, specs);
+                _world.SetStaticCollisionEnabled(registration.Static, registration.RigidBody?.DetectCollisions ?? true);
                 break;
             case RigidBodyKind.Kinematic:
                 registration.Body = _world!.AddKinematic(gameObject.Transform.Position, rotation, specs);
@@ -270,30 +284,33 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 break;
         }
         registration.HasBody = true;
-        SetPreviousPose(gameObject, registration);
+        registration.Mass = mass;
+        if (registration.Configuration.Kind != RigidBodyKind.Static)
+        {
+            _world!.ConfigureBody(registration.Body, registration.RigidBody?.Settings ?? RigidbodySettings.Default);
+            _world.SetBodyAwake(registration.Body, awake);
+        }
         if (registration.RigidBody is not null)
         {
             registration.RigidBody.Body = registration.Body;
             registration.RigidBody.Static = registration.Static;
+            registration.RigidBody.World = _world;
             registration.RigidBody.HasBody = true;
-            if (registration.Configuration.Kind != RigidBodyKind.Static)
-                _world!.SetBodyAwake(registration.Body, registration.RigidBody.IsAwake);
         }
+        SetPreviousPose(gameObject, registration);
         CaptureTransform(gameObject, registration);
     }
 
     private void WarnOnce(GameObject gameObject, string message)
     {
-        if (!_warnedBodies.Add((gameObject.Id, message)))
-            return;
-        _log?.Warning(message);
+        if (_warnedBodies.Add((gameObject.Id, message)))
+            _log?.Warning(message);
     }
 
     private static void CaptureTransform(GameObject gameObject, Registration registration)
     {
         registration.Position = gameObject.Transform.Position;
         registration.Rotation = gameObject.Transform.Rotation;
-        registration.IsAwake = registration.RigidBody?.IsAwake ?? true;
     }
 
     private void SetPreviousPose(GameObject gameObject, Registration registration)
@@ -315,6 +332,11 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     private void RemoveWorldBody(GameObject gameObject, Registration registration)
     {
         gameObject.Transform.ClearRenderPose();
+        if (registration.RigidBody is not null)
+        {
+            registration.RigidBody.HasBody = false;
+            registration.RigidBody.World = null;
+        }
         if (!registration.HasBody || _world is null)
             return;
         if (registration.Configuration.Kind == RigidBodyKind.Static)
@@ -322,15 +344,13 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         else
             _world.RemoveBody(registration.Body);
         registration.HasBody = false;
-        if (registration.RigidBody is not null)
-            registration.RigidBody.HasBody = false;
     }
 
     private void ReadBackTransforms()
     {
         foreach ((GameObject gameObject, Registration registration) in _bodies)
         {
-            if (registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody)
+            if (registration.Configuration.Kind == RigidBodyKind.Static || !registration.HasBody)
                 continue;
             Quaternion rotation = _world!.GetBodyRotation(registration.Body);
             gameObject.Transform.Rotation = rotation;
@@ -342,17 +362,22 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
 
     private void ClearRegistrations()
     {
-        foreach (Registration registration in _bodies.Values)
-            if (registration.RigidBody is not null)
-                registration.RigidBody.HasBody = false;
+        foreach ((GameObject gameObject, Registration registration) in _bodies)
+        {
+            gameObject.Transform.ClearRenderPose();
+            if (registration.RigidBody is null)
+                continue;
+            registration.RigidBody.HasBody = false;
+            registration.RigidBody.World = null;
+        }
         _bodies.Clear();
     }
 
     public void Shutdown()
     {
+        ClearRegistrations();
         _world?.Dispose();
         _world = null;
-        ClearRegistrations();
         _attachedScene = null;
         _log?.Information("Physics shut down");
     }

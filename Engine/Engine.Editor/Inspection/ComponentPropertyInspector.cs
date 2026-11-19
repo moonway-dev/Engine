@@ -28,12 +28,15 @@ public static class ComponentInspectorHooks
 
     internal static bool TryDraw(EditorContext context, Component component)
     {
-        if (!Hooks.TryGetValue(component.GetType(), out List<Func<EditorContext, Component, bool>>? list))
-            return false;
-        foreach (Func<EditorContext, Component, bool> hook in list)
+        for (Type? type = component.GetType(); type is not null; type = type.BaseType)
         {
-            if (hook(context, component))
-                return true;
+            if (!Hooks.TryGetValue(type, out List<Func<EditorContext, Component, bool>>? list))
+                continue;
+            foreach (Func<EditorContext, Component, bool> hook in list)
+            {
+                if (hook(context, component))
+                    return true;
+            }
         }
         return false;
     }

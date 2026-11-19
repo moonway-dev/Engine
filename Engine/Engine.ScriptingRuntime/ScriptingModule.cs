@@ -273,6 +273,8 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptPhysics.AngularImpulseApplier = (gameObject, impulse) => WithBodyVoid(gameObject, (world, handle) => world.ApplyAngularImpulse(handle, impulse));
         ScriptPhysics.MassGetter = gameObject => WithBody(gameObject, (world, handle) => world.GetBodyMass(handle), 0f);
         ScriptPhysics.Waker = gameObject => WithBodyVoid(gameObject, (world, handle) => world.SetBodyAwake(handle, true));
+        ScriptPhysics.Sleeper = gameObject => WithBodyVoid(gameObject, (world, handle) => world.SetBodyAwake(handle, false));
+        ScriptPhysics.SleepingChecker = gameObject => WithBody(gameObject, (world, handle) => !world.IsBodyAwake(handle), false);
         ScriptPhysics.BodyChecker = gameObject => _physics is not null && _physics.TryGetBodyHandle(gameObject, out _);
         ScriptPhysics.GroundedChecker = (gameObject, distance) =>
         {
@@ -286,6 +288,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     {
         if (_physics is null)
             return null;
+        _physics.Synchronize();
         BodyHandle? ignored = null;
         if (ignore is not null && _physics.TryGetBodyHandle(ignore, out BodyHandle ignoreHandle))
             ignored = ignoreHandle;
@@ -506,6 +509,8 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptPhysics.AngularImpulseApplier = null;
         ScriptPhysics.MassGetter = null;
         ScriptPhysics.Waker = null;
+        ScriptPhysics.Sleeper = null;
+        ScriptPhysics.SleepingChecker = null;
         ScriptPhysics.BodyChecker = null;
         ScriptPhysics.GroundedChecker = null;
         ScriptPhysics.RayCaster = null;

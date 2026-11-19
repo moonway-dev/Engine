@@ -954,7 +954,7 @@ public sealed class RendererModule : IUpdatableModule
             Jitter = _gameJitter,
             PreviousJitter = _gamePreviousJitter,
         };
-        ShadowCasterBounds[] casterBounds = _sceneItems.Values.Select(item => CascadedShadows.TransformBounds(item.Mesh.BoundsMin, item.Mesh.BoundsMax, item.ModelMatrix)).ToArray();
+        ShadowCasterBounds[] casterBounds = _sceneItems.Values.Where(item => item.RenderingMode.CastsShadows()).Select(item => CascadedShadows.TransformBounds(item.Mesh.BoundsMin, item.Mesh.BoundsMax, item.ModelMatrix)).ToArray();
         _currentShadowData = BuildShadowData(sceneCamera, casterBounds);
         _currentGameShadowData = BuildShadowData(Camera, casterBounds);
         _cameraAllocation = _uniformRing!.Allocate(CameraData.SizeInBytes);
@@ -1383,6 +1383,8 @@ public sealed class RendererModule : IUpdatableModule
             commandBuffer.SetScissor(tile);
             foreach (RenderItem renderItem in _sceneItems.Values)
             {
+                if (!renderItem.RenderingMode.CastsShadows())
+                    continue;
                 Matrix4x4 matrix = shadow.LightViewProjections[cascade] * renderItem.ModelMatrix;
                 if (!FrustumCulling.IsVisible(renderItem.Mesh.BoundsMin, renderItem.Mesh.BoundsMax, matrix))
                 {
@@ -1996,6 +1998,8 @@ public sealed class RendererModule : IUpdatableModule
         Matrix4x4 viewProjection = camera.ViewProjection;
         foreach (RenderItem renderItem in _sceneItems.Values)
         {
+            if (renderItem.RenderingMode == MeshRenderingMode.Off)
+                continue;
             MeshLodState lodState = ReferenceEquals(camera, Camera) && _editorMode
                 ? renderItem.GameLodState
                 : renderItem.SceneLodState;
@@ -2003,6 +2007,8 @@ public sealed class RendererModule : IUpdatableModule
             RayTracingDrawItem draw = new(renderItem, drawMesh);
             if (_lastRtMasterEnabled)
                 rtItems.Add(draw);
+            if (!renderItem.RenderingMode.RendersCamera())
+                continue;
             if (!FrustumCulling.IsVisible(renderItem.Mesh.BoundsMin, renderItem.Mesh.BoundsMax, viewProjection * renderItem.ModelMatrix))
             {
                 CulledObjects++;
@@ -2748,7 +2754,7 @@ public sealed class RendererModule : IUpdatableModule
                     : Light.Point(gameObject.Transform.Position, light.Color, light.Intensity, light.Range));
             }
             MeshRendererComponent? meshRenderer = gameObject.GetComponent<MeshRendererComponent>();
-            if (meshRenderer is not null)
+            if (meshRenderer is { Enabled: true } && meshRenderer.RenderingMode != MeshRenderingMode.Off)
                 activeComponents.Add(meshRenderer);
         }
         if (sceneCamera is not null)
@@ -2756,8 +2762,10 @@ public sealed class RendererModule : IUpdatableModule
             Camera.FieldOfViewY = sceneCamera.FieldOfViewY;
             Camera.NearPlane = sceneCamera.NearPlane;
             Camera.FarPlane = sceneCamera.FarPlane;
-            Camera.Position = sceneCamera.Transform.Position;
-            Camera.Rotation = sceneCamera.Transform.Rotation;
+            Matrix4x4 cameraTransform = sceneCamera.Transform.GetInterpolatedWorldMatrix(RenderInterpolationAlpha);
+            cameraTransform.Decompose(out _, out Quaternion cameraRotation, out Vector3 cameraPosition);
+            Camera.Position = cameraPosition;
+            Camera.Rotation = cameraRotation;
         }
         _gameCameraPresent = sceneCamera is not null;
         if (!_editorMode)
@@ -2775,6 +2783,7 @@ public sealed class RendererModule : IUpdatableModule
         {
             if (!activeComponents.Contains(component) || component.Mesh is null)
             {
+                ResetTemporalHistory();
                 _items.Remove(item);
                 _sceneItems.Remove(component);
                 EnsureMaterialIdle();
@@ -2807,6 +2816,9 @@ public sealed class RendererModule : IUpdatableModule
                 _sceneItems[component] = item;
             }
             item!.Lod = new MeshLodSettings(component.LodMode, component.ForcedLodLevel, component.LodBias);
+            if (item.RenderingMode != component.RenderingMode)
+                ResetTemporalHistory();
+            item.RenderingMode = component.RenderingMode;
             SyncMaterial(component, item!.Material, created);
         }
     }

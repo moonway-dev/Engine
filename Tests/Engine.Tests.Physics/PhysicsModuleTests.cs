@@ -210,6 +210,29 @@ public sealed class PhysicsModuleTests : IDisposable
     }
 
     [Fact]
+    public void CapsuleWithFreezeRotationStaysUprightUnderContact()
+    {
+        Ground();
+        GameObject capsuleGuy = _scene.CreateObject("CapsuleGuy");
+        capsuleGuy.Transform.Position = new Vector3(0f, 2.6f, 0f);
+        capsuleGuy.Transform.LocalScale = new Vector3(0.5f, 1.07f, 0.5f);
+        RigidBodyComponent body = capsuleGuy.AddComponent<RigidBodyComponent>();
+        body.Constraints = RigidbodyConstraints.FreezeRotation;
+        CapsuleColliderComponent collider = capsuleGuy.AddComponent<CapsuleColliderComponent>();
+        collider.Radius = 1f;
+        collider.Height = 2f;
+        GameObject bumper = _scene.CreateObject("Bumper");
+        bumper.Transform.Position = new Vector3(0.65f, 0.2f, 0f);
+        bumper.AddComponent<RigidBodyComponent>().Kind = RigidBodyKind.Static;
+        bumper.AddComponent<BoxColliderComponent>().Size = new Vector3(0.4f, 0.4f, 0.8f);
+
+        Step(300);
+
+        Assert.True(Vector3.Dot(capsuleGuy.Transform.Up, Vector3.Up) > 0.999f);
+        Assert.True(body.AngularVelocity.Length < 0.001f);
+    }
+
+    [Fact]
     public void CapsuleWithSmallInitialTiltTipsOver()
     {
         Ground();
@@ -266,6 +289,126 @@ public sealed class PhysicsModuleTests : IDisposable
     }
 
     [Fact]
+    public void DisabledRigidBodyRemovesPhysicsBodyWithoutCreatingStaticFallback()
+    {
+        GameObject crate = Crate();
+        RigidBodyComponent body = crate.GetComponent<RigidBodyComponent>()!;
+        BoxColliderComponent collider = crate.GetComponent<BoxColliderComponent>()!;
+        _physics.Update(_time);
+        Assert.Equal(1, _physics.World.Simulation.Bodies.ActiveSet.Count);
+        Assert.True(_physics.TryGetBodyHandle(crate, out _));
+
+        _physics.SimulationActive = false;
+        body.Enabled = false;
+        _physics.Update(_time);
+
+        Assert.Equal(0, _physics.World.Simulation.Bodies.ActiveSet.Count);
+        Assert.Equal(0, _physics.World.Simulation.Statics.Count);
+        Assert.False(_physics.TryGetBodyHandle(crate, out _));
+        Assert.False(_physics.TryGetStaticHandle(crate, out _));
+
+        body.Enabled = true;
+        _physics.Update(_time);
+
+        Assert.Equal(1, _physics.World.Simulation.Bodies.ActiveSet.Count);
+        Assert.Equal(0, _physics.World.Simulation.Statics.Count);
+        Assert.True(_physics.TryGetBodyHandle(crate, out _));
+        Assert.True(collider.IsActiveInHierarchy);
+    }
+
+    [Fact]
+    public void DisabledColliderIsRemovedFromRaycastsAndReenabledWhilePaused()
+    {
+        GameObject ground = _scene.CreateObject("Ground");
+        ground.Transform.Position = new Vector3(0f, -0.5f, 0f);
+        BoxColliderComponent collider = ground.AddComponent<BoxColliderComponent>();
+        collider.Size = new Vector3(10f, 1f, 10f);
+        _physics.Update(_time);
+        Assert.True(_physics.World.RayCast(new Vector3(0f, 2f, 0f), Vector3.Down, 4f, out _));
+
+        _physics.SimulationActive = false;
+        collider.Enabled = false;
+        _physics.Update(_time);
+        Assert.Equal(0, _physics.World.Simulation.Statics.Count);
+        Assert.False(_physics.World.RayCast(new Vector3(0f, 2f, 0f), Vector3.Down, 4f, out _));
+
+        collider.Enabled = true;
+        _physics.Update(_time);
+        Assert.Equal(1, _physics.World.Simulation.Statics.Count);
+        Assert.True(_physics.World.RayCast(new Vector3(0f, 2f, 0f), Vector3.Down, 4f, out _));
+    }
+
+    [Fact]
+    public void DisabledColliderLeavesOtherCompoundCollidersActive()
+    {
+        GameObject compound = _scene.CreateObject("Compound");
+        compound.Transform.Position = new Vector3(0f, 4f, 0f);
+        compound.AddComponent<RigidBodyComponent>();
+        BoxColliderComponent left = compound.AddComponent<BoxColliderComponent>();
+        left.Center = new Vector3(-2f, 0f, 0f);
+        SphereColliderComponent right = compound.AddComponent<SphereColliderComponent>();
+        right.Center = new Vector3(2f, 0f, 0f);
+        _physics.Update(_time);
+        Assert.True(_physics.World.RayCast(new Vector3(-2f, 4f, 3f), Vector3.Forward, 6f, out _));
+        Assert.True(_physics.World.RayCast(new Vector3(2f, 4f, 3f), Vector3.Forward, 6f, out _));
+
+        left.Enabled = false;
+        _physics.Update(_time);
+
+        Assert.False(_physics.World.RayCast(new Vector3(-2f, 4f, 3f), Vector3.Forward, 6f, out _));
+        Assert.True(_physics.World.RayCast(new Vector3(2f, 4f, 3f), Vector3.Forward, 6f, out _));
+        Assert.True(_physics.TryGetBodyHandle(compound, out _));
+    }
+
+    [Fact]
+    public void InactiveParentRemovesChildBodyAndRestoresOnReactivation()
+    {
+        GameObject parent = _scene.CreateObject("Parent");
+        GameObject child = _scene.CreateObject("Child");
+        child.SetParent(parent);
+        child.AddComponent<RigidBodyComponent>();
+        child.AddComponent<BoxColliderComponent>();
+        _physics.Update(_time);
+        Assert.True(_physics.TryGetBodyHandle(child, out _));
+
+        parent.Active = false;
+        _physics.Update(_time);
+
+        Assert.Equal(0, _physics.World.Simulation.Bodies.ActiveSet.Count);
+        Assert.False(_physics.TryGetBodyHandle(child, out _));
+
+        parent.Active = true;
+        _physics.Update(_time);
+        Assert.True(_physics.TryGetBodyHandle(child, out _));
+    }
+
+    [Fact]
+    public void ChangingBodySettingsWhilePausedAppliesWithoutAdvancingSimulation()
+    {
+        GameObject crate = Crate();
+        RigidBodyComponent body = crate.GetComponent<RigidBodyComponent>()!;
+        _physics.SimulationActive = false;
+        body.UseGravity = false;
+        body.LinearDamping = 0f;
+        body.Constraints = RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezeRotation;
+        _physics.Update(_time);
+        Assert.True(_physics.TryGetBodyHandle(crate, out BepuPhysics.BodyHandle handle));
+        System.Numerics.Vector3 velocity = new(3f, 4f, 5f);
+        _physics.World.SetBodyVelocity(handle, new Vector3(velocity.X, velocity.Y, velocity.Z));
+        _physics.Update(_time);
+
+        Assert.Equal(4.5f, crate.Transform.Position.Y);
+        Assert.Equal(0f, _physics.World.GetBodyLinearVelocity(handle).X);
+        Assert.Equal(4f, _physics.World.GetBodyLinearVelocity(handle).Y);
+
+        _physics.SimulationActive = true;
+        Step(60);
+
+        Assert.InRange(crate.Transform.Position.Y, 8.4f, 8.6f);
+        Assert.Equal(0f, crate.Transform.Position.X);
+    }
+
+    [Fact]
     public void ColliderWithoutRigidBodyCreatesStaticCollision()
     {
         GameObject ground = _scene.CreateObject("ColliderGround");
@@ -302,6 +445,69 @@ public sealed class PhysicsModuleTests : IDisposable
         Vector3 rotatedCenterOfMass = _physics.World.GetBodyPosition(new BepuPhysics.BodyHandle(0));
         Vector3 expected = crate.Transform.Position + rotation.Rotate(new Vector3(1.5f, 0f, 0f));
         Assert.True((rotatedCenterOfMass - expected).Length < 0.0001f);
+    }
+
+    [Fact]
+    public void RigidbodySettingsRoundTripWithoutPersistingSleepState()
+    {
+        GameObject crate = Crate();
+        RigidBodyComponent body = crate.GetComponent<RigidBodyComponent>()!;
+        body.Kind = RigidBodyKind.Kinematic;
+        body.Mass = 4.5f;
+        body.LinearDamping = 0.25f;
+        body.AngularDamping = 0.75f;
+        body.UseGravity = false;
+        body.DetectCollisions = false;
+        body.Interpolation = RigidbodyInterpolation.Extrapolate;
+        body.CollisionDetection = RigidbodyCollisionDetection.Continuous;
+        body.Constraints = RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezeRotationZ;
+        _physics.Update(_time);
+        body.Sleep();
+
+        string json = _scene.ToJson();
+        Assert.DoesNotContain("isAwake", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("isSleeping", json, StringComparison.OrdinalIgnoreCase);
+        Scene.Scene restored = Scene.Scene.FromJson(json);
+        RigidBodyComponent restoredBody = Assert.IsType<RigidBodyComponent>(restored.FindByName("Crate")!.GetComponent<RigidBodyComponent>());
+
+        Assert.Equal(RigidBodyKind.Kinematic, restoredBody.Kind);
+        Assert.Equal(4.5f, restoredBody.Mass);
+        Assert.Equal(0.25f, restoredBody.LinearDamping);
+        Assert.Equal(0.75f, restoredBody.AngularDamping);
+        Assert.False(restoredBody.UseGravity);
+        Assert.False(restoredBody.DetectCollisions);
+        Assert.Equal(RigidbodyInterpolation.Extrapolate, restoredBody.Interpolation);
+        Assert.Equal(RigidbodyCollisionDetection.Continuous, restoredBody.CollisionDetection);
+        Assert.Equal(RigidbodyConstraints.FreezePositionX | RigidbodyConstraints.FreezeRotationZ, restoredBody.Constraints);
+        Assert.True(restoredBody.IsAwake);
+        Assert.False(restoredBody.IsSleeping);
+    }
+
+    [Fact]
+    public void LegacySceneKindPropertyRestoresRigidBodyKind()
+    {
+        Scene.Scene restored = Scene.Scene.FromJson("""
+            {
+              "version": 1,
+              "name": "Legacy",
+              "objects": [
+                {
+                  "id": "10000000-0000-0000-0000-000000000001",
+                  "name": "Body",
+                  "components": [
+                    {
+                      "type": "RigidBody",
+                      "properties": { "Kind": "Kinematic", "Mass": 3.0 }
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        RigidBodyComponent body = restored.FindByName("Body")!.GetComponent<RigidBodyComponent>()!;
+        Assert.Equal(RigidBodyKind.Kinematic, body.Kind);
+        Assert.Equal(3f, body.Mass);
     }
 
     [Fact]

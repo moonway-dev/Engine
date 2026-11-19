@@ -59,7 +59,7 @@ void rayGen()
         ray.TMax = max(view.cameraPositionAndMaxDistance.w, ray.TMin * 2.0);
         ShadowPayload payload;
         payload.visibility = 0.0;
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff, 0, 0, 0, ray, payload);
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, RtShadowRayMask, 0, 0, 0, ray, payload);
         visibility += payload.visibility;
     }
     visibility = eligibleSamples == 0 ? 1.0 : visibility / float(eligibleSamples);
@@ -79,7 +79,7 @@ void rayGen()
             pointRay.TMax = distance - normalOffset * 0.25;
             ShadowPayload pointPayload;
             pointPayload.visibility = 0.0;
-            TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff, 0, 0, 0, pointRay, pointPayload);
+            TraceRay(scene, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, RtShadowRayMask, 0, 0, 0, pointRay, pointPayload);
             pointVisibility = pointPayload.visibility;
         }
     }

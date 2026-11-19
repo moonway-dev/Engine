@@ -63,7 +63,7 @@ void rayGen()
         GiPayload payload;
         payload.radiance = float3(0.0);
         payload.padding = 0.0;
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, RtSurfaceRayMask, 0, 0, 0, ray, payload);
         radiance += payload.radiance;
     }
     giOutput[pixel] = float4(max(radiance / float(sampleCount), 0.0), depth);

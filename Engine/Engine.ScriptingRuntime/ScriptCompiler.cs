@@ -244,6 +244,8 @@ public sealed class ScriptCompiler
         foreach (Assembly assembly in new[]
         {
             typeof(ScriptComponent).Assembly,
+            typeof(Engine.Physics.RigidBodyComponent).Assembly,
+            typeof(BepuPhysics.BodyHandle).Assembly,
             typeof(ScriptBehaviour).Assembly,
             typeof(Vector3).Assembly,
             typeof(KeyCode).Assembly,

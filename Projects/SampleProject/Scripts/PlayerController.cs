@@ -32,9 +32,6 @@ public sealed class PlayerController : ScriptBehaviour
     [InspectorTooltip("Hide and lock the cursor while the script is active.")]
     public bool LockCursor = true;
 
-    [InspectorTooltip("Damp angular velocity every frame so the body stays upright.")]
-    public bool KeepUpright = true;
-
     private CameraComponent? _camera;
     private float _yaw;
     private float _pitch;
@@ -55,14 +52,13 @@ public sealed class PlayerController : ScriptBehaviour
     {
         _camera = Owner.GetComponentsInChildren<CameraComponent>().FirstOrDefault();
         Vector3 bodyYaw = Transform.Rotation.ToYawPitchRoll();
-        _yaw = bodyYaw.Y;
+        _yaw = bodyYaw.X;
         if (_camera is not null)
         {
             Vector3 cameraAngles = _camera.Transform.LocalRotation.ToYawPitchRoll();
-            _yaw = cameraAngles.Y;
-            _pitch = cameraAngles.X;
+            _yaw = cameraAngles.X;
+            _pitch = cameraAngles.Y;
         }
-        ApplyLook();
     }
 
     public override void OnUpdate()
@@ -84,15 +80,22 @@ public sealed class PlayerController : ScriptBehaviour
 
     private void ApplyMovement()
     {
+        Transform viewTransform = _camera?.Transform ?? Transform;
+        Vector3 forward = viewTransform.Forward;
+        forward = new Vector3(forward.X, 0f, forward.Z);
+        if (forward.Length < MathUtil.Epsilon)
+            forward = Quaternion.FromAxisAngle(Vector3.Up, _yaw).Rotate(Vector3.Forward);
+        forward = forward.Normalized;
+        Vector3 right = Vector3.Cross(forward, Vector3.Up).Normalized;
         Vector3 wish = Vector3.Zero;
         if (ScriptInput.IsKeyDown(KeyCode.W))
-            wish += Vector3.Forward;
+            wish += forward;
         if (ScriptInput.IsKeyDown(KeyCode.S))
-            wish -= Vector3.Forward;
+            wish -= forward;
         if (ScriptInput.IsKeyDown(KeyCode.A))
-            wish -= Vector3.Right;
+            wish -= right;
         if (ScriptInput.IsKeyDown(KeyCode.D))
-            wish += Vector3.Right;
+            wish += right;
         if (wish.Length > MathUtil.Epsilon)
             wish = wish.Normalized * MoveSpeed;
 
@@ -110,8 +113,6 @@ public sealed class PlayerController : ScriptBehaviour
         Vector3 blended = horizontal + (target - horizontal) * blend;
         ScriptPhysics.SetLinearVelocity(Owner, new Vector3(blended.X, velocity.Y, blended.Z));
 
-        if (KeepUpright)
-            ScriptPhysics.SetAngularVelocity(Owner, Vector3.Zero);
     }
 
     private bool IsGrounded()

@@ -138,7 +138,7 @@ public sealed class RayTracingScene : IDisposable
         ArgumentNullException.ThrowIfNull(items);
         FrameResources frame = _frames[slot];
         frame.ReleaseGeometry();
-        RayTracingDrawItem[] validItems = items.Where(draw => draw.Mesh.IndexCount >= 3 && IsInvertible(draw.Item.ModelMatrix)).ToArray();
+        RayTracingDrawItem[] validItems = items.Where(draw => draw.Item.RenderingMode.RayTracingMask() != 0 && draw.Mesh.IndexCount >= 3 && IsInvertible(draw.Item.ModelMatrix)).ToArray();
         Mesh[] meshes = validItems.Select(draw => draw.Mesh).Distinct().ToArray();
         bool changed = !_activeMeshes.SequenceEqual(meshes);
         foreach (Mesh mesh in meshes)
@@ -163,7 +163,7 @@ public sealed class RayTracingScene : IDisposable
         for (int index = 0; index < validItems.Length; index++)
         {
             RayTracingDrawItem draw = validItems[index];
-            instances[index] = RayTracingInstance.Create(draw.Item.ModelMatrix, (uint)index, 0xff, 0,
+            instances[index] = RayTracingInstance.Create(draw.Item.ModelMatrix, (uint)index, draw.Item.RenderingMode.RayTracingMask(), 0,
                 RayTracingInstanceFlags.TriangleFacingCullDisable, _geometry[draw.Mesh].Structure.DeviceAddress);
         }
         bool sameTopology = frame.MeshOrder.SequenceEqual(validItems.Select(draw => draw.Mesh));

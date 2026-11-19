@@ -172,6 +172,24 @@ public sealed class ScriptRuntimeTests : IDisposable
         Assert.True(script.HasInstance);
         ScriptBehaviour behaviour = Assert.IsAssignableFrom<ScriptBehaviour>(script.Instance)!;
         Assert.True((bool)behaviour.GetType().GetField("GroundedOnStart")!.GetValue(behaviour)!);
+
+        ScriptPhysics.Sleep(player);
+        Assert.True(ScriptPhysics.IsSleeping(player));
+        ScriptPhysics.Wake(player);
+        Assert.False(ScriptPhysics.IsSleeping(player));
+
+        rigidBody.Enabled = false;
+        Assert.False(ScriptPhysics.HasBody(player));
+        Assert.Equal(0f, ScriptPhysics.GetMass(player));
+        Assert.Equal(Vector3.Zero, ScriptPhysics.GetLinearVelocity(player));
+        ScriptPhysics.SetLinearVelocity(player, Vector3.Up);
+        ScriptPhysics.AddImpulse(player, Vector3.Up * 10f);
+        Assert.Equal(Vector3.Zero, ScriptPhysics.GetLinearVelocity(player));
+
+        rigidBody.Enabled = true;
+        physics.Update(time);
+        Assert.True(ScriptPhysics.HasBody(player));
+        Assert.Equal(Vector3.Zero, ScriptPhysics.GetLinearVelocity(player));
     }
 
     [Fact]

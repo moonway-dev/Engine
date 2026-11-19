@@ -91,7 +91,7 @@ internal static class ScriptComponentInspector
             false);
     }
 
-    private static IReadOnlyList<MemberInfo> GetInstanceMembers(Type type)
+    internal static IReadOnlyList<MemberInfo> GetInstanceMembers(Type type)
     {
         List<MemberInfo> members = [];
         HashSet<string> names = [];
