@@ -18,6 +18,7 @@ public sealed class PlayModeController : IDisposable
     private readonly EditorContext _context;
     private readonly ScriptingModule? _scripts;
     private readonly Engine.Physics.PhysicsModule? _physics;
+    private readonly Engine.Scene.SceneBehavioursModule? _behaviours;
     private SceneModel? _editScene;
     private SceneModel? _playScene;
     private bool _wasDirtyBeforePlay;
@@ -27,11 +28,12 @@ public sealed class PlayModeController : IDisposable
 
     public event EventHandler? StateChanged;
 
-    public PlayModeController(EditorContext context, ScriptingModule? scripts, Engine.Physics.PhysicsModule? physics = null)
+    public PlayModeController(EditorContext context, ScriptingModule? scripts, Engine.Physics.PhysicsModule? physics = null, Engine.Scene.SceneBehavioursModule? behaviours = null)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _scripts = scripts;
         _physics = physics;
+        _behaviours = behaviours;
         _context.Document.SceneChanged += OnDocumentSceneChanged;
     }
 
@@ -48,6 +50,8 @@ public sealed class PlayModeController : IDisposable
         _scripts?.BeginPlay(playScene);
         if (_physics is not null)
             _physics.SimulationActive = true;
+        if (_behaviours is not null)
+            _behaviours.SimulationActive = true;
         State = EditorPlayState.Playing;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -63,6 +67,8 @@ public sealed class PlayModeController : IDisposable
             _context.Document.ExitPlayMode(_editScene!);
             if (_physics is not null)
                 _physics.SimulationActive = false;
+            if (_behaviours is not null)
+                _behaviours.SimulationActive = false;
         }
         finally
         {
@@ -83,6 +89,8 @@ public sealed class PlayModeController : IDisposable
         _scripts?.EndPlay(_playScene!);
         if (_physics is not null)
             _physics.SimulationActive = false;
+        if (_behaviours is not null)
+            _behaviours.SimulationActive = false;
         _playScene = null;
         _editScene = null;
         State = EditorPlayState.Stopped;
@@ -112,6 +120,8 @@ public sealed class PlayModeController : IDisposable
         _scripts?.Pause();
         if (_physics is not null)
             _physics.SimulationActive = false;
+        if (_behaviours is not null)
+            _behaviours.SimulationActive = false;
         State = EditorPlayState.Paused;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -123,6 +133,8 @@ public sealed class PlayModeController : IDisposable
         _scripts?.Resume();
         if (_physics is not null)
             _physics.SimulationActive = true;
+        if (_behaviours is not null)
+            _behaviours.SimulationActive = true;
         State = EditorPlayState.Playing;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

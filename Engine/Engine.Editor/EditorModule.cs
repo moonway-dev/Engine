@@ -29,6 +29,7 @@ public sealed class EditorModule : IUpdatableModule
     private MemoryLogSink? _memoryLogSink;
     private IWindow? _window;
     private Scene.Scene? _scene;
+    private string? _pendingScenePath;
     private ITexture? _viewTexture;
     private ITexture? _gameTexture;
     private bool _initialized;
@@ -50,6 +51,8 @@ public sealed class EditorModule : IUpdatableModule
 
     public Engine.Physics.PhysicsModule? Physics { get; set; }
 
+    public Engine.Scene.SceneBehavioursModule? Behaviours { get; set; }
+
     public PlayModeController? PlayMode { get; private set; }
 
     public EditorModule(
@@ -66,10 +69,11 @@ public sealed class EditorModule : IUpdatableModule
         _layoutPath = layoutPath;
     }
 
-    public void AttachScene(Scene.Scene scene)
+    public void AttachScene(Scene.Scene scene, string? scenePath = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         _scene = scene;
+        _pendingScenePath = scenePath;
         _sceneHost.ActiveScene = scene;
         if (_overlay is null)
             CreateOverlay();
@@ -148,7 +152,8 @@ public sealed class EditorModule : IUpdatableModule
         _sceneHost.ActiveScene = _scene;
         _sceneHostAdapter = new SceneHostAdapter(_sceneHost);
         _sceneHostAdapter.ActiveSceneChanged += OnActiveSceneChanged;
-        SceneDocument document = new(_sceneHostAdapter, _scene);
+        SceneDocument document = new(_sceneHostAdapter, _scene, _pendingScenePath);
+        _pendingScenePath = null;
         EditorContext editorContext = new(document, ResolveAssetsPath(), MaterialStore) { ModelAssets = ModelAssets };
         if (_resourceRetirement is not null && _rhiModule.Instance is { } rhi)
         {
@@ -162,7 +167,7 @@ public sealed class EditorModule : IUpdatableModule
         OnVSyncChanged(projectSettings.VSync);
         PlayMode?.Dispose();
         PlayMode = null;
-        PlayMode = new PlayModeController(editorContext, ScriptRuntime, Physics);
+        PlayMode = new PlayModeController(editorContext, ScriptRuntime, Physics, Behaviours);
         _overlay = new EditorOverlay(
             _renderer,
             editorContext,
@@ -239,10 +244,21 @@ public sealed class EditorModule : IUpdatableModule
     {
         _scene = args.Current;
         _renderer.AttachScene(args.Current);
+        string? openedScene = _overlay?.Context.Document.Path;
+        if (openedScene is not null)
+        {
+            try
+            {
+                Engine.Editor.ProjectSettings.WriteLastScene(ResolveAssetsPath(), openedScene);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private string ResolveAssetsPath() => string.IsNullOrWhiteSpace(_assetsDirectory)
-        ? ResolveProjectPath(Path.Combine("Projects", "SampleProject"))
+        ? ResolveProjectPath(Path.Combine("Projects", "Showcase"))
         : Path.GetFullPath(_assetsDirectory);
 
     private string ResolveLayoutPath() => string.IsNullOrWhiteSpace(_layoutPath)
@@ -350,6 +366,8 @@ public sealed class EditorModule : IUpdatableModule
             _renderer.SetViewExtents(_overlay.DesiredViewExtent, _overlay.DesiredGameViewExtent);
         _renderer.RefreshTargets();
         _backend.MousePositionOverride = ResolveMousePositionOverride();
+        if (_overlay is not null)
+            _overlay.SuppressViewportClicks = ResolveMousePositionOverride() is not null;
         TrackPlayModeCursorLock();
         if (_overlay is not null && _renderer.ViewTexture is ITexture viewTexture)
         {

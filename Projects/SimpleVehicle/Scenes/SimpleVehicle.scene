@@ -1,0 +1,4228 @@
+{
+  "version": 2,
+  "name": "SimpleVehicle",
+  "skyColor": [
+    0.44586432,
+    0.626068,
+    0.89637303,
+    1
+  ],
+  "objects": [
+    {
+      "id": "c3000000-0000-0000-0000-000000000001",
+      "name": "Ground",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          30,
+          1,
+          30
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0001",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.3,
+              0.36,
+              0.32
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "ground",
+            "Roughness": 0.95,
+            "RoughnessTexture": null,
+            "UvScale": [
+              60,
+              60
+            ]
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0002",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0003",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              -0.25,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              24,
+              0.5,
+              24
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000010",
+      "name": "Car",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0011",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Continuous",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 800,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0012",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0.55,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1.9,
+              1.1,
+              4.4
+            ]
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0013",
+          "type": "CarController",
+          "enabled": true,
+          "properties": {
+            "Script": "CarController",
+            "Enabled": true,
+            "AllWheelDrive": false,
+            "BrakeTorque": 3000,
+            "HandbrakeKey": "Space",
+            "MaxSpeedKmh": 130,
+            "MaxSteerDegrees": 20.104,
+            "MotorTorque": 1400,
+            "ReverseTorque": 900,
+            "SteeringRate": 2.5
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0082",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              1,
+              0.2
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": true,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1.7,
+              0.9,
+              2.5
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000011",
+      "name": "WheelFL",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          -1.05,
+          0,
+          -1.3
+        ],
+        "rotation": [
+          0,
+          0,
+          0.70710677,
+          0.70710677
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0021",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.05,
+              0.05,
+              0.06
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:6fb815d0e830483c8f12f2aff5c700e9",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "wheel_cylinder",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              1
+            ]
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0022",
+          "type": "WheelCollider",
+          "enabled": true,
+          "properties": {
+            "BrakeTorque": 0,
+            "DampingRatio": 0.85,
+            "ForwardGrip": 1,
+            "Frequency": 1.8,
+            "LateralGrip": 1,
+            "LocalAnchor": [
+              -1.05,
+              0,
+              -1.3
+            ],
+            "MaxLateralAcceleration": 12,
+            "MaxSuspensionForce": 12000,
+            "MotorTorque": 0,
+            "Radius": 0.6,
+            "SteerAngle": 0,
+            "SuspensionDistance": 0.3
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000012",
+      "name": "WheelFR",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          1.05,
+          0,
+          -1.3
+        ],
+        "rotation": [
+          0,
+          0,
+          0.70710677,
+          0.70710677
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0031",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.05,
+              0.05,
+              0.06
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:6fb815d0e830483c8f12f2aff5c700e9",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "wheel_cylinder",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              1
+            ]
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0032",
+          "type": "WheelCollider",
+          "enabled": true,
+          "properties": {
+            "BrakeTorque": 0,
+            "DampingRatio": 0.85,
+            "ForwardGrip": 1,
+            "Frequency": 1.8,
+            "LateralGrip": 1,
+            "LocalAnchor": [
+              1.05,
+              0,
+              -1.3
+            ],
+            "MaxLateralAcceleration": 12,
+            "MaxSuspensionForce": 12000,
+            "MotorTorque": 0,
+            "Radius": 0.6,
+            "SteerAngle": 0,
+            "SuspensionDistance": 0.3
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000013",
+      "name": "WheelRL",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          -1.05,
+          0,
+          1.3
+        ],
+        "rotation": [
+          0,
+          0,
+          0.70710677,
+          0.70710677
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0041",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.05,
+              0.05,
+              0.06
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:6fb815d0e830483c8f12f2aff5c700e9",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "wheel_cylinder",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              1
+            ]
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0042",
+          "type": "WheelCollider",
+          "enabled": true,
+          "properties": {
+            "BrakeTorque": 0,
+            "DampingRatio": 0.85,
+            "ForwardGrip": 1,
+            "Frequency": 1.8,
+            "LateralGrip": 1,
+            "LocalAnchor": [
+              -1.05,
+              0,
+              1.3
+            ],
+            "MaxLateralAcceleration": 12,
+            "MaxSuspensionForce": 12000,
+            "MotorTorque": 0,
+            "Radius": 0.6,
+            "SteerAngle": 0,
+            "SuspensionDistance": 0.3
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000014",
+      "name": "WheelRR",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          1.05,
+          0,
+          1.3
+        ],
+        "rotation": [
+          0,
+          0,
+          0.70710677,
+          0.70710677
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0051",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.05,
+              0.05,
+              0.06
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:6fb815d0e830483c8f12f2aff5c700e9",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "wheel_cylinder",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              1
+            ]
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0052",
+          "type": "WheelCollider",
+          "enabled": true,
+          "properties": {
+            "BrakeTorque": 0,
+            "DampingRatio": 0.85,
+            "ForwardGrip": 1,
+            "Frequency": 1.8,
+            "LateralGrip": 1,
+            "LocalAnchor": [
+              1.05,
+              0,
+              1.3
+            ],
+            "MaxLateralAcceleration": 12,
+            "MaxSuspensionForce": 12000,
+            "MotorTorque": 0,
+            "Radius": 0.6,
+            "SteerAngle": 0,
+            "SuspensionDistance": 0.3
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0080",
+      "name": "Cabin",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          0,
+          1,
+          0.2
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          0.73499584
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0081",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.15,
+              0.55,
+              0.95
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:30d85251eb29493dba8175e89c4b07b4",
+            "Metallic": 0.1,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_cabin",
+            "Roughness": 0.25,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0090",
+      "name": "Body",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          0,
+          0.55,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          0.69768214
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0091",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.1,
+              0.08
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:30d85251eb29493dba8175e89c4b07b4",
+            "Metallic": 0.4,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_body",
+            "Roughness": 0.35,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              2
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "32d4b691-ae37-47a8-b6e3-3a247bd74ad0",
+      "name": "Lights",
+      "active": true,
+      "parentId": "c3000000-0000-0000-0000-000000000010",
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [],
+      "unknownComponents": []
+    },
+    {
+      "id": "be6c9ad8-e99f-4272-9cc8-027683424358",
+      "name": "FRONT",
+      "active": true,
+      "parentId": "32d4b691-ae37-47a8-b6e3-3a247bd74ad0",
+      "transform": {
+        "position": [
+          -0.55,
+          0.54999995,
+          -2.0669293
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.25824547,
+          0.20048833,
+          0.0493232
+        ]
+      },
+      "components": [
+        {
+          "id": "21fefc6c-756a-4bd8-8764-d1d9041db55b",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.1,
+              0.08
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:b0aa0db47ec946dbb2372bc25b2d72be",
+            "Metallic": 0.4,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_body",
+            "Roughness": 0.35,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              2
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "5e62c530-1cea-4120-b56b-58e24ddd266b",
+      "name": "FRONT",
+      "active": true,
+      "parentId": "32d4b691-ae37-47a8-b6e3-3a247bd74ad0",
+      "transform": {
+        "position": [
+          0.55,
+          0.54999995,
+          -2.0669293
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.25824547,
+          0.20048833,
+          0.0493232
+        ]
+      },
+      "components": [
+        {
+          "id": "949cb447-2068-49c5-ace0-30ffe0fd083c",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.1,
+              0.08
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:b0aa0db47ec946dbb2372bc25b2d72be",
+            "Metallic": 0.4,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_body",
+            "Roughness": 0.35,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              2
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "845d9814-d4c9-4604-acea-b3ef9433b728",
+      "name": "BACK",
+      "active": true,
+      "parentId": "32d4b691-ae37-47a8-b6e3-3a247bd74ad0",
+      "transform": {
+        "position": [
+          -0.55,
+          0.54999995,
+          2.0609589
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.25824547,
+          0.20048833,
+          0.0493232
+        ]
+      },
+      "components": [
+        {
+          "id": "92fa4aef-fa8b-4bd1-b494-11a4a62daabd",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.1,
+              0.08
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:06d473d22df94c6ba0fc939d416be798",
+            "Metallic": 0.4,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_body",
+            "Roughness": 0.35,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              2
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "ab3306d7-375c-4ec4-b2b3-be1319998d4e",
+      "name": "BACK",
+      "active": true,
+      "parentId": "32d4b691-ae37-47a8-b6e3-3a247bd74ad0",
+      "transform": {
+        "position": [
+          0.55,
+          0.54999995,
+          2.0609589
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.25824547,
+          0.20048833,
+          0.0493232
+        ]
+      },
+      "components": [
+        {
+          "id": "132dd742-de00-4a36-8cc1-ea9826ba5928",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.1,
+              0.08
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:06d473d22df94c6ba0fc939d416be798",
+            "Metallic": 0.4,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_body",
+            "Roughness": 0.35,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              2
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "69540859-37b6-4cc7-8b04-8ed69cfe0807",
+      "name": "BACK",
+      "active": true,
+      "parentId": "32d4b691-ae37-47a8-b6e3-3a247bd74ad0",
+      "transform": {
+        "position": [
+          0,
+          1.1171917,
+          1.371474
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.25824547,
+          0.050497502,
+          0.0493232
+        ]
+      },
+      "components": [
+        {
+          "id": "5396fe1f-6b16-414f-bd3d-3c0957f42a04",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.1,
+              0.08
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "guid:06d473d22df94c6ba0fc939d416be798",
+            "Metallic": 0.4,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "car_body",
+            "Roughness": 0.35,
+            "RoughnessTexture": null,
+            "UvScale": [
+              2,
+              2
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000020",
+      "name": "ChaseCamera",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          4.2,
+          9
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0061",
+          "type": "Camera",
+          "enabled": true,
+          "properties": {
+            "FarPlane": 900,
+            "FieldOfViewY": 1,
+            "NearPlane": 0.1
+          }
+        },
+        {
+          "id": "0f1e2d3c-4b5a-6978-8798-aabbccdd0062",
+          "type": "ChaseCamera",
+          "enabled": true,
+          "properties": {
+            "Script": "ChaseCamera",
+            "Enabled": true,
+            "LookAhead": 0.4,
+            "LookOffset": [
+              0,
+              2,
+              0
+            ],
+            "Offset": [
+              0,
+              4.5,
+              14
+            ],
+            "OrbitReturnSpeed": 2.5,
+            "OrbitSpeed": 4,
+            "SpeedFovKick": 8,
+            "SpeedFovKmh": 120,
+            "Target": "c3000000-0000-0000-0000-000000000010"
+          },
+          "referenceKinds": {
+            "Target": "Entity"
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "c3000000-0000-0000-0000-000000000030",
+      "name": "Sun",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          20,
+          0
+        ],
+        "rotation": [
+          -0.35,
+          0.25,
+          0,
+          0.9
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "d38ecde8-a631-4e77-98f6-fdda6236c2d7",
+          "type": "Light",
+          "enabled": true,
+          "properties": {
+            "Color": [
+              1,
+              1,
+              1
+            ],
+            "Intensity": 1,
+            "Kind": "Directional",
+            "Range": 20
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100001",
+      "name": "SuspensionTrack",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100005",
+      "name": "Bump01",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.09,
+          -16
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.18,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200002",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.62,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300003",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400004",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100009",
+      "name": "Bump02",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.09,
+          -19
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.18,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200006",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.62,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300007",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400008",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100013",
+      "name": "Bump03",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.09,
+          -22
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.18,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200010",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.62,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300011",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400012",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100017",
+      "name": "Bump04",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.09,
+          -25
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.18,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200014",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.62,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300015",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400016",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100021",
+      "name": "Bump05",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.09,
+          -28
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.18,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200018",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.85,
+              0.62,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300019",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400020",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100025",
+      "name": "SpeedBump01",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.016103193,
+          -34
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.4,
+          2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200022",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.9,
+              0.45,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              2
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300023",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400024",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100029",
+      "name": "SpeedBump02",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0.047150508,
+          -40
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          0.4,
+          2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200026",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.9,
+              0.45,
+              0.12
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              6,
+              2
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300027",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400028",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100037",
+      "name": "Ramp",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -51.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200034",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.55,
+              0.56,
+              0.6
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "ramp_wedge",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              8,
+              3
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300035",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400036",
+          "type": "MeshCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "ResourceKey": "ramp_wedge",
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100901",
+      "name": "RampBack",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100001",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -65.5
+        ],
+        "rotation": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000109001",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.55,
+              0.56,
+              0.6
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "ramp_wedge",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              8,
+              3
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000109002",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000109003",
+          "type": "MeshCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "ResourceKey": "ramp_wedge",
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100038",
+      "name": "BumpField",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100042",
+      "name": "FieldCube01",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100038",
+      "transform": {
+        "position": [
+          -12.5,
+          -0.1,
+          -16
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200039",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.3,
+              0.2
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300040",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400041",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100046",
+      "name": "FieldCube02",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100038",
+      "transform": {
+        "position": [
+          -15.5,
+          -0.1,
+          -21
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200043",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.3,
+              0.2
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300044",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400045",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100050",
+      "name": "FieldCube03",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100038",
+      "transform": {
+        "position": [
+          -12.5,
+          -0.1,
+          -26
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200047",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.3,
+              0.2
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300048",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400049",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100054",
+      "name": "FieldCube04",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100038",
+      "transform": {
+        "position": [
+          -15.5,
+          -0.1,
+          -31
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200051",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.3,
+              0.2
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300052",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400053",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100058",
+      "name": "FieldCube05",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100038",
+      "transform": {
+        "position": [
+          -12.5,
+          -0.1,
+          -36
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2,
+          1.2,
+          1.2
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200055",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.3,
+              0.2
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300056",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Static",
+            "LinearDamping": 0.05,
+            "Mass": 1,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400057",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100059",
+      "name": "Pyramid",
+      "active": true,
+      "transform": {
+        "position": [
+          10,
+          0,
+          -22
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2,
+          2,
+          2
+        ]
+      },
+      "components": [],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100063",
+      "name": "PyramidCube01",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          -1.84,
+          0.46,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200060",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300061",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400062",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100067",
+      "name": "PyramidCube02",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          -0.92,
+          0.46,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200064",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300065",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400066",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100071",
+      "name": "PyramidCube03",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0,
+          0.46,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200068",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300069",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400070",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100075",
+      "name": "PyramidCube04",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0.92,
+          0.46,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200072",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300073",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400074",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100079",
+      "name": "PyramidCube05",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          1.84,
+          0.46,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200076",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300077",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400078",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100083",
+      "name": "PyramidCube06",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          -1.38,
+          1.38,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200080",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300081",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400082",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100087",
+      "name": "PyramidCube07",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          -0.46,
+          1.38,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200084",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300085",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400086",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100091",
+      "name": "PyramidCube08",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0.46,
+          1.38,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200088",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300089",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400090",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100095",
+      "name": "PyramidCube09",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          1.38,
+          1.38,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200092",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300093",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400094",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100099",
+      "name": "PyramidCube10",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          -0.92,
+          2.3,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200096",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300097",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400098",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100103",
+      "name": "PyramidCube11",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0,
+          2.3,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200100",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300101",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400102",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100107",
+      "name": "PyramidCube12",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0.92,
+          2.3,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200104",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300105",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400106",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100111",
+      "name": "PyramidCube13",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          -0.46,
+          3.22,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200108",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300109",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400110",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100115",
+      "name": "PyramidCube14",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0.46,
+          3.22,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200112",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300113",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400114",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "e1a00000-0000-0000-0000-000000100119",
+      "name": "PyramidCube15",
+      "active": true,
+      "parentId": "e1a00000-0000-0000-0000-000000100059",
+      "transform": {
+        "position": [
+          0,
+          4.14,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      },
+      "components": [
+        {
+          "id": "e1a00000-0000-0000-0000-000000200116",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.82,
+              0.58,
+              0.3
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0.02,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "unit_box",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000300117",
+          "type": "RigidBody",
+          "enabled": true,
+          "properties": {
+            "AngularDamping": 0.05,
+            "CollisionDetection": "Passive",
+            "Constraints": "None",
+            "DetectCollisions": true,
+            "Interpolation": "Interpolate",
+            "Kind": "Dynamic",
+            "LinearDamping": 0.05,
+            "Mass": 300,
+            "UseGravity": true
+          }
+        },
+        {
+          "id": "e1a00000-0000-0000-0000-000000400118",
+          "type": "BoxCollider",
+          "enabled": true,
+          "properties": {
+            "Center": [
+              0,
+              0,
+              0
+            ],
+            "ColliderScale": [
+              1,
+              1,
+              1
+            ],
+            "Ignore": false,
+            "Rotation": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "Size": [
+              1,
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    }
+  ]
+}

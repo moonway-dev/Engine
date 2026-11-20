@@ -66,6 +66,8 @@ public sealed class EditorOverlay : IDisposable
 
     public bool SceneViewMouseCaptured => (WantCaptureMouse && !_sceneView.IsHovered) || _sceneView.OverlayItemActive;
 
+    public bool SuppressViewportClicks { get; set; }
+
     public GameObject? SelectedObject => _context.Document.SelectedObject;
 
     public EditorOverlay(
@@ -166,7 +168,7 @@ public sealed class EditorOverlay : IDisposable
             _gizmo.CancelDrag();
             return;
         }
-        bool sceneImageClicked = _sceneView.ImageClicked && !sceneInputBlocked;
+        bool sceneImageClicked = _sceneView.ImageClicked && !sceneInputBlocked && !SuppressViewportClicks;
         if (sceneImageClicked && !_sceneView.OverlayItemActive)
             _context.SelectScene();
         if (sceneImageClicked && _sceneView.OverlayItemActive)
@@ -238,15 +240,24 @@ public sealed class EditorOverlay : IDisposable
                 AssignDroppedTexture(payload);
                 break;
             case AssetKind.Material:
-                if (_context.Document.SelectedObject?.GetComponent<MeshRendererComponent>() is { } renderer)
-                {
-                    try { _context.AssignMaterial(renderer.Id, payload.RelativePath); }
-                    catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
-                    {
-                        _context.Error = exception.Message;
-                    }
-                }
+                AssignMaterialUnderCursor(payload);
                 break;
+        }
+    }
+
+    private void AssignMaterialUnderCursor(AssetDragPayload payload)
+    {
+        PickingHit? hit = _renderer.PickEditorView(new Vector2(_sceneView.MouseNormalized.X, _sceneView.MouseNormalized.Y));
+        MeshRendererComponent? renderer = hit?.GameObject.GetComponent<MeshRendererComponent>();
+        if (renderer is null)
+        {
+            _context.Error = "Drop materials onto an object with a MeshRenderer in the Scene View.";
+            return;
+        }
+        try { _context.AssignMaterial(renderer.Id, payload.RelativePath); }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        {
+            _context.Error = exception.Message;
         }
     }
 

@@ -14,6 +14,8 @@ public abstract class Component
 
     public bool IsActiveInHierarchy => Owner.IsActiveInHierarchy && Enabled;
 
+    public virtual bool AllowMultiplePerObject => false;
+
     public virtual string ComponentTypeName => GetType().Name;
 
     protected internal virtual void OnAttach()

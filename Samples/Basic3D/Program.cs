@@ -25,8 +25,10 @@ internal static class Program
         ScriptingModule scripting = new(Path.Combine(projectRoot, "Scripts"))
 {
     Physics = physics,
+    AssetsRoot = projectRoot,
 };
-        Basic3DModule module = new(options, rhiModule, renderer, physics, scripting);
+        SceneBehavioursModule behaviours = new();
+        Basic3DModule module = new(options, rhiModule, renderer, physics, scripting, behaviours, projectRoot);
         renderer.ShaderCacheDirectory = Path.Combine(projectRoot, "Cache", "Shaders");
 
         ApplicationBuilder builder = ApplicationBuilder
@@ -42,6 +44,7 @@ internal static class Program
             .AddModule(rhiModule)
             .AddModule(scripting)
             .AddModule(physics)
+            .AddModule(behaviours)
             .AddModule(module)
             .AddModule(renderer);
         if (options.Editor)
@@ -52,6 +55,7 @@ internal static class Program
                 Path.Combine(AppContext.BaseDirectory, "Shaders"),
                 projectRoot);
             editor.ScriptRuntime = scripting;
+        editor.Behaviours = behaviours;
             builder.AddModule(editor);
             module.SetEditor(editor);
         }
@@ -75,14 +79,14 @@ internal static class Program
         }
         List<string> candidates = [];
         foreach (string root in roots)
-            candidates.Add(Path.Combine(root, "Projects", "SampleProject"));
+            candidates.Add(Path.Combine(root, "Projects", "Showcase"));
         foreach (string candidate in candidates)
         {
             if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "Models", "cube.obj")))
                 return candidate;
         }
         throw new DirectoryNotFoundException(
-            "Projects/SampleProject with Models/cube.obj not found. Searched: " + string.Join(", ", candidates.Select(c => Path.GetFullPath(c))));
+            "Projects/Showcase with Models/cube.obj not found. Searched: " + string.Join(", ", candidates.Select(c => Path.GetFullPath(c))));
     }
 
     internal static string ResolveExplicitProjectRoot(string path)
@@ -194,7 +198,9 @@ internal sealed class Basic3DModule(
     RhiModule rhiModule,
     RendererModule renderer,
     PhysicsModule physics,
-    ScriptingModule scripting) : IUpdatableModule
+    ScriptingModule scripting,
+    SceneBehavioursModule behaviours,
+    string projectRoot) : IUpdatableModule
 {
     private IEngineContext? _context;
     private IWindow? _window;
@@ -238,6 +244,7 @@ internal sealed class Basic3DModule(
                 _scene = args.Current;
                 _cameraObject = null;
                 physics.AttachScene(args.Current);
+                behaviours.AttachScene(args.Current);
                 scripting.AttachScene(args.Current);
             }
         };
@@ -251,6 +258,7 @@ internal sealed class Basic3DModule(
         _screenshotPath = options.ScreenshotPath;
         scripting.AlwaysPlay = !options.Editor;
         physics.SimulationActive = !options.Editor;
+        behaviours.SimulationActive = !options.Editor;
     }
 
     private void EnsureScene()
@@ -276,17 +284,35 @@ internal sealed class Basic3DModule(
         (Vertex[] capsuleVertices, uint[] capsuleIndices) = MeshPrimitives.Capsule(0.35f, 1.8f);
         _meshes["capsule"] = new Mesh(device, capsuleVertices, capsuleIndices, "Capsule");
         _physicsMeshes["capsule"] = ToPhysicsMeshData(capsuleVertices, capsuleIndices);
+        (Vertex[] cylinderVertices, uint[] cylinderIndices) = MeshPrimitives.Cylinder(0.5f, 1f);
+        _meshes["cylinder"] = new Mesh(device, cylinderVertices, cylinderIndices, "Cylinder");
+        _physicsMeshes["cylinder"] = ToPhysicsMeshData(cylinderVertices, cylinderIndices);
+        (Vertex[] carBodyVertices, uint[] carBodyIndices) = MeshPrimitives.Box(1.9f, 1.1f, 6.2f);
+        _meshes["car_body"] = new Mesh(device, carBodyVertices, carBodyIndices, "CarBody");
+        _physicsMeshes["car_body"] = ToPhysicsMeshData(carBodyVertices, carBodyIndices);
+        (Vertex[] carCabinVertices, uint[] carCabinIndices) = MeshPrimitives.Box(1.7f, 0.9f, 3.4f);
+        _meshes["car_cabin"] = new Mesh(device, carCabinVertices, carCabinIndices, "CarCabin");
+        _physicsMeshes["car_cabin"] = ToPhysicsMeshData(carCabinVertices, carCabinIndices);
+        (Vertex[] wheelVertices, uint[] wheelIndices) = MeshPrimitives.Cylinder(0.6f, 0.44f);
+        _meshes["wheel_cylinder"] = new Mesh(device, wheelVertices, wheelIndices, "WheelCylinder");
+        _physicsMeshes["wheel_cylinder"] = ToPhysicsMeshData(wheelVertices, wheelIndices);
+        (Vertex[] unitBoxVertices, uint[] unitBoxIndices) = MeshPrimitives.Box(1f, 1f, 1f);
+        _meshes["unit_box"] = new Mesh(device, unitBoxVertices, unitBoxIndices, "UnitBox");
+        (Vertex[] rampVertices, uint[] rampIndices) = MeshPrimitives.Wedge(8f, 1.8f, 14f);
+        _meshes["ramp_wedge"] = new Mesh(device, rampVertices, rampIndices, "RampWedge");
+        _physicsMeshes["ramp_wedge"] = ToPhysicsMeshData(rampVertices, rampIndices);
 
-        if (options.ScenePath is not null && File.Exists(options.ScenePath))
+        string? scenePath = options.ScenePath;
+        if (scenePath is null || !File.Exists(scenePath))
+            scenePath = FindLastOpenedScene(projectRoot) ?? FindFirstScene(projectRoot);
+        if (scenePath is not null)
         {
-            _scene = Scene.Load(options.ScenePath);
+            _scene = Scene.Load(scenePath);
+            WriteLastOpenedScene(projectRoot, scenePath);
         }
         else
         {
-            string defaultScene = Path.Combine(ResolveAssetsDirectory(), "Scenes", "PhysicsPlayground.scene");
-            _scene = File.Exists(defaultScene)
-                ? Scene.Load(defaultScene)
-                : new Scene("Untitled");
+            _scene = new Scene("Untitled");
         }
 
         _cameraObject = _scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
@@ -314,11 +340,29 @@ internal sealed class Basic3DModule(
         }
         renderer.AttachScene(_scene);
         physics.AttachScene(_scene);
+        behaviours.AttachScene(_scene);
         scripting.AttachScene(_scene);
         _editor?.AttachScene(_scene);
     }
 
-    private static string ResolveAssetsDirectory() => Program.ResolveProjectRoot();
+    private string ResolveAssetsDirectory() => projectRoot;
+
+    internal static string? FindLastOpenedScene(string projectRoot) => Engine.Editor.ProjectSettings.ReadLastScene(projectRoot);
+
+    internal static void WriteLastOpenedScene(string projectRoot, string scenePath) =>
+        Engine.Editor.ProjectSettings.WriteLastScene(projectRoot, scenePath);
+
+    internal static string? FindFirstScene(string projectRoot)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(projectRoot, "*.scene", SearchOption.AllDirectories).FirstOrDefault();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     private Mesh ResolveMesh(string key)
     {

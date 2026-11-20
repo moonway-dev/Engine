@@ -107,7 +107,7 @@ public sealed class GameObject
         ArgumentNullException.ThrowIfNull(component);
         if (component.Owner is not null)
             throw new InvalidOperationException("A component cannot be attached to more than one GameObject.");
-        if (_components.Any(c => c.GetType() == component.GetType()))
+        if (!component.AllowMultiplePerObject && _components.Any(c => c.GetType() == component.GetType()))
             throw new InvalidOperationException($"GameObject '{Name}' already has a component of type '{component.GetType().Name}'.");
         Scene.Register(component);
         component.Owner = this;

@@ -22,6 +22,11 @@ public sealed record PhysicsColliderSpec(
 
 public abstract class ColliderComponent : Component
 {
+    public override bool AllowMultiplePerObject => true;
+
+    [InspectorTooltip("Exclude this collider from physics simulation entirely (mesh stays visible).")]
+    public bool Ignore { get; set; }
+
     [InspectorTooltip("Collider offset from the object origin in local space.")]
     public Vector3 Center { get; set; } = Vector3.Zero;
 

@@ -17,7 +17,7 @@ public sealed class PlayerControllerTests : IDisposable
     public PlayerControllerTests()
     {
         Directory.CreateDirectory(_root);
-        File.Copy(Path.Combine(FindRepositoryRoot(), "Projects", "SampleProject", "Scripts", "PlayerController.cs"), Path.Combine(_root, "PlayerController.cs"));
+        File.Copy(Path.Combine(FindRepositoryRoot(), "Projects", "SimpleFps", "Scripts", "PlayerController.cs"), Path.Combine(_root, "PlayerController.cs"));
     }
 
     [Theory]

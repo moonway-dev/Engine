@@ -1,5 +1,6 @@
 using BepuPhysics;
 using BepuPhysics.Collidables;
+using BepuPhysics.Constraints;
 using BepuPhysics.Trees;
 using BepuUtilities.Memory;
 using Engine.Mathematics;
@@ -24,6 +25,7 @@ public sealed class PhysicsWorld : IDisposable
 
     private readonly BufferPool _bufferPool;
     private readonly Simulation _simulation;
+    private readonly BepuUtilities.ThreadDispatcher _dispatcher = new(Environment.ProcessorCount);
     private readonly PhysicsBodySettings _settings;
     private bool _disposed;
 
@@ -264,6 +266,159 @@ public sealed class PhysicsWorld : IDisposable
         _simulation.Shapes.RecursivelyRemoveAndDispose(shape, _bufferPool);
     }
 
+    public const float LinearConstraintFrequency = 60f;
+    public const float AngularConstraintFrequency = 10f;
+
+    public void RemoveJoint(ConstraintHandle handle)
+    {
+        if (!_simulation.Solver.ConstraintExists(handle))
+            return;
+        _simulation.Solver.Remove(handle);
+    }
+
+    private NVector3 ToLocalOffset(BodyHandle body, Vector3 worldPoint)
+    {
+        RigidPose pose = _simulation.Bodies[body].Pose;
+        return ToSystem(ToEngine(pose.Orientation).Inverse.Rotate(worldPoint - ToEngine(pose.Position)));
+    }
+
+    private NVector3 ToLocalAxis(BodyHandle body, Vector3 worldDirection)
+    {
+        NQuaternion rotation = _simulation.Bodies[body].Pose.Orientation;
+        return ToSystem(ToEngine(rotation).Inverse.Rotate(worldDirection));
+    }
+
+    private NQuaternion ToLocalBasis(BodyHandle body, NVector3 localAxis)
+    {
+        Vector3 axis = ToEngine(localAxis);
+        if (axis.LengthSquared <= Epsilon * Epsilon)
+            axis = Vector3.Up;
+        else
+            axis = axis.Normalized;
+        Vector3 helper = MathF.Abs(axis.Y) < 0.999f ? Vector3.Up : Vector3.Right;
+        Vector3 perpendicular = Vector3.Cross(axis, helper);
+        perpendicular = perpendicular.LengthSquared > Epsilon * Epsilon ? perpendicular.Normalized : Vector3.Right;
+        return ToSystemQuaternion(Quaternion.LookRotation(axis, perpendicular));
+    }
+
+    private ConstraintHandle Add<TDescription>(BodyHandle a, BodyHandle b, TDescription description)
+        where TDescription : unmanaged, ITwoBodyConstraintDescription<TDescription>
+    {
+        if (a.Value == b.Value)
+            throw new ArgumentException("A joint cannot connect a body to itself.");
+        return _simulation.Solver.Add(a, b, description);
+    }
+
+    public ConstraintHandle[] AddFixedJoint(BodyHandle a, BodyHandle b)
+    {
+        RigidPose poseA = _simulation.Bodies[a].Pose;
+        RigidPose poseB = _simulation.Bodies[b].Pose;
+        Weld weld = new()
+        {
+            LocalOffset = ToLocalOffset(a, ToEngine(poseB.Position)),
+            LocalOrientation = ToSystemQuaternion(ToEngine(poseA.Orientation).Inverse * ToEngine(poseB.Orientation)),
+            SpringSettings = new SpringSettings(60f, 1f),
+        };
+        return [Add(a, b, weld)];
+    }
+
+    public ConstraintHandle[] AddBallJoint(BodyHandle a, BodyHandle b, Vector3 anchorA, Vector3 anchorB)
+    {
+        BallSocket socket = new()
+        {
+            LocalOffsetA = ToLocalOffset(a, anchorA),
+            LocalOffsetB = ToLocalOffset(b, anchorB),
+            SpringSettings = new SpringSettings(60f, 1f),
+        };
+        return [Add(a, b, socket)];
+    }
+
+    public ConstraintHandle[] AddHingeJoint(BodyHandle a, BodyHandle b, Vector3 anchorA, Vector3 anchorB, Vector3 worldAxis)
+    {
+        Vector3 axis = worldAxis.LengthSquared > Epsilon * Epsilon ? worldAxis.Normalized : Vector3.Up;
+        BallSocket socket = new()
+        {
+            LocalOffsetA = ToLocalOffset(a, anchorA),
+            LocalOffsetB = ToLocalOffset(b, anchorB),
+            SpringSettings = new SpringSettings(LinearConstraintFrequency, 1f),
+        };
+        AngularHinge hinge = new()
+        {
+            LocalHingeAxisA = ToLocalAxis(a, axis),
+            LocalHingeAxisB = ToLocalAxis(b, axis),
+            SpringSettings = new SpringSettings(AngularConstraintFrequency, 1f),
+        };
+        return [Add(a, b, socket), Add(a, b, hinge)];
+    }
+
+    public ConstraintHandle[] AddSpringJoint(BodyHandle a, BodyHandle b, Vector3 anchorA, Vector3 anchorB, float targetDistance, float frequency, float dampingRatio)
+    {
+        Vector3 delta = anchorB - anchorA;
+        Vector3 axis = delta.LengthSquared > Epsilon * Epsilon ? delta.Normalized : Vector3.Up;
+        LinearAxisServo servo = new()
+        {
+            LocalOffsetA = ToLocalOffset(a, anchorA),
+            LocalOffsetB = ToLocalOffset(b, anchorB),
+            LocalPlaneNormal = ToLocalAxis(a, axis),
+            TargetOffset = MathF.Max(0f, targetDistance),
+            ServoSettings = new ServoSettings(float.MaxValue, 0f, float.MaxValue),
+            SpringSettings = new SpringSettings(frequency, Math.Clamp(dampingRatio, 0f, 1f)),
+        };
+        return [Add(a, b, servo)];
+    }
+
+    public ConstraintHandle[] AddCharacterJoint(BodyHandle a, BodyHandle b, Vector3 anchorA, Vector3 anchorB, Vector3 twistAxis, float swingLimitDegrees, float twistLimitDegrees)
+    {
+        Vector3 axis = twistAxis.LengthSquared > Epsilon * Epsilon ? twistAxis.Normalized : Vector3.Up;
+        List<ConstraintHandle> handles = [];
+        BallSocket socket = new()
+        {
+            LocalOffsetA = ToLocalOffset(a, anchorA),
+            LocalOffsetB = ToLocalOffset(b, anchorB),
+            SpringSettings = new SpringSettings(LinearConstraintFrequency, 1f),
+        };
+        handles.Add(Add(a, b, socket));
+        if (swingLimitDegrees > 0f && swingLimitDegrees < 179.9f)
+        {
+            SwingLimit swing = new()
+            {
+                AxisLocalA = ToLocalAxis(a, axis),
+                AxisLocalB = ToLocalAxis(b, axis),
+                MinimumDot = MathUtil.Clamp(MathF.Cos(swingLimitDegrees * MathF.PI / 180f), -1f, 1f),
+                SpringSettings = new SpringSettings(AngularConstraintFrequency, 1f),
+            };
+            handles.Add(Add(a, b, swing));
+        }
+        if (twistLimitDegrees > 0f && twistLimitDegrees < 179.9f)
+        {
+            TwistLimit twist = new()
+            {
+                LocalBasisA = ToLocalBasis(a, ToLocalAxis(a, axis)),
+                LocalBasisB = ToLocalBasis(b, ToLocalAxis(b, axis)),
+                MinimumAngle = -twistLimitDegrees * MathF.PI / 180f,
+                MaximumAngle = twistLimitDegrees * MathF.PI / 180f,
+                SpringSettings = new SpringSettings(AngularConstraintFrequency, 1f),
+            };
+            handles.Add(Add(a, b, twist));
+        }
+        return [.. handles];
+    }
+
+    public ConstraintHandle[] AddLinearLimit(BodyHandle a, BodyHandle b, Vector3 worldAxis, Vector3 anchorA, Vector3 anchorB, float minimumOffset, float maximumOffset)
+    {
+        Vector3 axis = worldAxis.LengthSquared > Epsilon * Epsilon ? worldAxis.Normalized : Vector3.Up;
+        LinearAxisLimit limit = new()
+        {
+            LocalOffsetA = ToLocalOffset(a, anchorA),
+            LocalOffsetB = ToLocalOffset(b, anchorB),
+            LocalAxis = ToLocalAxis(a, axis),
+            MinimumOffset = minimumOffset,
+            MaximumOffset = maximumOffset,
+            SpringSettings = new SpringSettings(60f, 1f),
+        };
+        return [Add(a, b, limit)];
+    }
+
     public void RemoveStatic(StaticHandle handle)
     {
         TypedIndex shape = _simulation.Statics[handle].Shape;
@@ -319,6 +474,14 @@ public sealed class PhysicsWorld : IDisposable
     public Quaternion GetBodyRotation(BodyHandle handle) => ToEngine(_simulation.Bodies[handle].Pose.Orientation);
 
     public Vector3 GetBodyLinearVelocity(BodyHandle handle) => ToEngine(_simulation.Bodies[handle].Velocity.Linear);
+
+    public Vector3 GetBodyVelocityAtPoint(BodyHandle handle, Vector3 point)
+    {
+        BodyReference body = _simulation.Bodies[handle];
+        Vector3 position = ToEngine(body.Pose.Position);
+        Vector3 angular = ToEngine(body.Velocity.Angular);
+        return ToEngine(body.Velocity.Linear) + Vector3.Cross(angular, point - position);
+    }
 
     public Vector3 GetBodyAngularVelocity(BodyHandle handle) => ToEngine(_simulation.Bodies[handle].Velocity.Angular);
 
@@ -558,6 +721,7 @@ public sealed class PhysicsWorld : IDisposable
 
     public void Dispose()
     {
+        _dispatcher.Dispose();
         if (_disposed)
             return;
         _disposed = true;

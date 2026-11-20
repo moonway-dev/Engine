@@ -4,6 +4,36 @@ namespace Engine.Rendering;
 
 public static class MeshPrimitives
 {
+    public static (Vertex[] Vertices, uint[] Indices) Box(float width, float height, float depth)
+    {
+        float hx = width * 0.5f;
+        float hy = height * 0.5f;
+        float hz = depth * 0.5f;
+        List<Vertex> vertices = [];
+        List<uint> indices = [];
+
+        void AddQuad(Vector3 c0, Vector3 c1, Vector3 c2, Vector3 c3, Vector3 normal, Vector2 uv0, Vector2 uv1)
+        {
+            uint start = (uint)vertices.Count;
+            vertices.Add(new Vertex { Position = c0, Normal = normal, UV = uv0 });
+            vertices.Add(new Vertex { Position = c1, Normal = normal, UV = uv1 });
+            vertices.Add(new Vertex { Position = c2, Normal = normal, UV = new Vector2((uv0.X + uv1.X) * 0.5f, (uv0.Y + uv1.Y) * 0.5f) });
+            vertices.Add(new Vertex { Position = c3, Normal = normal, UV = new Vector2(uv1.X, uv0.Y) });
+            indices.AddRange([start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+
+        AddQuad(new Vector3(-hx, -hy, -hz), new Vector3(hx, -hy, -hz), new Vector3(hx, hy, -hz), new Vector3(-hx, hy, -hz), new Vector3(0, 0, -1), new Vector2(0, 0), new Vector2(width / height, height));
+        AddQuad(new Vector3(hx, -hy, hz), new Vector3(-hx, -hy, hz), new Vector3(-hx, hy, hz), new Vector3(hx, hy, hz), new Vector3(0, 0, 1), new Vector2(0, 0), new Vector2(width / height, height));
+        AddQuad(new Vector3(hx, -hy, -hz), new Vector3(hx, -hy, hz), new Vector3(hx, hy, hz), new Vector3(hx, hy, -hz), new Vector3(1, 0, 0), new Vector2(0, 0), new Vector2(depth / height, height));
+        AddQuad(new Vector3(-hx, -hy, hz), new Vector3(-hx, -hy, -hz), new Vector3(-hx, hy, -hz), new Vector3(-hx, hy, hz), new Vector3(-1, 0, 0), new Vector2(0, 0), new Vector2(depth / height, height));
+        AddQuad(new Vector3(-hx, hy, -hz), new Vector3(hx, hy, -hz), new Vector3(hx, hy, hz), new Vector3(-hx, hy, hz), new Vector3(0, 1, 0), new Vector2(0, 0), new Vector2(width / depth, depth));
+        AddQuad(new Vector3(-hx, -hy, hz), new Vector3(hx, -hy, hz), new Vector3(hx, -hy, -hz), new Vector3(-hx, -hy, -hz), new Vector3(0, -1, 0), new Vector2(0, 0), new Vector2(width / depth, depth));
+        Vertex[] resultVertices = [.. vertices];
+        uint[] resultIndices = [.. indices];
+        MeshTangents.Generate(resultVertices, resultIndices);
+        return (resultVertices, resultIndices);
+    }
+
     public static (Vertex[] Vertices, uint[] Indices) Cube(float size = 1f)
     {
         float half = size * 0.5f;
@@ -151,6 +181,109 @@ public static class MeshPrimitives
                 });
             }
         }
+    }
+
+    public static (Vertex[] Vertices, uint[] Indices) Cylinder(float radius = 0.5f, float height = 1f, int segments = 24)
+    {
+        if (!float.IsFinite(radius) || radius <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        if (!float.IsFinite(height) || height <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(height));
+        if (segments < 3)
+            throw new ArgumentOutOfRangeException(nameof(segments));
+        List<Vertex> vertices = [];
+        List<uint> indices = [];
+        float halfHeight = height * 0.5f;
+        for (int side = 0; side <= segments; side++)
+        {
+            float u = (float)side / segments;
+            float theta = u * MathUtil.TwoPi;
+            float sin = MathF.Sin(theta);
+            float cos = MathF.Cos(theta);
+            Vector3 normal = new(cos, 0f, sin);
+            vertices.Add(new Vertex { Position = new Vector3(cos * radius, -halfHeight, sin * radius), Normal = normal, UV = new Vector2(u, 0f), Tangent = new Vector4(new Vector3(-sin, 0f, cos), 1f) });
+            vertices.Add(new Vertex { Position = new Vector3(cos * radius, halfHeight, sin * radius), Normal = normal, UV = new Vector2(u, 1f), Tangent = new Vector4(new Vector3(-sin, 0f, cos), 1f) });
+        }
+        for (int side = 0; side < segments; side++)
+        {
+            uint baseIndex = (uint)(side * 2);
+            indices.AddRange([baseIndex, baseIndex + 1, baseIndex + 2]);
+            indices.AddRange([baseIndex + 1, baseIndex + 3, baseIndex + 2]);
+        }
+        foreach (float sign in new[] { -1f, 1f })
+        {
+            Vector3 normal = new(0f, sign, 0f);
+            uint centerIndex = (uint)vertices.Count;
+            vertices.Add(new Vertex { Position = new Vector3(0f, sign * halfHeight, 0f), Normal = normal, UV = new Vector2(0.5f, 0.5f), Tangent = new Vector4(1f, 0f, 0f, 1f) });
+            uint firstRing = (uint)vertices.Count;
+            for (int side = 0; side <= segments; side++)
+            {
+                float theta = (float)side / segments * MathUtil.TwoPi;
+                vertices.Add(new Vertex { Position = new Vector3(MathF.Cos(theta) * radius, sign * halfHeight, MathF.Sin(theta) * radius), Normal = normal, UV = new Vector2(0.5f + MathF.Cos(theta) * 0.5f, 0.5f - MathF.Sin(theta) * 0.5f), Tangent = new Vector4(1f, 0f, 0f, 1f) });
+            }
+            for (int side = 0; side < segments; side++)
+            {
+                uint left = firstRing + (uint)side;
+                uint right = firstRing + (uint)(side + 1);
+                if (sign > 0f)
+                    indices.AddRange([centerIndex, right, left]);
+                else
+                    indices.AddRange([centerIndex, left, right]);
+            }
+        }
+        Vertex[] resultVertices = [.. vertices];
+        uint[] resultIndices = [.. indices];
+        MeshTangents.Generate(resultVertices, resultIndices);
+        return (resultVertices, resultIndices);
+    }
+
+    public static (Vertex[] Vertices, uint[] Indices) Wedge(float width = 4f, float height = 2f, float depth = 4f)
+    {
+        if (!float.IsFinite(width) || width <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(width));
+        if (!float.IsFinite(height) || height <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(height));
+        if (!float.IsFinite(depth) || depth <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(depth));
+        float hw = width * 0.5f;
+        float hd = depth * 0.5f;
+        List<Vertex> vertices = [];
+        List<uint> indices = [];
+
+        void AddQuad(Vector3 c0, Vector3 c1, Vector3 c2, Vector3 c3, Vector3 normal, Vector2 uv0, Vector2 uv1)
+        {
+            uint start = (uint)vertices.Count;
+            vertices.Add(new Vertex { Position = c0, Normal = normal, UV = uv0 });
+            vertices.Add(new Vertex { Position = c1, Normal = normal, UV = uv1 });
+            vertices.Add(new Vertex { Position = c2, Normal = normal, UV = new Vector2((uv0.X + uv1.X) * 0.5f, (uv0.Y + uv1.Y) * 0.5f) });
+            vertices.Add(new Vertex { Position = c3, Normal = normal, UV = new Vector2(uv1.X, uv0.Y) });
+            indices.AddRange([start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+
+        void AddTriangle(Vector3 a, Vector3 b, Vector3 c, Vector3 normal)
+        {
+            uint start = (uint)vertices.Count;
+            vertices.Add(new Vertex { Position = a, Normal = normal, UV = new Vector2(0f, 0f) });
+            vertices.Add(new Vertex { Position = b, Normal = normal, UV = new Vector2(1f, 1f) });
+            vertices.Add(new Vertex { Position = c, Normal = normal, UV = new Vector2(1f, 0f) });
+            indices.AddRange([start, start + 1, start + 2]);
+        }
+
+        AddQuad(
+            new Vector3(-hw, 0f, hd), new Vector3(hw, 0f, hd), new Vector3(hw, 0f, -hd), new Vector3(-hw, 0f, -hd),
+            new Vector3(0f, -1f, 0f), new Vector2(0f, 0f), new Vector2(width / depth, 1f));
+        AddQuad(
+            new Vector3(-hw, 0f, -hd), new Vector3(hw, 0f, -hd), new Vector3(hw, height, -hd), new Vector3(-hw, height, -hd),
+            new Vector3(0f, 0f, -1f), new Vector2(0f, 0f), new Vector2(width / height, height));
+        AddQuad(
+            new Vector3(-hw, 0f, hd), new Vector3(-hw, height, -hd), new Vector3(hw, height, -hd), new Vector3(hw, 0f, hd),
+            new Vector3(0f, depth, height).Normalized, new Vector2(0f, 0f), new Vector2(width / height, height / depth + 1f));
+        AddTriangle(new Vector3(hw, 0f, hd), new Vector3(hw, height, -hd), new Vector3(hw, 0f, -hd), new Vector3(1f, 0f, 0f));
+        AddTriangle(new Vector3(-hw, 0f, hd), new Vector3(-hw, 0f, -hd), new Vector3(-hw, height, -hd), new Vector3(-1f, 0f, 0f));
+        Vertex[] resultVertices = [.. vertices];
+        uint[] resultIndices = [.. indices];
+        MeshTangents.Generate(resultVertices, resultIndices);
+        return (resultVertices, resultIndices);
     }
 
     public static (Vertex[] Vertices, uint[] Indices) Plane(float width = 20f, float depth = 20f)

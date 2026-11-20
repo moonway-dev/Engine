@@ -1,4 +1,5 @@
 using BepuPhysics;
+using System.Globalization;
 using Engine.Core;
 using Engine.Mathematics;
 using Engine.Scene;
@@ -11,6 +12,9 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
 
     private readonly Dictionary<GameObject, Registration> _bodies = [];
     private readonly HashSet<(Guid ObjectId, string Message)> _warnedBodies = [];
+    private readonly Dictionary<Component, List<ConstraintHandle>> _joints = [];
+    private readonly Dictionary<Component, string> _jointSignatures = [];
+    private readonly List<WheelColliderComponent> _groundedWheels = [];
     private PhysicsWorld? _world;
     private ILogger? _log;
     private Scene.Scene? _attachedScene;
@@ -24,12 +28,15 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         public BodyHandle Body;
         public StaticHandle Static;
         public bool HasBody;
+        public long Generation;
         public float Mass;
         public Vector3 Position;
         public Quaternion Rotation;
         public Vector3 CenterOfMassOffset;
         public Vector3 PreviousPosition;
         public Quaternion PreviousRotation = Quaternion.Identity;
+        public Vector3 RenderPosition;
+        public Quaternion RenderRotation = Quaternion.Identity;
     }
 
     public string Name => "Physics";
@@ -63,6 +70,17 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         return true;
     }
 
+    public bool TryGetRenderPose(GameObject gameObject, out Vector3 position, out Quaternion rotation)
+    {
+        position = default;
+        rotation = Quaternion.Identity;
+        if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
+            return false;
+        position = registration.RenderPosition;
+        rotation = registration.RenderRotation;
+        return true;
+    }
+
     public void Synchronize()
     {
         if (_world is not null && _attachedScene is not null)
@@ -89,6 +107,13 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         ComponentRegistry.RegisterGlobal(() => new SphereColliderComponent());
         ComponentRegistry.RegisterGlobal(() => new CapsuleColliderComponent());
         ComponentRegistry.RegisterGlobal(() => new MeshColliderComponent());
+        ComponentRegistry.RegisterGlobal(() => new FixedJointComponent());
+        ComponentRegistry.RegisterGlobal(() => new HingeJointComponent());
+        ComponentRegistry.RegisterGlobal(() => new SpringJointComponent());
+        ComponentRegistry.RegisterGlobal(() => new CharacterJointComponent());
+        ComponentRegistry.RegisterGlobal(() => new ConfigurableJointComponent());
+        ComponentRegistry.RegisterGlobal(() => new ConstantForceComponent());
+        ComponentRegistry.RegisterGlobal(() => new WheelColliderComponent());
         _world = new PhysicsWorld(Gravity);
         _log.Information($"Physics initialized (gravity {Gravity.Y} m/s^2)");
     }
@@ -105,6 +130,8 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             if (!SimulationActive || registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody || interpolation == RigidbodyInterpolation.None)
             {
                 gameObject.Transform.ClearRenderPose();
+                registration.RenderPosition = gameObject.Transform.Position;
+                registration.RenderRotation = gameObject.Transform.Rotation;
                 continue;
             }
             if (interpolation == RigidbodyInterpolation.Extrapolate)
@@ -116,12 +143,17 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                     ? Quaternion.FromAxisAngle(angular.Normalized, angular.Length * dt) * gameObject.Transform.Rotation
                     : gameObject.Transform.Rotation;
                 gameObject.Transform.SetRenderPose(position, rotation, overridesCurrent: true);
+                registration.RenderPosition = position;
+                registration.RenderRotation = rotation;
             }
             else
             {
                 gameObject.Transform.SetRenderPose(registration.PreviousPosition, registration.PreviousRotation);
+                registration.RenderPosition = Vector3.Lerp(registration.PreviousPosition, gameObject.Transform.Position, RenderInterpolationAlpha);
+                registration.RenderRotation = Quaternion.Slerp(registration.PreviousRotation, gameObject.Transform.Rotation, RenderInterpolationAlpha);
             }
         }
+        ApplyWheelVisuals();
     }
 
     public void FixedUpdate(in FrameTime frameTime)
@@ -143,11 +175,205 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
 
     private void DoFixedUpdate(in FrameTime frameTime)
     {
+
         foreach ((GameObject gameObject, Registration registration) in _bodies)
             if (registration.Configuration.Kind == RigidBodyKind.Dynamic && registration.HasBody)
                 SetPreviousPose(gameObject, registration);
-        _world!.Step(frameTime.FixedDeltaTime);
+        float deltaTime = frameTime.FixedDeltaTime;
+        ApplyConstantForces(deltaTime);
+        ApplyWheelColliders(deltaTime);
+        _world!.Step(deltaTime);
+        ApplyJointMotors(deltaTime);
         ReadBackTransforms();
+    }
+
+    private void ApplyConstantForces(float deltaTime)
+    {
+        if (_world is null || _attachedScene is null)
+            return;
+        foreach (GameObject gameObject in _attachedScene.EnumerateHierarchy())
+        {
+            if (!gameObject.IsActiveInHierarchy || !_bodies.TryGetValue(gameObject, out Registration? registration))
+                continue;
+            if (registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody)
+                continue;
+            foreach (ConstantForceComponent force in gameObject.Components.OfType<ConstantForceComponent>())
+            {
+                if (!force.Enabled)
+                    continue;
+                force.Apply(_world, registration.Body, gameObject.Transform.Rotation, deltaTime);
+            }
+        }
+    }
+
+    private void ApplyWheelVisuals()
+    {
+        foreach (GameObject gameObject in _attachedScene!.EnumerateHierarchy())
+        {
+            foreach (WheelColliderComponent wheel in gameObject.Components.OfType<WheelColliderComponent>())
+            {
+                GameObject chassis = !_bodies.ContainsKey(wheel.Owner) && wheel.Owner.Parent is { } parent ? parent : wheel.Owner;
+                if (!wheel.HasVisual || !_bodies.TryGetValue(chassis, out Registration? registration) || !registration.HasBody)
+                    continue;
+                Quaternion rotation = registration.RenderRotation;
+                Vector3 position = registration.RenderPosition;
+                Vector3 up = rotation.Rotate(Vector3.Up);
+                Vector3 forward = rotation.Rotate(Vector3.Forward);
+                Vector3 anchor = position + rotation.Rotate(wheel.LocalAnchor);
+                wheel.UpdateVisualOnly(wheel.Owner.Transform, rotation, anchor, -up, wheel.LastTravel, up, forward, wheel.SteerAngle * MathF.PI / 180f, wheel.LastRoll);
+            }
+        }
+    }
+
+    private void ApplyJointMotors(float deltaTime)
+    {
+        foreach ((Component component, _) in _joints)
+        {
+            if (component is HingeJointComponent hinge)
+                hinge.ApplyMotor(this, deltaTime);
+        }
+    }
+
+    private void ApplyWheelColliders(float deltaTime)
+    {
+        if (_world is null || _attachedScene is null)
+            return;
+        _groundedWheels.Clear();
+        Dictionary<GameObject, List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)>> wheelsByChassis = [];
+        foreach (GameObject gameObject in _attachedScene.EnumerateHierarchy())
+        {
+            if (!gameObject.IsActiveInHierarchy)
+                continue;
+            foreach (WheelColliderComponent wheel in gameObject.Components.OfType<WheelColliderComponent>())
+            {
+                if (!wheel.Enabled)
+                    continue;
+                GameObject chassis = !_bodies.ContainsKey(wheel.Owner) && wheel.Owner.Parent is { } parent ? parent : wheel.Owner;
+                if (!wheelsByChassis.TryGetValue(chassis, out List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)>? list))
+                    wheelsByChassis[chassis] = list = [];
+                list.Add((wheel, wheel.Owner.Transform));
+            }
+        }
+        foreach ((GameObject chassis, List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)> wheels) in wheelsByChassis)
+        {
+            if (!_bodies.TryGetValue(chassis, out Registration? registration))
+                continue;
+            if (registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody)
+                continue;
+            float sprungMass = MathF.Max(registration.Mass / wheels.Count, 0.1f);
+            foreach ((WheelColliderComponent wheel, Engine.Scene.Transform transform) in wheels)
+            {
+                wheel.Apply(_world, registration.Body, chassis.Transform, transform, sprungMass, deltaTime);
+                if (wheel.IsGrounded)
+                    _groundedWheels.Add(wheel);
+            }
+        }
+    }
+
+    internal bool TryGetJointBody(GameObject gameObject, out BodyHandle body)
+    {
+        body = default;
+        if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration) || !registration.HasBody)
+            return false;
+        if (registration.Configuration.Kind == RigidBodyKind.Static)
+            return false;
+        body = registration.Body;
+        return true;
+    }
+
+    internal Vector3 GetBodyAngularVelocityDifference(BodyHandle a, BodyHandle b) =>
+        _world is null ? Vector3.Zero : _world.GetBodyAngularVelocity(a) - _world.GetBodyAngularVelocity(b);
+
+    internal float GetJointMass(BodyHandle body) =>
+        _bodies.Values.FirstOrDefault(registration => registration.HasBody && registration.Body == body) is { } registration
+            ? MathF.Max(registration.Mass, 0.1f)
+            : 1f;
+
+    internal void ApplyJointImpulse(BodyHandle body, Vector3 impulse)
+    {
+        if (_world is null)
+            return;
+        _world.ApplyAngularImpulse(body, impulse);
+    }
+
+    internal Vector3 GetJointBodyAngularVelocity(BodyHandle body) =>
+        _world is null ? Vector3.Zero : _world.GetBodyAngularVelocity(body);
+
+    internal Vector3 GetJointBodyPosition(BodyHandle body) =>
+        _world is null ? Vector3.Zero : _world.GetBodyPosition(body);
+
+    internal Vector3 GetJointBodyLinearVelocity(BodyHandle body) =>
+        _world is null ? Vector3.Zero : _world.GetBodyLinearVelocity(body);
+
+    internal void SetJointBodyVelocity(BodyHandle body, Vector3 linearVelocity, Vector3 angularVelocity)
+    {
+        if (_world is null)
+            return;
+        _world.SetBodyVelocity(body, linearVelocity, angularVelocity);
+        _world.SetBodyAwake(body, true);
+    }
+
+    private void SyncJoints()
+    {
+        if (_world is null || _attachedScene is null)
+            return;
+        HashSet<Component> active = [];
+        foreach (GameObject gameObject in _attachedScene.EnumerateHierarchy())
+        {
+            if (!gameObject.IsActiveInHierarchy)
+                continue;
+            foreach (Component component in gameObject.Components)
+            {
+                if (component is not PhysicsJointComponent joint || !joint.Enabled)
+                    continue;
+                if (joint.ConnectedBody.Resolve(_attachedScene) is not { } connected
+                    || !TryGetJointBody(gameObject, out BodyHandle bodyA)
+                    || !TryGetJointBody(connected, out BodyHandle bodyB))
+                    continue;
+                if (bodyA.Value == bodyB.Value)
+                    continue;
+                active.Add(component);
+                string signature = $"{joint.BuildSignature()}|B{bodyA.Value}|B{bodyB.Value}|G{_bodies[gameObject].Generation}|G{_bodies[connected].Generation}";
+                if (_joints.TryGetValue(component, out List<ConstraintHandle>? existing)
+                    && _jointSignatures.TryGetValue(component, out string? current)
+                    && current == signature)
+                    continue;
+                RemoveJointState(component);
+                try
+                {
+                    _joints[component] =
+                    [
+                        .. joint.CreateConstraints(_world, bodyA, bodyB, gameObject.Transform, connected.Transform),
+                    ];
+                    _jointSignatures[component] = signature;
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+                {
+                    _log?.Warning($"Joint '{component.GetType().Name}' on '{gameObject.Name}' failed: {exception.Message}");
+                    _joints.Remove(component);
+                    _jointSignatures.Remove(component);
+                }
+            }
+        }
+        foreach (Component component in _joints.Keys.Where(key => !active.Contains(key)).ToArray())
+            RemoveJointState(component);
+    }
+
+    private void RemoveJointState(Component component)
+    {
+        if (!_joints.Remove(component, out List<ConstraintHandle>? handles))
+            return;
+        _jointSignatures.Remove(component);
+        foreach (ConstraintHandle handle in handles)
+        {
+            try
+            {
+                _world?.RemoveJoint(handle);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or KeyNotFoundException)
+            {
+            }
+        }
     }
 
     private void SyncBodies()
@@ -227,6 +453,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             }
             CaptureTransform(gameObject, registration);
         }
+        SyncJoints();
     }
 
     private List<PhysicsColliderSpec> CollectSpecs(GameObject gameObject, RigidBodyKind kind)
@@ -237,6 +464,8 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         foreach (ColliderComponent collider in gameObject.Components.OfType<ColliderComponent>())
         {
             if (!collider.IsActiveInHierarchy)
+                continue;
+            if (collider.Ignore)
                 continue;
             PhysicsColliderSpec spec = collider.CreateSpec(scale, MeshDataResolver);
             if (spec.Kind == PhysicsColliderKind.Mesh)
@@ -258,7 +487,16 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     }
 
     private static string BuildConfigKey(RigidBodyKind kind, IReadOnlyList<PhysicsColliderSpec> specs) =>
-        $"{kind}|{string.Join(";", specs.Select(spec => $"{spec.Kind}:{spec.Center}:{spec.Rotation}:{spec.Size}:{spec.Radius:R}:{spec.MeshKey}"))}";
+        $"{kind}|{string.Join(";", specs.Select(spec => $"{spec.Kind}:{FormatVector(spec.Center)}:{FormatQuaternion(spec.Rotation)}:{FormatVector(spec.Size)}:{FormatFloat(spec.Radius)}:{spec.MeshKey}"))}";
+
+    private static string FormatFloat(float value) =>
+        MathF.Round(value, 4).ToString("R", CultureInfo.InvariantCulture);
+
+    private static string FormatVector(Vector3 value) =>
+        $"{FormatFloat(value.X)},{FormatFloat(value.Y)},{FormatFloat(value.Z)}";
+
+    private static string FormatQuaternion(Quaternion value) =>
+        $"{FormatFloat(value.X)},{FormatFloat(value.Y)},{FormatFloat(value.Z)},{FormatFloat(value.W)}";
 
     private void CreateWorldBody(GameObject gameObject, Registration registration, IReadOnlyList<PhysicsColliderSpec> specs, float mass)
     {
@@ -283,6 +521,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 registration.CenterOfMassOffset = centerOfMassOffset;
                 break;
         }
+        registration.Generation++;
         registration.HasBody = true;
         registration.Mass = mass;
         if (registration.Configuration.Kind != RigidBodyKind.Static)
@@ -299,6 +538,8 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         }
         SetPreviousPose(gameObject, registration);
         CaptureTransform(gameObject, registration);
+        registration.RenderPosition = gameObject.Transform.Position;
+        registration.RenderRotation = gameObject.Transform.Rotation;
     }
 
     private void WarnOnce(GameObject gameObject, string message)
@@ -371,6 +612,11 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             registration.RigidBody.World = null;
         }
         _bodies.Clear();
+        foreach (Component component in _joints.Keys.ToArray())
+            RemoveJointState(component);
+        _joints.Clear();
+        _jointSignatures.Clear();
+        _groundedWheels.Clear();
     }
 
     public void Shutdown()

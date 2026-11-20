@@ -128,7 +128,10 @@ public static class ComponentPropertyInspector
             || type == typeof(Vector3)
             || type == typeof(Vector4)
             || type == typeof(Quaternion)
-            || type == typeof(AssetReference);
+            || type == typeof(AssetReference)
+            || type == typeof(EntityReference)
+            || type == typeof(GameObject)
+            || type == typeof(Transform);
     }
 
     public static void DrawProperty(EditorContext context, Component component, PropertyInfo property) =>
@@ -174,6 +177,10 @@ public static class ComponentPropertyInspector
             DrawQuaternion(context, component, member, id, read, write);
         else if (type == typeof(AssetReference))
             DrawAssetReference(context, component, member, id, read, write);
+        else if (type == typeof(GameObject) || type == typeof(Transform))
+            DrawObjectReference(context, component, member, id, read, write, type);
+        else if (type == typeof(EntityReference))
+            DrawEntityReference(context, component, member, id, read, write);
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(tooltip ?? $"{label} ({type.Name})");
     }
@@ -397,6 +404,86 @@ public static class ComponentPropertyInspector
         InspectorEditing.EndMergeAfterEdit(context);
     }
 
+    private static void DrawObjectReference(
+        EditorContext context,
+        Component component,
+        MemberInfo member,
+        string id,
+        Func<Component, object> read,
+        Action<Component, object> write,
+        Type type)
+    {
+        GameObject? gameObject = read(component) switch
+        {
+            GameObject reference => reference,
+            Transform transform => transform.Owner,
+            _ => null,
+        };
+        ImGui.PushStyleColor(ImGuiCol.Button, new NumericsVector4(0.10f, 0.16f, 0.25f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new NumericsVector4(0.13f, 0.20f, 0.30f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new NumericsVector4(0.17f, 0.29f, 0.46f, 1f));
+        bool pressed = ImGui.Button(gameObject is null ? $"None{id}" : $"{gameObject.Name}{id}", new NumericsVector2(-1f, 0f));
+        ImGui.PopStyleColor(3);
+        if (pressed && gameObject is not null)
+            context.Document.Select(gameObject);
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            Execute(context, component, member, read, write, null, false);
+        if (ImGui.BeginDragDropTarget())
+        {
+            Guid? dropped = ImGuiDragPayloads.AcceptGameObject();
+            if (dropped is Guid droppedId)
+            {
+                GameObject? target = context.Document.Scene.FindById(droppedId);
+                if (target is not null)
+                {
+                    object value = type == typeof(GameObject) ? target : (object)target.Transform;
+                    Execute(context, component, member, read, write, value, false);
+                }
+            }
+            ImGui.EndDragDropTarget();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(gameObject is null
+                ? $"{member.Name}: drag a hierarchy object here, right-click clears"
+                : $"{member.Name}: {gameObject.Name}\nClick selects it, right-click clears, drag another object to reassign.");
+        }
+    }
+
+    private static void DrawEntityReference(
+        EditorContext context,
+        Component component,
+        MemberInfo member,
+        string id,
+        Func<Component, object> read,
+        Action<Component, object> write)
+    {
+        var value = (EntityReference)read(component)!;
+        GameObject? gameObject = value.IsEmpty ? null : context.Document.Scene.FindById(value.Id);
+        ImGui.PushStyleColor(ImGuiCol.Button, new NumericsVector4(0.10f, 0.16f, 0.25f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new NumericsVector4(0.13f, 0.20f, 0.30f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new NumericsVector4(0.17f, 0.29f, 0.46f, 1f));
+        bool pressed = ImGui.Button(gameObject is null ? $"None{id}" : $"{gameObject.Name}{id}", new NumericsVector2(-1f, 0f));
+        ImGui.PopStyleColor(3);
+        if (pressed && gameObject is not null)
+            context.Document.Select(gameObject);
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            Execute(context, component, member, read, write, EntityReference.Empty, false);
+        if (ImGui.BeginDragDropTarget())
+        {
+            Guid? dropped = ImGuiDragPayloads.AcceptGameObject();
+            if (dropped is Guid droppedId)
+                Execute(context, component, member, read, write, new EntityReference(droppedId), false);
+            ImGui.EndDragDropTarget();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(gameObject is null
+                ? $"{member.Name}: drag a hierarchy object here, right-click clears"
+                : $"{member.Name}: {gameObject.Name}\nClick selects it, right-click clears, drag another object to reassign.");
+        }
+    }
+
     private static void DrawAssetReference(
         EditorContext context,
         Component component,
@@ -406,7 +493,10 @@ public static class ComponentPropertyInspector
         Action<Component, object> write)
     {
         AssetReference value = (AssetReference)read(component)!;
-        AssetKind kind = InferAssetKind(member.Name);
+        AssetKind kind = member.GetCustomAttribute<InspectorAssetDropAttribute>() is { } dropAttribute
+            && Enum.TryParse(dropAttribute.Kind, ignoreCase: true, out AssetKind parsed)
+                ? parsed
+                : InferAssetKind(member.Name);
         string display = ResolveDisplay(context, value, kind);
         AssetDragPayload? drop = AssetDropField.Draw(member.Name, display, kind);
         if (drop is { } payload)
@@ -426,7 +516,7 @@ public static class ComponentPropertyInspector
         MemberInfo member,
         Func<Component, object> read,
         Action<Component, object> write,
-        object value,
+        object? value,
         bool merge = true)
     {
         InspectorEditing.SetComponentProperty(
@@ -434,7 +524,7 @@ public static class ComponentPropertyInspector
             component.Id,
             $"{component.GetType().Name}.{member.Name}",
             current => read(current),
-            (current, next) => write(current, next),
+            (current, next) => write(current, next!),
             value,
             merge);
     }

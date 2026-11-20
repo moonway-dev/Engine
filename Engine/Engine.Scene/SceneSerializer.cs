@@ -126,6 +126,30 @@ public static class SceneSerializer
         foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                      .OrderBy(property => property.Name, StringComparer.Ordinal))
         {
+            if (property.Name == nameof(ScriptComponent.Script))
+                continue;
+            if (IsScriptReferenceMember(property, property.PropertyType)
+                && property.CanRead && property.GetMethod?.IsPublic == true
+                && property.CanWrite && property.SetMethod?.IsPublic == true
+                && property.GetIndexParameters().Length == 0)
+            {
+                object? referenceValue;
+                try
+                {
+                    referenceValue = property.GetValue(instance);
+                }
+                catch (TargetInvocationException exception)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to read script property '{type.Name}.{property.Name}'.",
+                        exception.InnerException ?? exception);
+                }
+                properties ??= new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+                properties[property.Name] = SerializeScriptReference(referenceValue);
+                referenceKinds ??= new Dictionary<string, SceneReferenceKind>(StringComparer.Ordinal);
+                referenceKinds[property.Name] = SceneReferenceKind.Entity;
+                continue;
+            }
             if (!IsSerializableProperty(property) || property.Name == nameof(ScriptComponent.Script))
                 continue;
             object? value;
@@ -151,6 +175,27 @@ public static class SceneSerializer
         foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance)
                      .OrderBy(field => field.Name, StringComparer.Ordinal))
         {
+            if (IsScriptReferenceMember(field, field.FieldType)
+                && !field.IsInitOnly && !field.IsLiteral && !field.IsStatic
+                && !(properties is not null && properties.ContainsKey(field.Name)))
+            {
+                object? referenceValue;
+                try
+                {
+                    referenceValue = field.GetValue(instance);
+                }
+                catch (TargetInvocationException exception)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to read script field '{type.Name}.{field.Name}'.",
+                        exception.InnerException ?? exception);
+                }
+                properties ??= new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+                properties[field.Name] = SerializeScriptReference(referenceValue);
+                referenceKinds ??= new Dictionary<string, SceneReferenceKind>(StringComparer.Ordinal);
+                referenceKinds[field.Name] = SceneReferenceKind.Entity;
+                continue;
+            }
             if (!IsSerializableField(field) || properties is not null && properties.ContainsKey(field.Name))
                 continue;
             object? value;
@@ -186,6 +231,42 @@ public static class SceneSerializer
         return IsSupportedPropertyType(field.FieldType);
     }
 
+    private static bool IsScriptReferenceMember(MemberInfo member, Type type)
+    {
+        Type actual = Nullable.GetUnderlyingType(type) ?? type;
+        if (actual != typeof(GameObject) && actual != typeof(Transform))
+            return false;
+        return member.GetCustomAttribute<SceneIgnoreAttribute>() is null
+            && member.GetCustomAttribute<JsonIgnoreAttribute>() is null;
+    }
+
+    private static JsonElement SerializeScriptReference(object? value)
+    {
+        Guid id = value switch
+        {
+            GameObject gameObject => gameObject.Id,
+            Transform transform => transform.Owner?.Id ?? Guid.Empty,
+            _ => Guid.Empty,
+        };
+        return id == Guid.Empty
+            ? JsonSerializer.Deserialize<JsonElement>("null")
+            : JsonSerializer.SerializeToElement(id, JsonOptions);
+    }
+
+    private static object? DeserializeScriptReference(JsonElement element, Type targetType, Scene? scene)
+    {
+        Guid id = element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out Guid parsed)
+            ? parsed
+            : Guid.Empty;
+        if (id == Guid.Empty || scene is null)
+            return null;
+        GameObject? gameObject = scene.FindById(id);
+        if (gameObject is null)
+            return null;
+        Type actual = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        return actual == typeof(Transform) ? gameObject.Transform : gameObject;
+    }
+
     internal static void ApplyProperties(
         Component component,
         Dictionary<string, JsonElement>? properties)
@@ -217,38 +298,41 @@ public static class SceneSerializer
             script.PendingProperties = remainder;
             return;
         }
-        ApplyInstanceProperties(script.Instance!, remainder);
+        ApplyInstanceProperties(script.Instance!, remainder, script.Owner?.Scene);
     }
 
-    internal static void ApplyInstanceProperties(object instance, Dictionary<string, JsonElement> properties)
+    internal static void ApplyInstanceProperties(object instance, Dictionary<string, JsonElement> properties, Scene? scene = null)
     {
         Type type = instance.GetType();
         Dictionary<string, PropertyInfo> writableProperties = type
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(IsSerializableProperty)
+            .Where(property => IsSerializableProperty(property) || IsScriptReferenceMember(property, property.PropertyType))
             .ToDictionary(property => property.Name, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, FieldInfo> writableFields = type
             .GetFields(BindingFlags.Public | BindingFlags.Instance)
-            .Where(IsSerializableField)
+            .Where(field => IsSerializableField(field) || IsScriptReferenceMember(field, field.FieldType))
             .Where(field => !writableProperties.ContainsKey(field.Name))
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         foreach ((string key, JsonElement element) in properties)
         {
             if (writableProperties.TryGetValue(key, out PropertyInfo? property))
-                ApplyPropertyValue(instance, property, element);
+                ApplyPropertyValue(instance, property, element, scene);
             else if (writableFields.TryGetValue(key, out FieldInfo? field))
-                ApplyFieldValue(instance, field, element);
+                ApplyFieldValue(instance, field, element, scene);
         }
     }
 
     private static void ApplyFieldValue(
         object target,
         FieldInfo field,
-        JsonElement element)
+        JsonElement element,
+        Scene? scene = null)
     {
         try
         {
-            object? value = DeserializeValue(element, field.FieldType);
+            object? value = IsScriptReferenceMember(field, field.FieldType)
+                ? DeserializeScriptReference(element, field.FieldType, scene)
+                : DeserializeValue(element, field.FieldType);
             field.SetValue(target, value);
         }
         catch (Exception exception) when (exception is JsonException
@@ -295,11 +379,14 @@ public static class SceneSerializer
     private static void ApplyPropertyValue(
         object target,
         PropertyInfo property,
-        JsonElement element)
+        JsonElement element,
+        Scene? scene = null)
     {
         try
         {
-            object? value = DeserializeValue(element, property.PropertyType);
+            object? value = IsScriptReferenceMember(property, property.PropertyType)
+                ? DeserializeScriptReference(element, property.PropertyType, scene)
+                : DeserializeValue(element, property.PropertyType);
             property.SetValue(target, value);
         }
         catch (Exception exception) when (exception is JsonException

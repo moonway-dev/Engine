@@ -191,16 +191,14 @@ public sealed class ViewportPanel : EditorPanel
         ImGui.SameLine();
         DrawSpaceButton("Global", TransformSpace.Global, !local);
         ImGui.EndDisabled();
-        System.Numerics.Vector2 overlayMinimum = ImGui.GetItemRectMin();
-        System.Numerics.Vector2 overlayMaximum = ImGui.GetItemRectMax();
-        System.Numerics.Vector2 mouse = ImGui.GetMousePos();
-        OverlayItemActive = mouse.X >= overlayMinimum.X - 4f && mouse.X <= overlayMaximum.X + 4f
-            && mouse.Y >= overlayMinimum.Y - 4f && mouse.Y <= overlayMaximum.Y + 4f;
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled) && localScale)
             ImGui.SetTooltip("Scale uses local axes.");
         ImGui.EndGroup();
         System.Numerics.Vector2 cardMaximum = ImGui.GetItemRectMax() + new System.Numerics.Vector2(4f, 4f);
         System.Numerics.Vector2 cardMinimum = ImGui.GetItemRectMin() - new System.Numerics.Vector2(4f, 4f);
+        System.Numerics.Vector2 mouse = ImGui.GetMousePos();
+        OverlayItemActive = mouse.X >= cardMinimum.X && mouse.X <= cardMaximum.X
+            && mouse.Y >= cardMinimum.Y && mouse.Y <= cardMaximum.Y;
         DrawList.ChannelsSetCurrent(0);
         DrawList.AddRectFilled(cardMinimum, cardMaximum, ImGui.GetColorU32(new System.Numerics.Vector4(0.08f, 0.10f, 0.14f, 0.96f)), 4f);
         DrawList.AddRect(cardMinimum, cardMaximum, ImGui.GetColorU32(new System.Numerics.Vector4(EditorTheme.Accent.X, EditorTheme.Accent.Y, EditorTheme.Accent.Z, 0.35f)), 4f, ImDrawFlags.None, 1f);

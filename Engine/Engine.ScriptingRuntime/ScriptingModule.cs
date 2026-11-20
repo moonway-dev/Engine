@@ -19,6 +19,8 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     private readonly List<SceneModel> _playingScenes = [];
     private readonly List<(ScriptComponent Component, ScriptBehaviour Behaviour)> _activeInstances = [];
     private readonly HashSet<ScriptBehaviour> _started = [];
+    private readonly List<ScriptJoint> _joints = [];
+    private readonly List<GameObject> _pendingDestroy = [];
     private ScriptCompilationResult? _current;
     private ScriptLoadContext? _retiredContext;
     private ILogger? _log;
@@ -44,6 +46,8 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     }
 
     public bool AlwaysPlay { get; set; }
+
+    public string? AssetsRoot { get; set; }
 
     public bool IsPaused => _paused;
 
@@ -162,6 +166,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
             component.Instance = null;
             _activeInstances.RemoveAll(entry => ReferenceEquals(entry.Component, component));
         }
+        ClearJoints();
     }
 
     public void Pause() => _paused = true;
@@ -282,6 +287,115 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
             return hit is not null;
         };
         ScriptPhysics.RayCaster = (origin, direction, maximumDistance, ignore) => RayCastInternal(origin, direction, maximumDistance, ignore);
+        ScriptPhysics.InterpolatedPoseGetter = gameObject =>
+            _physics is not null && _physics.TryGetRenderPose(gameObject, out Vector3 position, out Quaternion rotation)
+                ? (position, rotation)
+                : (gameObject.Transform.Position, gameObject.Transform.Rotation);
+        ScriptPhysics.BallJointCreator = (a, b, anchorA, anchorB) => WithBodies(a, b, (world, handleA, handleB) => new ScriptJoint(world.AddBallJoint(Endpoint(handleA), Endpoint(handleB), anchorA, anchorB).Cast<object>().ToArray()));
+        ScriptPhysics.HingeJointCreator = (a, b, anchor, axis) => WithBodies(a, b, (world, handleA, handleB) => new ScriptJoint(world.AddHingeJoint(Endpoint(handleA), Endpoint(handleB), anchor, anchor, axis).Cast<object>().ToArray()));
+        ScriptPhysics.WeldJointCreator = (a, b) => WithBodies(a, b, (world, handleA, handleB) => new ScriptJoint(world.AddFixedJoint(Endpoint(handleA), Endpoint(handleB)).Cast<object>().ToArray()));
+        ScriptPhysics.DistanceJointCreator = (a, b, minimum, maximum) => WithBodies(a, b, (world, handleA, handleB) => new ScriptJoint(world.AddLinearLimit(Endpoint(handleA), Endpoint(handleB), (b.Transform.Position - a.Transform.Position).Normalized, a.Transform.Position, a.Transform.Position, minimum, maximum).Cast<object>().ToArray()));
+        ScriptPhysics.JointDestroyer = DestroyJointInternal;
+        ConfigureScriptScene();
+    }
+
+    private static BodyHandle Endpoint(BodyHandle handle) => handle;
+
+    private void ConfigureScriptScene()
+    {
+        ScriptScene.Finder = name => _scenes
+            .Select(scene => scene.FindByName(name))
+            .FirstOrDefault(match => match is not null);
+        ScriptScene.Destroyer = gameObject =>
+        {
+            if (gameObject is not null && !_pendingDestroy.Contains(gameObject))
+                _pendingDestroy.Add(gameObject);
+        };
+        ScriptScene.PrefabSpawner = SpawnPrefab;
+    }
+
+    private GameObject? SpawnPrefab(GameObject context, AssetReference prefab, Vector3? position, Quaternion? rotation)
+    {
+        if (string.IsNullOrWhiteSpace(AssetsRoot) || prefab.IsEmpty || context is null)
+            return null;
+        try
+        {
+            PrefabAsset asset = PrefabAsset.Load(Path.GetFullPath(Path.Combine(AssetsRoot, prefab.Key)), prefab.Key);
+            GameObject created = asset.Instantiate(context.Scene, null);
+            if (position is { } spawnPosition)
+                created.Transform.Position = spawnPosition;
+            if (rotation is { } spawnRotation)
+                created.Transform.Rotation = spawnRotation;
+            return created;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        {
+            _log?.Warning($"Failed to spawn prefab '{prefab.Key}': {exception.Message}");
+            return null;
+        }
+    }
+
+    private ScriptJoint? WithBodies(GameObject a, GameObject b, Func<Engine.Physics.PhysicsWorld, BodyHandle, BodyHandle, ScriptJoint> create)
+    {
+        if (_physics is null
+            || !_physics.TryGetBodyHandle(a, out BodyHandle handleA)
+            || !_physics.TryGetBodyHandle(b, out BodyHandle handleB))
+            return null;
+        try
+        {
+            ScriptJoint joint = create(_physics.World, handleA, handleB);
+            _joints.Add(joint);
+            return joint;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private void DestroyJointInternal(ScriptJoint joint)
+    {
+        if (!joint.IsValid)
+            return;
+        if (_physics is not null)
+        {
+            foreach (object constraint in joint.Constraint)
+            {
+                try
+                {
+                    _physics.World.RemoveJoint((ConstraintHandle)constraint);
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or KeyNotFoundException)
+                {
+                }
+            }
+        }
+        _joints.Remove(joint);
+        joint.Invalidate();
+    }
+
+    private void ClearJoints()
+    {
+        foreach (ScriptJoint joint in _joints.ToArray())
+            DestroyJointInternal(joint);
+        _joints.Clear();
+        _pendingDestroy.Clear();
+    }
+
+    private void ProcessDestroyed()
+    {
+        while (_pendingDestroy.Count > 0)
+        {
+            GameObject gameObject = _pendingDestroy[^1];
+            _pendingDestroy.RemoveAt(_pendingDestroy.Count - 1);
+            try
+            {
+                gameObject.Scene.Remove(gameObject);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
     }
 
     private Engine.Scene.ScriptRayHit? RayCastInternal(Vector3 origin, Vector3 direction, float maximumDistance, GameObject? ignore)
@@ -401,6 +515,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
                 SafeRun(component, behaviour, behaviour.OnStart);
             SafeRun(component, behaviour, behaviour.OnUpdate);
         }
+        ProcessDestroyed();
     }
 
     private void RunFixedTick(in FrameTime frameTime)
@@ -412,6 +527,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
                 continue;
             SafeRun(component, behaviour, behaviour.OnFixedUpdate);
         }
+        ProcessDestroyed();
     }
 
     private void SyncAlwaysPlayScenes()
@@ -514,6 +630,16 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptPhysics.BodyChecker = null;
         ScriptPhysics.GroundedChecker = null;
         ScriptPhysics.RayCaster = null;
+        ScriptPhysics.InterpolatedPoseGetter = null;
+        ScriptPhysics.BallJointCreator = null;
+        ScriptPhysics.HingeJointCreator = null;
+        ScriptPhysics.WeldJointCreator = null;
+        ScriptPhysics.DistanceJointCreator = null;
+        ScriptPhysics.JointDestroyer = null;
+        ScriptScene.PrefabSpawner = null;
+        ScriptScene.Finder = null;
+        ScriptScene.Destroyer = null;
+        ClearJoints();
         ScriptInput.Window = null;
         ScriptLog.Sink = null;
         _scenes.Clear();

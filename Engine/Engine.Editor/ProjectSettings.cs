@@ -27,6 +27,7 @@ public sealed class ProjectSettings
     public RayTracingQualityPreset RayTracingReflectionQuality = RayTracingQualityPreset.High;
     public RayTracingQualityPreset RayTracingGiQuality = RayTracingQualityPreset.High;
     public bool RayTracingAdaptiveQuality = true;
+    public string LastScene = string.Empty;
     public bool VSync = true;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -78,6 +79,34 @@ public sealed class ProjectSettings
         }
         catch (JsonException)
         {
+        }
+    }
+
+    public static void WriteLastScene(string projectRoot, string scenePath)
+    {
+        ProjectSettings settings = Load(projectFile(projectRoot));
+        settings.LastScene = Path.GetRelativePath(projectRoot, scenePath).Replace(Path.DirectorySeparatorChar, '/');
+        settings.Save(projectFile(projectRoot));
+    }
+
+    private static string projectFile(string projectRoot) => Path.Combine(projectRoot, "Project.project");
+
+    public static string? ReadLastScene(string projectRoot)
+    {
+        try
+        {
+            string projectFile = Path.Combine(projectRoot, "Project.project");
+            if (!File.Exists(projectFile))
+                return null;
+            string relative = Load(projectFile).LastScene;
+            if (string.IsNullOrWhiteSpace(relative))
+                return null;
+            string full = Path.Combine(projectRoot, relative);
+            return File.Exists(full) ? full : null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return null;
         }
     }
 

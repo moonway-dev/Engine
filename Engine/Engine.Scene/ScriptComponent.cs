@@ -52,6 +52,6 @@ public class ScriptComponent : Component
             return;
         Dictionary<string, JsonElement> properties = PendingProperties;
         PendingProperties = null;
-        SceneSerializer.ApplyInstanceProperties(Instance, properties);
+        SceneSerializer.ApplyInstanceProperties(Instance, properties, Owner?.Scene);
     }
 }

@@ -31,7 +31,7 @@ internal static class AssetDropField
         {
             ImGui.PushStyleColor(ImGuiCol.DragDropTarget, EditorTheme.AccentHovered);
             AssetDragPayload? payload = ImGuiDragPayloads.AcceptAsset();
-            if (payload is { } value && value.Kind == acceptedKind)
+            if (payload is { } value && (acceptedKind == AssetKind.Unknown || value.Kind == acceptedKind))
                 dropped = value;
             ImGui.PopStyleColor();
             ImGui.EndDragDropTarget();

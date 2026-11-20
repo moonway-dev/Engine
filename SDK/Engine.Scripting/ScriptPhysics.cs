@@ -33,6 +33,11 @@ public static class ScriptPhysics
 
     public static Func<Vector3, Vector3, float, GameObject?, ScriptRayHit?>? RayCaster { get; set; }
 
+    public static Func<GameObject, (Vector3 Position, Quaternion Rotation)>? InterpolatedPoseGetter { get; set; }
+
+    public static (Vector3 Position, Quaternion Rotation) GetInterpolatedPose(GameObject gameObject) =>
+        InterpolatedPoseGetter?.Invoke(gameObject) ?? (gameObject.Transform.Position, gameObject.Transform.Rotation);
+
     public static Vector3 GetLinearVelocity(GameObject gameObject) =>
         LinearVelocityGetter?.Invoke(gameObject) ?? Vector3.Zero;
 
@@ -69,4 +74,43 @@ public static class ScriptPhysics
 
     public static ScriptRayHit? RayCast(Vector3 origin, Vector3 direction, float maximumDistance, GameObject? ignore = null) =>
         RayCaster?.Invoke(origin, direction, maximumDistance, ignore);
+
+    public static Func<GameObject, GameObject, Vector3, Vector3, ScriptJoint?>? BallJointCreator { get; set; }
+
+    public static Func<GameObject, GameObject, Vector3, Vector3, ScriptJoint?>? HingeJointCreator { get; set; }
+
+    public static Func<GameObject, GameObject, ScriptJoint?>? WeldJointCreator { get; set; }
+
+    public static Func<GameObject, GameObject, float, float, ScriptJoint?>? DistanceJointCreator { get; set; }
+
+    public static Action<ScriptJoint>? JointDestroyer { get; set; }
+
+    public static ScriptJoint? CreateBallJoint(GameObject a, GameObject b, Vector3 anchorA, Vector3 anchorB) =>
+        BallJointCreator?.Invoke(a, b, anchorA, anchorB);
+
+    public static ScriptJoint? CreateHingeJoint(GameObject a, GameObject b, Vector3 anchor, Vector3 axis) =>
+        HingeJointCreator?.Invoke(a, b, anchor, axis);
+
+    public static ScriptJoint? CreateWeldJoint(GameObject a, GameObject b) =>
+        WeldJointCreator?.Invoke(a, b);
+
+    public static ScriptJoint? CreateDistanceJoint(GameObject a, GameObject b, float minimumDistance, float maximumDistance) =>
+        DistanceJointCreator?.Invoke(a, b, minimumDistance, maximumDistance);
+
+    public static void DestroyJoint(ScriptJoint? joint)
+    {
+        if (joint is not null)
+            JointDestroyer?.Invoke(joint);
+    }
+}
+
+public sealed class ScriptJoint
+{
+    internal ScriptJoint(object[] constraints) => Constraint = constraints;
+
+    internal object[] Constraint { get; private set; }
+
+    public bool IsValid => Constraint.Length > 0;
+
+    internal void Invalidate() => Constraint = [];
 }

@@ -1,0 +1,18 @@
+{
+  "Version": 1,
+  "Shader": "PBR Lit",
+  "Parent": null,
+  "Overrides": {
+    "AlbedoColor": {
+      "X": 1,
+      "Y": 0.7859003,
+      "Z": 0.24870467
+    },
+    "EmissiveIntensity": 5,
+    "EmissionColor": {
+      "X": 1,
+      "Y": 0.78952456,
+      "Z": 0.17098445
+    }
+  }
+}

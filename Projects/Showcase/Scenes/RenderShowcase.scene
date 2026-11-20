@@ -1,0 +1,525 @@
+{
+  "version": 2,
+  "name": "RenderShowcase",
+  "skyColor": [
+    0.35,
+    0.55,
+    0.85,
+    1
+  ],
+  "objects": [
+    {
+      "id": "b2000000-0000-0000-0000-000000000001",
+      "name": "Ground",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          -0.75,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "366704bb-6889-5049-20b5-c274fb626769",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.5,
+              0.5,
+              0.52
+            ],
+            "AlbedoTexture": "Textures/checker.png",
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "ground",
+            "Roughness": 0.9,
+            "RoughnessTexture": null,
+            "UvScale": [
+              8,
+              8
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000002",
+      "name": "BrassCube",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.2,
+          0.6,
+          0
+        ],
+        "rotation": [
+          0,
+          0.4,
+          0,
+          0.921
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "2849dec0-779f-e114-6dbd-9bf6b98224dc",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.8,
+              0.8
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "Materials/Brass.mat",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "cube",
+            "Roughness": 0.5,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000003",
+      "name": "PlasticSphere",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0.4,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.8,
+          0.8,
+          0.8
+        ]
+      },
+      "components": [
+        {
+          "id": "2ae7958f-4a4f-073f-d78d-c0687f6ac9e1",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.8,
+              0.8
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "Materials/PlasticRed.mat",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "sphere",
+            "Roughness": 0.5,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000004",
+      "name": "EmissiveLamp",
+      "active": true,
+      "transform": {
+        "position": [
+          2.2,
+          0.55,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "c2696d1b-7fd0-5068-0b76-5e398e295f9e",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.8,
+              0.8
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "Materials/EmissiveLamp.mat",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "cube",
+            "Roughness": 0.5,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000005",
+      "name": "CheckerCube",
+      "active": true,
+      "transform": {
+        "position": [
+          -1.1,
+          2.2,
+          -1.5
+        ],
+        "rotation": [
+          0.2,
+          0.6,
+          0,
+          0.917
+        ],
+        "scale": [
+          0.8,
+          0.8,
+          0.8
+        ]
+      },
+      "components": [
+        {
+          "id": "ed6c497b-7c4d-9bab-9390-b3d2e8c3d1d6",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.8,
+              0.8,
+              0.8
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": "Materials/Checker.mat",
+            "Metallic": 0,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "cube",
+            "Roughness": 0.5,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000006",
+      "name": "InlineMetal",
+      "active": true,
+      "transform": {
+        "position": [
+          1.1,
+          2.2,
+          -1.5
+        ],
+        "rotation": [
+          0.2,
+          -0.6,
+          0,
+          0.917
+        ],
+        "scale": [
+          0.8,
+          0.8,
+          0.8
+        ]
+      },
+      "components": [
+        {
+          "id": "297b64de-2241-2e19-7658-8cf59b03ff73",
+          "type": "MeshRenderer",
+          "enabled": true,
+          "properties": {
+            "AlbedoColor": [
+              0.9,
+              0.72,
+              0.35
+            ],
+            "AlbedoTexture": null,
+            "AmbientOcclusionTexture": null,
+            "AoStrength": 1,
+            "EmissiveIntensity": 0,
+            "ForcedLodLevel": 0,
+            "LodBias": 1,
+            "LodMode": "Auto",
+            "MaterialAsset": null,
+            "Metallic": 1,
+            "MetallicTexture": null,
+            "NormalScale": 1,
+            "NormalTexture": null,
+            "PartId": "",
+            "RenderingMode": "Full",
+            "ResourceKey": "cube",
+            "Roughness": 0.15,
+            "RoughnessTexture": null,
+            "UvScale": [
+              1,
+              1
+            ]
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000007",
+      "name": "Sun",
+      "active": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0.22923979,
+          0.77074516,
+          0.41759998,
+          -0.42309737
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "2328d7cb-6261-9319-a713-a9fad052e372",
+          "type": "Light",
+          "enabled": true,
+          "properties": {
+            "Color": [
+              1,
+              0.97,
+              0.92
+            ],
+            "Intensity": 3.2,
+            "Kind": "Directional",
+            "Range": 20
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000008",
+      "name": "WarmLamp",
+      "active": true,
+      "transform": {
+        "position": [
+          2.4,
+          2.6,
+          1.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "041c536c-6b6f-1d2c-a0a6-cb11beecce93",
+          "type": "Light",
+          "enabled": true,
+          "properties": {
+            "Color": [
+              1,
+              0.6,
+              0.35
+            ],
+            "Intensity": 12,
+            "Kind": "Point",
+            "Range": 11
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-000000000009",
+      "name": "CoolLamp",
+      "active": true,
+      "transform": {
+        "position": [
+          -2.4,
+          2.6,
+          1.8
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "e630a2bf-c8b8-aaf4-1cb9-59924a5ad520",
+          "type": "Light",
+          "enabled": true,
+          "properties": {
+            "Color": [
+              0.3,
+              0.5,
+              1
+            ],
+            "Intensity": 12,
+            "Kind": "Point",
+            "Range": 11
+          }
+        }
+      ],
+      "unknownComponents": []
+    },
+    {
+      "id": "b2000000-0000-0000-0000-00000000000a",
+      "name": "MainCamera",
+      "active": true,
+      "transform": {
+        "position": [
+          0.1,
+          3,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "components": [
+        {
+          "id": "e123c53c-eb1a-0324-affe-c1d41529a194",
+          "type": "Camera",
+          "enabled": true,
+          "properties": {
+            "FarPlane": 500,
+            "FieldOfViewY": 0.9599311,
+            "NearPlane": 0.1
+          }
+        }
+      ],
+      "unknownComponents": []
+    }
+  ]
+}
