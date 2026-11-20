@@ -1,0 +1,9 @@
+{
+  "Version": 1,
+  "Shader": "PBR Lit",
+  "Parent": "guid:1ec9936e8890406ab8a113484b7386a1",
+  "Overrides": {
+    "Metallic": 1,
+    "Roughness": 0
+  }
+}

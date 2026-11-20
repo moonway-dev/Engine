@@ -372,7 +372,6 @@ public sealed class ProjectSettingsPanel : EditorPanel
         }
         IsOpen = open;
         bool rtAvailable = _renderer.RayTracingAvailable;
-        bool rtMaster = rtAvailable && _settings.RayTracingEnabled;
         ImGui.TextUnformatted("Rendering");
         ImGui.Separator();
         if (ImGui.SliderFloat("Exposure", ref _settings.Exposure, 0.1f, 4f))
@@ -385,104 +384,9 @@ public sealed class ProjectSettingsPanel : EditorPanel
             _renderer.LodPixelBudget = _settings.LodPixelBudget;
             _dirty = true;
         }
-        ImGui.TextUnformatted("Ray tracing");
-        ImGui.Separator();
-        if (!rtAvailable)
-        {
-            ImGui.TextDisabled("Ray tracing is unavailable on this device.");
-        }
-        else if (ImGui.Checkbox("Ray Tracing", ref _settings.RayTracingEnabled))
-        {
-            _renderer.RayTracingEnabled = _settings.RayTracingEnabled;
-            _dirty = true;
-        }
-        rtMaster = rtAvailable && _settings.RayTracingEnabled;
-        if (rtMaster)
-        {
-            if (ImGui.Checkbox("RT Shadows (directional + point)", ref _settings.RayTracingShadowsEnabled))
-            {
-                _renderer.RayTracingShadowsEnabled = _settings.RayTracingShadowsEnabled;
-                _dirty = true;
-            }
-            if (ImGui.Checkbox("RT Reflections", ref _settings.RayTracingReflectionsEnabled))
-            {
-                _renderer.RayTracingReflectionsEnabled = _settings.RayTracingReflectionsEnabled;
-                _dirty = true;
-            }
-            if (_settings.RayTracingReflectionsEnabled
-                && ImGui.SliderFloat("RT reflection strength", ref _settings.RayTracingReflectionStrength, 0f, 1f))
-            {
-                _renderer.RayTracingReflectionStrength = _settings.RayTracingReflectionStrength;
-                _dirty = true;
-            }
-            if (ImGui.Checkbox("RT GI", ref _settings.RayTracingGiEnabled))
-            {
-                _renderer.RayTracingGiEnabled = _settings.RayTracingGiEnabled;
-                _dirty = true;
-            }
-            if (_settings.RayTracingGiEnabled
-                && ImGui.SliderFloat("GI intensity", ref _settings.ScreenSpaceGiIntensity, 0f, 2f))
-            {
-                _renderer.ScreenSpaceGIIntensity = _settings.ScreenSpaceGiIntensity;
-                _dirty = true;
-            }
-            if (ImGui.SliderFloat("RT resolution scale", ref _settings.RayTracingResolutionScale, 0.25f, 1f, "%.2f"))
-            {
-                _renderer.RayTracingResolutionScale = _settings.RayTracingResolutionScale;
-                _dirty = true;
-            }
-            if (ImGui.SliderFloat("RT ray bias", ref _settings.RayTracingRayBias, 0.0001f, 0.1f, "%.4f"))
-            {
-                _renderer.RayTracingRayBias = _settings.RayTracingRayBias;
-                _dirty = true;
-            }
-            if (ImGui.SliderFloat("RT max distance", ref _settings.RayTracingMaxDistance, 1f, 1000f))
-            {
-                _renderer.RayTracingMaxDistance = _settings.RayTracingMaxDistance;
-                _dirty = true;
-            }
-            if (_settings.RayTracingReflectionsEnabled && ImGui.SliderFloat("RT roughness limit", ref _settings.RayTracingReflectionRoughnessLimit, 0.045f, 1f))
-            {
-                _renderer.RayTracingReflectionRoughnessLimit = _settings.RayTracingReflectionRoughnessLimit;
-                _dirty = true;
-            }
-            int rtSamples = _settings.RayTracingSamples;
-            if (ImGui.SliderInt("RT samples", ref rtSamples, 1, 8))
-            {
-                _settings.RayTracingSamples = rtSamples;
-                _renderer.RayTracingSamples = rtSamples;
-                _dirty = true;
-            }
-            bool adaptive = _settings.RayTracingAdaptiveQuality;
-            if (ImGui.Checkbox("RT adaptive quality", ref adaptive))
-            {
-                _settings.RayTracingAdaptiveQuality = adaptive;
-                _renderer.RayTracingAdaptiveQualityEnabled = adaptive;
-                _dirty = true;
-            }
-            DrawRtQualityCombo("RT shadow quality", RayTracingQualityEffect.Shadows);
-            DrawRtQualityCombo("RT reflection quality", RayTracingQualityEffect.Reflections);
-            DrawRtQualityCombo("RT GI quality", RayTracingQualityEffect.Gi);
-            (RayTracingQualityCamera, RayTracingQualityEffect)[] effects =
-            [
-                (RayTracingQualityCamera.Scene, RayTracingQualityEffect.Shadows),
-                (RayTracingQualityCamera.Scene, RayTracingQualityEffect.Reflections),
-                (RayTracingQualityCamera.Scene, RayTracingQualityEffect.Gi),
-                (RayTracingQualityCamera.Game, RayTracingQualityEffect.Shadows),
-                (RayTracingQualityCamera.Game, RayTracingQualityEffect.Reflections),
-                (RayTracingQualityCamera.Game, RayTracingQualityEffect.Gi),
-            ];
-            foreach ((RayTracingQualityCamera camera, RayTracingQualityEffect effect) in effects)
-            {
-                (int stage, RayTracingQualityProfile profile, double milliseconds) = _renderer.GetRayTracingQuality(camera, effect);
-                ImGui.TextUnformatted($"{camera} {effect}: stage {stage} ({profile.ResolutionScale * 100f:0}%, {profile.Samples} spp, rate {profile.FarTraceRate}), {milliseconds:F2} ms");
-            }
-        }
-        if (!rtMaster)
-        {
-            DrawShadowSettings();
-            DrawSsgiSettings();
-        }
+        DrawRayTracingSettings(rtAvailable);
+        DrawShadowSettings(rtAvailable);
+        DrawGiSettings(rtAvailable);
         ImGui.TextUnformatted("Application");
         ImGui.Separator();
         if (ImGui.Checkbox("VSync", ref _settings.VSync))
@@ -494,41 +398,94 @@ public sealed class ProjectSettingsPanel : EditorPanel
         ImGui.End();
     }
 
-    private void DrawRtQualityCombo(string label, RayTracingQualityEffect effect)
+    private void DrawRayTracingSettings(bool rtAvailable)
     {
-        RayTracingQualityPreset current = effect switch
+        ImGui.TextUnformatted("Ray tracing");
+        ImGui.Separator();
+        if (!rtAvailable)
         {
-            RayTracingQualityEffect.Shadows => _settings.RayTracingShadowQuality,
-            RayTracingQualityEffect.Reflections => _settings.RayTracingReflectionQuality,
-            _ => _settings.RayTracingGiQuality,
-        };
-        string[] names = ["Low", "Medium", "High", "Ultra"];
-        int index = (int)current;
-        if (!ImGui.Combo(label, ref index, names, names.Length) || index == (int)current)
+            ImGui.TextDisabled("Ray tracing is unavailable on this device.");
             return;
-        RayTracingQualityPreset preset = (RayTracingQualityPreset)index;
-        switch (effect)
-        {
-            case RayTracingQualityEffect.Shadows:
-                _settings.RayTracingShadowQuality = preset;
-                _renderer.RayTracingShadowQuality = preset;
-                break;
-            case RayTracingQualityEffect.Reflections:
-                _settings.RayTracingReflectionQuality = preset;
-                _renderer.RayTracingReflectionQuality = preset;
-                break;
-            default:
-                _settings.RayTracingGiQuality = preset;
-                _renderer.RayTracingGiQuality = preset;
-                break;
         }
-        _dirty = true;
+        if (ImGui.Checkbox("Ray Tracing", ref _settings.RayTracingEnabled))
+        {
+            _renderer.RayTracingEnabled = _settings.RayTracingEnabled;
+            _dirty = true;
+        }
+        if (!_settings.RayTracingEnabled)
+            return;
+        if (ImGui.Checkbox("RT Reflections", ref _settings.RayTracingReflectionsEnabled))
+        {
+            _renderer.RayTracingReflectionsEnabled = _settings.RayTracingReflectionsEnabled;
+            _dirty = true;
+        }
+        if (_settings.RayTracingReflectionsEnabled)
+        {
+            if (ImGui.SliderFloat("RT reflection strength", ref _settings.RayTracingReflectionStrength, 0f, 1f))
+            {
+                _renderer.RayTracingReflectionStrength = _settings.RayTracingReflectionStrength;
+                _dirty = true;
+            }
+            if (ImGui.SliderFloat("RT roughness limit", ref _settings.RayTracingReflectionRoughnessLimit, 0.045f, 1f))
+            {
+                _renderer.RayTracingReflectionRoughnessLimit = _settings.RayTracingReflectionRoughnessLimit;
+                _dirty = true;
+            }
+            DrawRtQualityCombo("RT reflection quality", RayTracingQualityEffect.Reflections);
+        }
+        if (ImGui.SliderFloat("RT resolution scale", ref _settings.RayTracingResolutionScale, 0.25f, 1f, "%.2f"))
+        {
+            _renderer.RayTracingResolutionScale = _settings.RayTracingResolutionScale;
+            _dirty = true;
+        }
+        if (ImGui.SliderFloat("RT ray bias", ref _settings.RayTracingRayBias, 0.0001f, 0.1f, "%.4f"))
+        {
+            _renderer.RayTracingRayBias = _settings.RayTracingRayBias;
+            _dirty = true;
+        }
+        if (ImGui.SliderFloat("RT max distance", ref _settings.RayTracingMaxDistance, 1f, 1000f))
+        {
+            _renderer.RayTracingMaxDistance = _settings.RayTracingMaxDistance;
+            _dirty = true;
+        }
+        int rtSamples = _settings.RayTracingSamples;
+        if (ImGui.SliderInt("RT samples", ref rtSamples, 1, 8))
+        {
+            _settings.RayTracingSamples = rtSamples;
+            _renderer.RayTracingSamples = rtSamples;
+            _dirty = true;
+        }
+        bool adaptive = _settings.RayTracingAdaptiveQuality;
+        if (ImGui.Checkbox("RT adaptive quality", ref adaptive))
+        {
+            _settings.RayTracingAdaptiveQuality = adaptive;
+            _renderer.RayTracingAdaptiveQualityEnabled = adaptive;
+            _dirty = true;
+        }
     }
 
-    private void DrawShadowSettings()
+    private void DrawShadowSettings(bool rtAvailable)
     {
         ImGui.TextUnformatted("Shadows");
         ImGui.Separator();
+        bool rtActive = rtAvailable && _settings.RayTracingEnabled;
+        ShadowMode mode = rtActive
+            ? _settings.ShadowMode
+            : _settings.ShadowMode == ShadowMode.RayTraced ? ShadowMode.Cascaded : _settings.ShadowMode;
+        if (DrawModeCombo("Shadow mode", mode, ["Off", "Cascaded", "Ray Traced"]) is { } picked)
+        {
+            _settings.ShadowMode = picked;
+            _renderer.ShadowMode = picked;
+            _dirty = true;
+            mode = rtActive ? picked : picked == ShadowMode.RayTraced ? ShadowMode.Cascaded : picked;
+        }
+        if (mode == ShadowMode.Off)
+            return;
+        if (mode == ShadowMode.RayTraced)
+        {
+            DrawRtQualityCombo("RT shadow quality", RayTracingQualityEffect.Shadows);
+            return;
+        }
         CascadedShadowSettings shadows = _settings.Shadows;
         float strength = shadows.Strength;
         if (ImGui.SliderFloat("Shadow strength", ref strength, 0f, 1f))
@@ -609,28 +566,89 @@ public sealed class ProjectSettingsPanel : EditorPanel
         }
     }
 
-    private void DrawSsgiSettings()
+    private void DrawGiSettings(bool rtAvailable)
     {
         ImGui.TextUnformatted("Global illumination");
         ImGui.Separator();
-        if (ImGui.Checkbox("Screen-space GI", ref _settings.ScreenSpaceGiEnabled))
+        bool rtActive = rtAvailable && _settings.RayTracingEnabled;
+        GlobalIlluminationMode mode = rtActive
+            ? _settings.GiMode
+            : _settings.GiMode == GlobalIlluminationMode.RayTraced ? GlobalIlluminationMode.ScreenSpace : _settings.GiMode;
+        if (DrawGiModeCombo(mode) is { } picked)
         {
-            _renderer.ScreenSpaceGIEnabled = _settings.ScreenSpaceGiEnabled;
+            _settings.GiMode = picked;
+            _renderer.GiMode = picked;
+            _dirty = true;
+            mode = rtActive ? picked : picked == GlobalIlluminationMode.RayTraced ? GlobalIlluminationMode.ScreenSpace : picked;
+        }
+        switch (mode)
+        {
+            case GlobalIlluminationMode.Off:
+                return;
+            case GlobalIlluminationMode.RayTraced:
+                DrawRtQualityCombo("RT GI quality", RayTracingQualityEffect.Gi);
+                break;
+            default:
+                if (ImGui.SliderFloat("GI radius", ref _settings.ScreenSpaceGiRadius, 0.25f, 4f))
+                {
+                    _renderer.ScreenSpaceGIRadius = _settings.ScreenSpaceGiRadius;
+                    _dirty = true;
+                }
+                break;
+        }
+        if (ImGui.SliderFloat("GI intensity", ref _settings.ScreenSpaceGiIntensity, 0f, 2f))
+        {
+            _renderer.ScreenSpaceGIIntensity = _settings.ScreenSpaceGiIntensity;
             _dirty = true;
         }
-        if (_settings.ScreenSpaceGiEnabled)
+    }
+
+    private ShadowMode? DrawModeCombo(string label, ShadowMode displayed, string[] names)
+    {
+        int index = (int)displayed;
+        if (ImGui.Combo(label, ref index, names, names.Length) && index != (int)displayed)
+            return (ShadowMode)index;
+        return null;
+    }
+
+    private GlobalIlluminationMode? DrawGiModeCombo(GlobalIlluminationMode displayed)
+    {
+        string[] names = ["Off", "Screen Space", "Ray Traced"];
+        int index = (int)displayed;
+        if (ImGui.Combo("GI mode", ref index, names, names.Length) && index != (int)displayed)
+            return (GlobalIlluminationMode)index;
+        return null;
+    }
+
+    private void DrawRtQualityCombo(string label, RayTracingQualityEffect effect)
+    {
+        RayTracingQualityPreset current = effect switch
         {
-            if (ImGui.SliderFloat("GI intensity", ref _settings.ScreenSpaceGiIntensity, 0f, 2f))
-            {
-                _renderer.ScreenSpaceGIIntensity = _settings.ScreenSpaceGiIntensity;
-                _dirty = true;
-            }
-            if (ImGui.SliderFloat("GI radius", ref _settings.ScreenSpaceGiRadius, 0.25f, 4f))
-            {
-                _renderer.ScreenSpaceGIRadius = _settings.ScreenSpaceGiRadius;
-                _dirty = true;
-            }
+            RayTracingQualityEffect.Shadows => _settings.RayTracingShadowQuality,
+            RayTracingQualityEffect.Reflections => _settings.RayTracingReflectionQuality,
+            _ => _settings.RayTracingGiQuality,
+        };
+        string[] names = ["Low", "Medium", "High", "Ultra"];
+        int index = (int)current;
+        if (!ImGui.Combo(label, ref index, names, names.Length) || index == (int)current)
+            return;
+        RayTracingQualityPreset preset = (RayTracingQualityPreset)index;
+        switch (effect)
+        {
+            case RayTracingQualityEffect.Shadows:
+                _settings.RayTracingShadowQuality = preset;
+                _renderer.RayTracingShadowQuality = preset;
+                break;
+            case RayTracingQualityEffect.Reflections:
+                _settings.RayTracingReflectionQuality = preset;
+                _renderer.RayTracingReflectionQuality = preset;
+                break;
+            default:
+                _settings.RayTracingGiQuality = preset;
+                _renderer.RayTracingGiQuality = preset;
+                break;
         }
+        _dirty = true;
     }
 
     private void Save()

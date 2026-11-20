@@ -181,9 +181,9 @@ public sealed class RendererModule : IUpdatableModule
     private ShaderStages _rtCompositePushStages = ShaderStages.Compute;
     private int _rtPointLightIndex = -1;
     private bool _rtMasterEnabled = true;
-    private bool _rtShadowsEnabled = true;
     private bool _rtReflectionsEnabled = true;
-    private bool _rtGiEnabled = true;
+    private GlobalIlluminationMode _giMode = GlobalIlluminationMode.ScreenSpace;
+    private ShadowMode _shadowMode = ShadowMode.Cascaded;
     private int _rtSamples = 2;
     private float _rtResolutionScale = 1f;
     private bool _rtAdaptiveQualityEnabled = true;
@@ -243,7 +243,6 @@ public sealed class RendererModule : IUpdatableModule
     private bool _skipOverlayThisFrame;
     private bool _temporalEnabled;
     private bool _rayTracingEnabled;
-    private bool _screenSpaceGiEnabled = true;
     private bool _lastGiEnabled;
     private bool _lastGiViaRt;
     private bool _lastRtMasterEnabled;
@@ -254,6 +253,8 @@ public sealed class RendererModule : IUpdatableModule
     private Scene.Scene? _attachedScene;
 
     public float RenderInterpolationAlpha { get; set; } = 1f;
+
+    public string? ShaderCacheDirectory { get; set; }
 
     public string Name => "Renderer";
 
@@ -341,14 +342,32 @@ public sealed class RendererModule : IUpdatableModule
         _gameHistory.Invalidate();
     }
 
-    public bool ScreenSpaceGIEnabled
+    public GlobalIlluminationMode GiMode
     {
-        get => _screenSpaceGiEnabled;
+        get => _giMode;
         set
         {
-            if (_screenSpaceGiEnabled == value)
+            if (!Enum.IsDefined(value))
+                throw new ArgumentOutOfRangeException(nameof(value));
+            if (_giMode == value)
                 return;
-            _screenSpaceGiEnabled = value;
+            _giMode = value;
+            _sceneGiHistory.Invalidate();
+            _gameGiHistory.Invalidate();
+        }
+    }
+
+    public ShadowMode ShadowMode
+    {
+        get => _shadowMode;
+        set
+        {
+            if (!Enum.IsDefined(value))
+                throw new ArgumentOutOfRangeException(nameof(value));
+            if (_shadowMode == value)
+                return;
+            _shadowMode = value;
+            ResetTemporalHistory();
         }
     }
 
@@ -362,28 +381,10 @@ public sealed class RendererModule : IUpdatableModule
         set => _rtMasterEnabled = value;
     }
 
-    public bool RayTracingShadowsEnabled
-    {
-        get => _rtShadowsEnabled;
-        set
-        {
-            if (_rtShadowsEnabled == value)
-                return;
-            _rtShadowsEnabled = value;
-            ResetTemporalHistory();
-        }
-    }
-
     public bool RayTracingReflectionsEnabled
     {
         get => _rtReflectionsEnabled;
         set => _rtReflectionsEnabled = value;
-    }
-
-    public bool RayTracingGiEnabled
-    {
-        get => _rtGiEnabled;
-        set => _rtGiEnabled = value;
     }
 
     public float RayTracingResolutionScale
@@ -523,6 +524,12 @@ public sealed class RendererModule : IUpdatableModule
 
     public Action<ICommandBuffer>? OverlayRender { get; set; }
 
+    public Action<int>? PrepareEditorResources { get; set; }
+
+    public Action<ICommandBuffer, int>? RenderEditorResources { get; set; }
+
+    public ImageBasedLightingResources? ImageBasedLighting => _iblResources;
+
     public ITexture? DebugHdrTexture => _hdrTarget is null ? null : TryGetGraphTexture(_hdrTarget);
 
     public ImageLayout DebugHdrLayout => _hdrTarget?.CurrentLayout ?? ImageLayout.Undefined;
@@ -633,6 +640,21 @@ public sealed class RendererModule : IUpdatableModule
             RebuildTargets();
     }
 
+    public void SetViewExtents(Size2D viewExtent, Size2D gameViewExtent)
+    {
+        bool viewChanged = viewExtent.Width >= 8 && viewExtent.Height >= 8 && viewExtent != _viewExtent;
+        bool gameChanged = gameViewExtent.Width >= 8 && gameViewExtent.Height >= 8 && gameViewExtent != _gameViewExtent;
+        if (!viewChanged && !gameChanged)
+            return;
+        if (viewChanged)
+            _viewExtent = viewExtent;
+        if (gameChanged)
+            _gameViewExtent = gameViewExtent;
+        if (_initialized)
+            RebuildTargets();
+        NotifyCameraCut();
+    }
+
     public void AttachScene(Scene.Scene scene)
     {
         _attachedScene = scene ?? throw new ArgumentNullException(nameof(scene));
@@ -737,7 +759,7 @@ public sealed class RendererModule : IUpdatableModule
             _log.Warning(
                 $"Ray tracing is unavailable; retaining raster shadows. {_device.Features.RayTracingUnavailableReason ?? "The device lacks acceleration structures or ray-tracing pipelines."}");
         }
-        _compiler = new SlangShaderCompiler(_log);
+        _compiler = new SlangShaderCompiler(_log, cacheDirectory: ShaderCacheDirectory);
         _graph = new RenderGraph(_device, _log);
         int framesInFlight = (int)_rhi.FramesInFlight;
         _uniformRing = new FrameUniformRing(_device, framesInFlight, 256 * 1024);
@@ -835,6 +857,7 @@ public sealed class RendererModule : IUpdatableModule
         }
 
         _activeFrameSlot = (int)_rhi.CurrentFrameSlot;
+        PrepareEditorResources?.Invoke(_activeFrameSlot);
         foreach (IDescriptorSet frameSet in _frameSets[_activeFrameSlot])
             frameSet.Dispose();
         _frameSets[_activeFrameSlot].Clear();
@@ -898,6 +921,7 @@ public sealed class RendererModule : IUpdatableModule
         _device!.FlushUploads();
         ICommandBuffer commandBuffer = _rhi.GetFrameCommandBuffer();
         commandBuffer.Begin();
+        RenderEditorResources?.Invoke(commandBuffer, _activeFrameSlot);
         _graph.Execute(commandBuffer);
         commandBuffer.End();
         _rhi.EndFrame(commandBuffer);
@@ -1155,7 +1179,7 @@ public sealed class RendererModule : IUpdatableModule
             RenderGraphPass? giCompositePass = null;
             if (_giTarget is not null)
             {
-                bool giViaRt = _rayTracingEnabled && _rtMasterEnabled;
+                bool giViaRt = _lastGiViaRt;
                 if (giViaRt)
                 {
                     Func<bool> sceneVisible = () => _forwardPass!.ShouldExecute?.Invoke() ?? true;
@@ -1225,7 +1249,7 @@ public sealed class RendererModule : IUpdatableModule
         {
             RenderGraphPass gameShadowPass = _graph.AddGraphicsPass("GameShadows", (commandBuffer, _) => ExecuteShadowPass(commandBuffer, _currentGameShadowData));
             _graph.WritesDepth(gameShadowPass, _gameShadowDepth!, clear: true, 1f);
-            gameShadowPass.ShouldExecute = () => GameViewVisible && _gameCameraPresent;
+            gameShadowPass.ShouldExecute = () => GameViewVisible && _gameCameraPresent && EffectiveShadowMode == ShadowMode.Cascaded;
             _gameForwardPass = _graph.AddGraphicsPass("GameForward", (commandBuffer, _) => ExecuteForwardPass(commandBuffer, _gameRenderExtent.Width > 8 ? _gameRenderExtent : sceneExtent, _gameCameraAllocation));
             _graph.WritesColor(_gameForwardPass, _gameHdrTarget!, clear: true, SkyColor);
             if (_temporalEnabled)
@@ -1238,7 +1262,7 @@ public sealed class RendererModule : IUpdatableModule
             _graph.WritesDepth(_gameForwardPass, _gameDepth!, clear: true, 1f);
             _graph.ReadsShader(_gameForwardPass, _gameShadowDepth!, PipelineStages.FragmentShader);
             if (_rayTracingEnabled && _gameRtNormalRoughness is not null)
-                AddRtShadowChain(gameView: true, sceneExtent, _gameForwardPass);
+                AddRtShadowChain(gameView: true, _gameDepth!.Description.Extent, _gameForwardPass);
 
             RenderGraphPass? gameTemporalPass = null;
             RenderGraphPass? gameBloomPass = null;
@@ -1257,7 +1281,7 @@ public sealed class RendererModule : IUpdatableModule
 
                 if (_gameGiTarget is not null)
                 {
-                    bool giViaRt = _rayTracingEnabled && _rtMasterEnabled;
+                    bool giViaRt = _lastGiViaRt;
                     if (giViaRt)
                     {
                         Func<bool> gameVisible = () => _gameForwardPass!.ShouldExecute?.Invoke() ?? true;
@@ -1354,7 +1378,7 @@ public sealed class RendererModule : IUpdatableModule
                 graph.GetTexture(_swapchainTarget!),
                 ImageLayout.TransferDstOptimal);
         });
-        shadowPass.ShouldExecute = () => !_editorMode || SceneViewVisible;
+        shadowPass.ShouldExecute = () => (!_editorMode || SceneViewVisible) && EffectiveShadowMode == ShadowMode.Cascaded;
         _forwardPass.ShouldExecute = () => !_editorMode || SceneViewVisible;
         if (temporalPass is not null)
             temporalPass.ShouldExecute = _forwardPass.ShouldExecute;
@@ -1507,7 +1531,7 @@ public sealed class RendererModule : IUpdatableModule
         Func<bool> traceReady = () => forwardVisible()
             && _lastRtMasterEnabled
             && (gameView ? _gameRtCanTraceThisFrame : _sceneRtCanTraceThisFrame)
-            && (RayTracingReflectionsEnabled || _lastRtGiActive || (RayTracingShadowsEnabled && RtShadowLightActive(gameView ? _currentGameShadowData : _currentShadowData)));
+            && (RayTracingReflectionsEnabled || _lastRtGiActive || (ShadowMode == ShadowMode.RayTraced && RtShadowLightActive(gameView ? _currentGameShadowData : _currentShadowData)));
 
         RenderGraphPass prepass = _graph!.AddGraphicsPassBefore(forward, $"Rt{prefix}Prepass", (commandBuffer, _) => ExecuteRtPrepassPass(commandBuffer, extent, gameView));
         _graph.WritesColor(prepass, normalRoughness, clear: true, Vector4.Zero);
@@ -1520,7 +1544,7 @@ public sealed class RendererModule : IUpdatableModule
         _graph.ReadsShaderBindingTable(trace, _rtSbt!);
         _graph.WritesStorage(trace, visibility);
         _graph.WritesStorage(trace, validity);
-        trace.ShouldExecute = () => traceReady() && _rtShadowsEnabled && RtShadowLightActive(gameView ? _currentGameShadowData : _currentShadowData);
+        trace.ShouldExecute = () => traceReady() && ShadowMode == ShadowMode.RayTraced && RtShadowLightActive(gameView ? _currentGameShadowData : _currentShadowData);
         _graph.ReadsShader(forward, visibility);
 
         if (gameView)
@@ -1980,7 +2004,7 @@ public sealed class RendererModule : IUpdatableModule
 
     private void WriteRtShadowControl(FrameAllocation allocation, bool canTrace, ShadowData shadow, Size2D extent)
     {
-        bool shadowsActive = canTrace && _lastRtMasterEnabled && _rtShadowsEnabled;
+        bool shadowsActive = canTrace && _lastRtMasterEnabled && ShadowMode == ShadowMode.RayTraced;
         RtShadowControl control = new()
         {
             Enabled = shadowsActive && shadow.LightIndex >= 0 && shadow.LightDirectionAndStrength.W > 0f ? 1u : 0u,
@@ -1988,7 +2012,7 @@ public sealed class RendererModule : IUpdatableModule
             ExtentHeight = (uint)extent.Height,
             PointLightEnabled = shadowsActive && _rtPointLightIndex >= 0 ? 1u : 0u,
             PointLightIndex = unchecked((uint)_rtPointLightIndex),
-            RasterDisabled = _lastRtMasterEnabled && (!_rtShadowsEnabled || canTrace) ? 1u : 0u,
+            RasterDisabled = _lastRtMasterEnabled && ShadowMode != ShadowMode.Cascaded ? 1u : 0u,
         };
         _uniformRing!.Write(allocation, StructuredBytes(control));
     }
@@ -2234,8 +2258,12 @@ public sealed class RendererModule : IUpdatableModule
         if (gameExtent.Width <= 0 || gameExtent.Height <= 0)
             return;
         bool rtMaster = _rayTracingEnabled && _rtMasterEnabled;
-        bool rtGiActive = rtMaster && _rtGiEnabled;
-        if (_swapchainTarget is not null && sceneExtent == _lastTargetExtent && gameExtent == _lastGameExtent && _editorMode == _lastEditorMode && _presentExtent == rhi.Swapchain.Extent && _screenSpaceGiEnabled == _lastGiEnabled && ShadowMapSize == _lastShadowResolution && rtMaster == _lastRtMasterEnabled && rtGiActive == _lastRtGiActive && _rtResolutionScale == _lastRtResolutionScale)
+        GlobalIlluminationMode effectiveGiMode = !_rayTracingEnabled || !_rtMasterEnabled
+            ? (_giMode == GlobalIlluminationMode.RayTraced ? GlobalIlluminationMode.ScreenSpace : _giMode)
+            : _giMode;
+        bool rtGiActive = rtMaster && effectiveGiMode == GlobalIlluminationMode.RayTraced;
+        bool giEnabled = _temporalEnabled && effectiveGiMode != GlobalIlluminationMode.Off;
+        if (_swapchainTarget is not null && sceneExtent == _lastTargetExtent && gameExtent == _lastGameExtent && _editorMode == _lastEditorMode && _presentExtent == rhi.Swapchain.Extent && giEnabled == _lastGiEnabled && ShadowMapSize == _lastShadowResolution && rtMaster == _lastRtMasterEnabled && rtGiActive == _lastRtGiActive && _rtResolutionScale == _lastRtResolutionScale)
             return;
 
         rhi.WaitIdle();
@@ -2249,8 +2277,7 @@ public sealed class RendererModule : IUpdatableModule
         Size2D rtExtent = new(Math.Max(1, (int)MathF.Ceiling(sceneExtent.Width * _rtResolutionScale)), Math.Max(1, (int)MathF.Ceiling(sceneExtent.Height * _rtResolutionScale)));
         Size2D gameRtExtent = new(Math.Max(1, (int)MathF.Ceiling(gameExtent.Width * _rtResolutionScale)), Math.Max(1, (int)MathF.Ceiling(gameExtent.Height * _rtResolutionScale)));
         _gameRenderExtent = gameExtent;
-        bool giEnabled = _temporalEnabled && (rtMaster ? _rtGiEnabled : _screenSpaceGiEnabled);
-        bool giViaRt = giEnabled && rtMaster;
+        bool giViaRt = rtGiActive;
         if (giViaRt != _lastGiViaRt)
         {
             _sceneGiHistory.Invalidate();
@@ -2578,7 +2605,7 @@ public sealed class RendererModule : IUpdatableModule
         _lastTargetExtent = sceneExtent;
         _lastGameExtent = gameExtent;
         _lastEditorMode = _editorMode;
-        _lastGiEnabled = _screenSpaceGiEnabled;
+        _lastGiEnabled = giEnabled;
         _lastRtMasterEnabled = rtMaster;
         _lastRtResolutionScale = _rtResolutionScale;
         _lastRtGiActive = rtGiActive;
@@ -3136,11 +3163,20 @@ public sealed class RendererModule : IUpdatableModule
                 $"{name} push constant ABI mismatch: shader reports {pushSize} bytes, host uses {expectedSize} bytes.");
     }
 
+    private ShadowMode EffectiveShadowMode => !_rayTracingEnabled || !_rtMasterEnabled
+        ? (_shadowMode == ShadowMode.RayTraced ? ShadowMode.Cascaded : _shadowMode)
+        : _shadowMode;
+
     private ShadowData BuildShadowData(Camera camera, IReadOnlyList<ShadowCasterBounds> casterBounds)
     {
         int lightIndex = LightSelection.FindShadowLightIndex(_activeLights);
         Light? light = lightIndex >= 0 ? _activeLights[lightIndex] : null;
-        return CascadedShadows.Build(camera, light, lightIndex, _shadowSettings, casterBounds);
+        return CascadedShadows.Build(
+            camera,
+            light,
+            lightIndex,
+            EffectiveShadowMode == ShadowMode.Off ? _shadowSettings with { Strength = 0f } : _shadowSettings,
+            casterBounds);
     }
 
     private ITexture? TryGetGraphTexture(RenderGraphResource resource)

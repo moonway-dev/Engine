@@ -21,12 +21,13 @@ internal static class Program
         RhiModule rhiModule = CreateRhiModule(options);
         RendererModule renderer = new(rhiModule, Path.Combine(AppContext.BaseDirectory, "Shaders"));
         PhysicsModule physics = new();
-        string projectRoot = ResolveProjectRoot();
+        string projectRoot = options.ProjectPath is not null ? ResolveExplicitProjectRoot(options.ProjectPath) : ResolveProjectRoot();
         ScriptingModule scripting = new(Path.Combine(projectRoot, "Scripts"))
 {
     Physics = physics,
 };
         Basic3DModule module = new(options, rhiModule, renderer, physics, scripting);
+        renderer.ShaderCacheDirectory = Path.Combine(projectRoot, "Cache", "Shaders");
 
         ApplicationBuilder builder = ApplicationBuilder
             .Create()
@@ -49,7 +50,7 @@ internal static class Program
                 rhiModule,
                 renderer,
                 Path.Combine(AppContext.BaseDirectory, "Shaders"),
-                Path.Combine(AppContext.BaseDirectory, "Assets"));
+                projectRoot);
             editor.ScriptRuntime = scripting;
             builder.AddModule(editor);
             module.SetEditor(editor);
@@ -84,6 +85,24 @@ internal static class Program
             "Projects/SampleProject with Models/cube.obj not found. Searched: " + string.Join(", ", candidates.Select(c => Path.GetFullPath(c))));
     }
 
+    internal static string ResolveExplicitProjectRoot(string path)
+    {
+        string full = Path.GetFullPath(path);
+        if (File.Exists(full) && full.EndsWith(".project", StringComparison.OrdinalIgnoreCase))
+            return Path.GetDirectoryName(full) ?? throw new DirectoryNotFoundException($"Project directory for '{full}' not found.");
+        if (Directory.Exists(full))
+        {
+            if (Directory.EnumerateFiles(full, "*.project", SearchOption.TopDirectoryOnly).Any())
+                return full;
+            foreach (string child in Directory.EnumerateDirectories(full).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+            {
+                if (Directory.EnumerateFiles(child, "*.project", SearchOption.TopDirectoryOnly).Any())
+                    return child;
+            }
+        }
+        throw new DirectoryNotFoundException($"No .project file found at '{full}'.");
+    }
+
     private static RhiModule CreateRhiModule(SampleOptions options)
     {
         RHIConfiguration configuration = new()
@@ -113,6 +132,7 @@ internal sealed class SampleOptions
     public bool VSync { get; private set; } = true;
     public string? ScenePath { get; private set; }
     public string? ScreenshotPath { get; private set; }
+    public string? ProjectPath { get; private set; }
 
     public static SampleOptions Parse(string[] args)
     {
@@ -137,6 +157,10 @@ internal sealed class SampleOptions
                 case "--screenshot":
                     if (i + 1 < args.Length)
                         options.ScreenshotPath = args[++i];
+                    break;
+                case "--project":
+                    if (i + 1 < args.Length)
+                        options.ProjectPath = args[++i];
                     break;
                 case "--backend":
                     if (i + 1 < args.Length && args[++i].Equals("null", StringComparison.OrdinalIgnoreCase))
@@ -179,6 +203,7 @@ internal sealed class Basic3DModule(
     private EditorModule? _editor;
     private Vector2 _lastMousePosition;
     private bool _mouseCaptured;
+    private Vector2 _cursorRestorePosition;
     private float _orbitYaw = MathUtil.DegToRad * 35f;
     private float _orbitPitch = MathUtil.DegToRad * 25f;
     private float _flyYaw = MathUtil.DegToRad * 35f;
@@ -267,11 +292,13 @@ internal sealed class Basic3DModule(
         _cameraObject = _scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
         renderer.MeshResolver = ResolveMesh;
         if (Environment.GetEnvironmentVariable("ENGINE_NOGI") == "1")
-            renderer.RayTracingGiEnabled = false;
+            renderer.GiMode = GlobalIlluminationMode.Off;
+        if (Environment.GetEnvironmentVariable("ENGINE_SSGI") == "1")
+            renderer.GiMode = GlobalIlluminationMode.ScreenSpace;
         if (Environment.GetEnvironmentVariable("ENGINE_NOREFL") == "1")
             renderer.RayTracingReflectionsEnabled = false;
         if (Environment.GetEnvironmentVariable("ENGINE_NOSHADOW") == "1")
-            renderer.RayTracingShadowsEnabled = false;
+            renderer.ShadowMode = ShadowMode.Off;
         renderer.MeshRequestResolver = key => _meshes.TryGetValue(key, out Mesh? mesh) ? mesh : _assets.RequestMesh(key);
         renderer.MeshImportFailedResolver = key => !_meshes.ContainsKey(key) && _assets.IsMeshImportFailed(key);
         renderer.ModelPartRequestResolver = (key, part) => _assets.RequestMesh(key, part);
@@ -441,8 +468,13 @@ internal sealed class Basic3DModule(
 
     private void HandleFlyInput()
     {
+        if (_editor!.IsPlayModeActive)
+        {
+            _mouseCaptured = false;
+            return;
+        }
         IWindow window = _window!;
-        bool overScene = _editor!.ViewportHovered;
+        bool overScene = _editor.ViewportHovered;
         bool sceneFocused = _editor.SceneViewFocused;
         bool hasSceneInput = overScene && _editor.ApplicationFocused;
         bool canUseKeyboard = _editor.ApplicationFocused && sceneFocused && !_editor.WantTextInput;
@@ -457,16 +489,26 @@ internal sealed class Basic3DModule(
             if (!_mouseCaptured)
             {
                 _mouseCaptured = true;
+                _cursorRestorePosition = mouse.Position;
                 window.CursorMode = CursorMode.Disabled;
                 window.ResetMouseDelta();
             }
+            _editor.SetMousePositionOverride(_editor.SceneViewCenter);
             Vector2 delta = mouse.Delta;
             _flyYaw -= delta.X * 0.004f;
             _flyPitch = MathUtil.Clamp(_flyPitch - delta.Y * 0.004f, -MathUtil.HalfPi + 0.05f, MathUtil.HalfPi - 0.05f);
         }
-        else
+        else if (_mouseCaptured)
         {
             _mouseCaptured = false;
+            window.CursorMode = CursorMode.Normal;
+            window.SetCursorPosition(_cursorRestorePosition);
+            window.ResetMouseDelta();
+            _editor.SetMousePositionOverride(null);
+        }
+        else
+        {
+            _editor.SetMousePositionOverride(null);
             if (window.CursorMode != CursorMode.Normal)
                 window.CursorMode = CursorMode.Normal;
         }

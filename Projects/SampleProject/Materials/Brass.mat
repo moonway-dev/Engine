@@ -3,14 +3,28 @@
   "Shader": "PBR Lit",
   "Parent": "",
   "Overrides": {
-    "AlbedoColor": { "X": 0.85, "Y": 0.65, "Z": 0.3 },
+    "AlbedoColor": {
+      "X": 0.85,
+      "Y": 0.59067357,
+      "Z": 0.29999995
+    },
     "Metallic": 1.0,
     "Roughness": 0.22,
     "NormalScale": 1.0,
     "AoStrength": 1.0,
-    "UvScale": { "X": 1.0, "Y": 1.0 },
-    "UvOffset": { "X": 0.0, "Y": 0.0 },
-    "EmissionColor": { "X": 1.0, "Y": 1.0, "Z": 1.0 },
+    "UvScale": {
+      "X": 1.0,
+      "Y": 1.0
+    },
+    "UvOffset": {
+      "X": 0.0,
+      "Y": 0.0
+    },
+    "EmissionColor": {
+      "X": 1.0,
+      "Y": 1.0,
+      "Z": 1.0
+    },
     "EmissiveIntensity": 0.0
   }
 }

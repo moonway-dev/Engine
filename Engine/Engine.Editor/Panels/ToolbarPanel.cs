@@ -2,23 +2,30 @@ using Engine.Editor.Documents;
 using Engine.Scene;
 using ImGuiNET;
 using NumericsVector2 = System.Numerics.Vector2;
+using NumericsVector4 = System.Numerics.Vector4;
 
 namespace Engine.Editor.Panels;
 
 public sealed class ToolbarPanel
 {
+    private const float IconSize = 11f;
+    private const float IconFramePadding = 3f;
+    private static readonly NumericsVector2 IconUvMax = new(1f, 1f);
+    private static readonly NumericsVector4 Transparent = new(0f, 0f, 0f, 0f);
+
     private readonly EditorContext _context;
     private readonly PlayModeController? _playMode;
+    private readonly Func<string, IntPtr>? _icons;
     private string _pathBuffer = string.Empty;
     private bool _showOpen;
     private bool _showSaveAs;
     private string? _error;
-    private const float PlayButtonWidth = 58f;
 
-    public ToolbarPanel(EditorContext context, PlayModeController? playMode = null)
+    public ToolbarPanel(EditorContext context, PlayModeController? playMode = null, Func<string, IntPtr>? icons = null)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _playMode = playMode;
+        _icons = icons;
     }
 
     public void Draw(Action? drawAdditionalMenus = null)
@@ -63,10 +70,6 @@ public sealed class ToolbarPanel
             }
             drawAdditionalMenus?.Invoke();
             DrawPlayControls();
-            ImGui.Separator();
-            ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
-            ImGui.TextUnformatted(_context.ActiveTitle);
-            ImGui.PopStyleColor();
             ImGui.EndMainMenuBar();
         }
         DrawPathDialog();
@@ -81,49 +84,70 @@ public sealed class ToolbarPanel
         if (_playMode is null)
             return;
         EditorPlayState state = _playMode.State;
-        float totalWidth = PlayButtonWidth * 4 + ImGui.GetStyle().ItemSpacing.X * 3;
-        float centered = ImGui.GetWindowWidth() * 0.5f - totalWidth * 0.5f;
-        if (centered > ImGui.GetCursorPosX() + 16f)
-            ImGui.SetCursorPosX(centered);
+        float buttonWidth = IconSize + IconFramePadding * 2f;
+        float totalWidth = buttonWidth * 3 + ImGui.GetStyle().ItemSpacing.X * 2f;
+        float right = ImGui.GetWindowWidth() - totalWidth;
+        ImGui.SetCursorPosX(MathF.Max(ImGui.GetCursorPosX(), right));
 
-        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Stopped ? EditorTheme.Success : EditorTheme.MutedText);
-        if (ImGui.Button("Play", new NumericsVector2(PlayButtonWidth, 0)) && state == EditorPlayState.Stopped)
-            _playMode.EnterPlay();
-        ImGui.PopStyleColor();
+        bool playing = state != EditorPlayState.Stopped;
+        if (DrawIconButton(playing ? "stop" : "play", "##PlayStop",
+                playing ? EditorTheme.Error : EditorTheme.Success))
+        {
+            if (playing)
+                _playMode.ExitPlay();
+            else
+                _playMode.EnterPlay();
+        }
+        DrawIconButtonTooltip(playing ? "Stop (Ctrl+P)" : "Play (Ctrl+P)");
         ImGui.SameLine();
-        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Playing ? EditorTheme.Warning : EditorTheme.MutedText);
-        if (ImGui.Button(state == EditorPlayState.Paused ? "Resume" : "Pause", new NumericsVector2(PlayButtonWidth, 0)))
+
+        if (DrawIconButton(state == EditorPlayState.Paused ? "play" : "pause",
+                "##PauseResume",
+                state == EditorPlayState.Playing ? EditorTheme.Warning : EditorTheme.MutedText,
+                enabled: state != EditorPlayState.Stopped))
         {
             if (state == EditorPlayState.Playing)
                 _playMode.Pause();
             else if (state == EditorPlayState.Paused)
                 _playMode.Resume();
         }
-        ImGui.PopStyleColor();
+        DrawIconButtonTooltip(state == EditorPlayState.Paused ? "Resume (Ctrl+Shift+P)" : "Pause (Ctrl+Shift+P)");
         ImGui.SameLine();
-        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Paused ? EditorTheme.MutedText : EditorTheme.MutedText * 0.55f);
-        if (ImGui.Button("Step", new NumericsVector2(PlayButtonWidth, 0)) && state == EditorPlayState.Paused)
+
+        if (DrawIconButton("step", "##Step", EditorTheme.MutedText, enabled: state == EditorPlayState.Paused))
             _playMode.Step();
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushStyleColor(ImGuiCol.Text, state == EditorPlayState.Stopped ? EditorTheme.MutedText : EditorTheme.Error);
-        if (ImGui.Button("Stop", new NumericsVector2(PlayButtonWidth, 0)) && state != EditorPlayState.Stopped)
-            _playMode.ExitPlay();
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.PushStyleColor(ImGuiCol.Text, state switch
+        DrawIconButtonTooltip("Step One Frame (F10)");
+    }
+
+    private bool DrawIconButton(string icon, string id, NumericsVector4 tint, bool enabled = true)
+    {
+        if (!enabled)
+            ImGui.BeginDisabled();
+        IntPtr texture = _icons?.Invoke(icon) ?? IntPtr.Zero;
+        bool clicked;
+        if (texture == IntPtr.Zero)
         {
-            EditorPlayState.Playing => EditorTheme.Success,
-            EditorPlayState.Paused => EditorTheme.Warning,
-            _ => EditorTheme.MutedText,
-        });
-        ImGui.TextUnformatted(state switch
+            clicked = ImGui.Button(id, new NumericsVector2(IconSize + IconFramePadding * 2f, IconSize + IconFramePadding * 2f));
+        }
+        else
         {
-            EditorPlayState.Playing => "Playing",
-            EditorPlayState.Paused => "Paused",
-            _ => "Editing",
-        });
-        ImGui.PopStyleColor();
+            ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new NumericsVector2(IconFramePadding, IconFramePadding));
+            ImGui.PushStyleColor(ImGuiCol.Button, Transparent);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new NumericsVector4(1f, 1f, 1f, 0.08f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new NumericsVector4(1f, 1f, 1f, 0.16f));
+            clicked = ImGui.ImageButton(id, texture, new NumericsVector2(IconSize, IconSize), NumericsVector2.Zero, IconUvMax, Transparent, tint);
+            ImGui.PopStyleColor(3);
+            ImGui.PopStyleVar();
+        }
+        if (!enabled)
+            ImGui.EndDisabled();
+        return clicked && enabled;
+    }
+
+    private static void DrawIconButtonTooltip(string tooltip)
+    {
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(tooltip);
     }
 
     private void OpenPathDialog(bool saveAs)

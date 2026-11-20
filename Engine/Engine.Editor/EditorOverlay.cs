@@ -44,9 +44,17 @@ public sealed class EditorOverlay : IDisposable
 
     public Size2D DesiredViewExtent => _sceneView.DesiredExtent;
 
+    public Size2D DesiredGameViewExtent => _gameView.IsOpen ? _gameView.DesiredExtent : default;
+
+    public bool GameViewFocused => _gameView.IsWindowFocused;
+
+    public bool GameViewHovered => _gameView.IsHovered;
+
     public bool ViewportHovered => _sceneView.IsHovered;
 
     public System.Numerics.Vector2 SceneViewCenter => _sceneView.ImageMinimum + _sceneView.ImageSize * 0.5f;
+
+    public System.Numerics.Vector2 GameViewCenter => _gameView.ImageMinimum + _gameView.ImageSize * 0.5f;
 
     public System.Numerics.Vector2 SceneViewWindowPosition => _sceneView.WindowPosition;
 
@@ -68,16 +76,18 @@ public sealed class EditorOverlay : IDisposable
         string projectSettingsPath,
         FeatureInfo? graphicsFeatures = null,
         IRHI? rhi = null,
-        PlayModeController? playMode = null)
+        PlayModeController? playMode = null,
+        Func<string, IntPtr>? iconResolver = null,
+        Func<Engine.Editor.Models.AssetEntry, AssetPreview>? previewResolver = null)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _playMode = playMode;
         _gizmo = new TransformGizmo(context, renderer);
-        _toolbar = new ToolbarPanel(context, playMode);
+        _toolbar = new ToolbarPanel(context, playMode, iconResolver);
         _hierarchy = new HierarchyPanel(context);
         _inspector = new InspectorPanel(context);
-        _projectBrowser = new ProjectBrowserPanel(context);
+        _projectBrowser = new ProjectBrowserPanel(context, iconResolver, previewResolver);
         _console = new ConsolePanel(logSink);
         _stats = new StatsPanel(context, renderer, graphicsFeatures, rhi);
         _projectSettings = new ProjectSettingsPanel(renderer, projectSettings, projectSettingsPath);
@@ -108,8 +118,6 @@ public sealed class EditorOverlay : IDisposable
             panel.Draw();
         _renderer.SceneViewVisible = _sceneView.IsRenderVisible;
         _renderer.GameViewVisible = _gameView.IsRenderVisible;
-        if (_gameView.IsOpen)
-            _renderer.SetGameViewExtent(_gameView.DesiredExtent);
         HandleSceneViewInteraction();
         if (_context.Error is { } error)
         {

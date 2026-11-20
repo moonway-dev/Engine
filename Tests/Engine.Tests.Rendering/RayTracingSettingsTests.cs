@@ -34,9 +34,9 @@ public sealed class RayTracingSettingsTests
             ProjectSettings settings = new()
             {
                 RayTracingEnabled = false,
-                RayTracingShadowsEnabled = true,
+                GiMode = GlobalIlluminationMode.RayTraced,
+                ShadowMode = ShadowMode.RayTraced,
                 RayTracingReflectionsEnabled = false,
-                RayTracingGiEnabled = true,
                 RayTracingSamples = samples,
                 RayTracingResolutionScale = scale,
                 RayTracingRayBias = 0.003f,
@@ -52,9 +52,9 @@ public sealed class RayTracingSettingsTests
             RendererModule renderer = new(new RhiModule(new NullRHIFactory()), ShaderDirectory());
             loaded.ApplyTo(renderer);
             Assert.False(renderer.RayTracingEnabled);
-            Assert.True(renderer.RayTracingShadowsEnabled);
+            Assert.Equal(GlobalIlluminationMode.RayTraced, renderer.GiMode);
+            Assert.Equal(ShadowMode.RayTraced, renderer.ShadowMode);
             Assert.False(renderer.RayTracingReflectionsEnabled);
-            Assert.True(renderer.RayTracingGiEnabled);
             Assert.Equal(samples, renderer.RayTracingSamples);
             Assert.Equal(scale, renderer.RayTracingResolutionScale);
             Assert.Equal(0.003f, renderer.RayTracingRayBias);
@@ -65,12 +65,14 @@ public sealed class RayTracingSettingsTests
             Assert.Equal(RayTracingQualityPreset.Medium, renderer.RayTracingGiQuality);
             Assert.False(renderer.RayTracingAdaptiveQualityEnabled);
             renderer.RayTracingEnabled = true;
-            renderer.RayTracingGiEnabled = false;
+            renderer.GiMode = GlobalIlluminationMode.ScreenSpace;
+            renderer.ShadowMode = ShadowMode.Off;
             renderer.RayTracingShadowQuality = RayTracingQualityPreset.Medium;
             renderer.RayTracingAdaptiveQualityEnabled = true;
             ProjectSettings captured = ProjectSettings.FromRenderer(renderer, false);
             Assert.True(captured.RayTracingEnabled);
-            Assert.False(captured.RayTracingGiEnabled);
+            Assert.Equal(GlobalIlluminationMode.ScreenSpace, captured.GiMode);
+            Assert.Equal(ShadowMode.Off, captured.ShadowMode);
             Assert.Equal(scale, captured.RayTracingResolutionScale);
             Assert.Equal(samples, captured.RayTracingSamples);
             Assert.Equal(RayTracingQualityPreset.Medium, captured.RayTracingShadowQuality);
@@ -83,6 +85,44 @@ public sealed class RayTracingSettingsTests
             if (Directory.Exists(directory))
                 Directory.Delete(directory, true);
         }
+    }
+
+    [Fact]
+    public void ProjectSettings_MigratesLegacyBooleanFields()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "EngineRtSettings", Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "Project.project");
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(path, """
+                {
+                  "Exposure": 1.2,
+                  "RayTracingEnabled": true,
+                  "RayTracingShadowsEnabled": true,
+                  "RayTracingGiEnabled": false,
+                  "ScreenSpaceGiEnabled": false,
+                  "RayTracingSamples": 2,
+                  "VSync": true
+                }
+                """);
+            ProjectSettings loaded = ProjectSettings.Load(path);
+            Assert.Equal(ShadowMode.RayTraced, loaded.ShadowMode);
+            Assert.Equal(GlobalIlluminationMode.Off, loaded.GiMode);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void RendererGiAndShadowModesValidateInput()
+    {
+        RendererModule renderer = new(new RhiModule(new NullRHIFactory()), ShaderDirectory());
+        Assert.Throws<ArgumentOutOfRangeException>(() => renderer.GiMode = (GlobalIlluminationMode)42);
+        Assert.Throws<ArgumentOutOfRangeException>(() => renderer.ShadowMode = (ShadowMode)42);
     }
 
     [Fact]

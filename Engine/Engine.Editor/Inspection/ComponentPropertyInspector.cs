@@ -51,9 +51,48 @@ public static class ComponentPropertyInspector
         if (ComponentInspectorHooks.TryDraw(context, component))
             return;
         ImGui.PushID(component.Id.ToString("N"));
+        string? currentGroup = null;
+        bool groupOpen = true;
         foreach (PropertyInfo property in GetProperties(component.GetType()))
-            DrawProperty(context, component, property);
+        {
+            string? group = property.GetCustomAttribute<InspectorGroupAttribute>()?.Name;
+            if (!string.Equals(group, currentGroup, StringComparison.Ordinal))
+            {
+                if (currentGroup is not null)
+                    ImGui.Unindent(8f);
+                currentGroup = group;
+                if (group is not null)
+                {
+                    ImGui.Spacing();
+                    groupOpen = ImGui.CollapsingHeader(group, ImGuiTreeNodeFlags.DefaultOpen);
+                    ImGui.Indent(8f);
+                }
+            }
+            if (currentGroup is null || groupOpen)
+                DrawProperty(context, component, property);
+        }
+        if (currentGroup is not null)
+            ImGui.Unindent(8f);
+        DrawButtons(component);
         ImGui.PopID();
+    }
+
+    private static void DrawButtons(Component component)
+    {
+        List<(MethodInfo Method, string Label)> buttons = [.. component.GetType()
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Select(method => (Method: method, Label: method.GetCustomAttribute<InspectorButtonAttribute>()?.Label))
+            .Where(button => button.Label is not null && button.Method.ReturnType == typeof(void) && button.Method.GetParameters().Length == 0)];
+        if (buttons.Count == 0)
+            return;
+        ImGui.Spacing();
+        foreach ((MethodInfo method, string? label) in buttons)
+        {
+            if (ImGui.SmallButton($"{label}##{method.Name}"))
+                method.Invoke(component, null);
+            ImGui.SameLine();
+        }
+        ImGui.NewLine();
     }
 
     private static IReadOnlyList<PropertyInfo> GetProperties(Type type)
@@ -238,6 +277,16 @@ public static class ComponentPropertyInspector
         if (ImGui.InputText(id, ref value, 1024))
             Execute(context, component, member, read, write, value);
         InspectorEditing.EndMergeAfterEdit(context);
+        if (member.GetCustomAttribute<InspectorAssetDropAttribute>() is not { } drop
+            || !Enum.TryParse(drop.Kind, ignoreCase: true, out AssetKind acceptedKind))
+            return;
+        if (ImGui.BeginDragDropTarget())
+        {
+            if (ImGuiDragPayloads.AcceptAsset() is { } accepted
+                && (acceptedKind == AssetKind.Unknown || accepted.Kind == acceptedKind))
+                Execute(context, component, member, read, write, accepted.RelativePath, false);
+            ImGui.EndDragDropTarget();
+        }
     }
 
     private static void DrawEnum(
@@ -250,8 +299,25 @@ public static class ComponentPropertyInspector
     {
         Type type = MemberType(member);
         object value = read(component)!;
-        string[] names = Enum.GetNames(type);
-        int index = Array.IndexOf(names, Enum.GetName(type, value));
+        if (type.GetCustomAttribute<FlagsAttribute>() is not null)
+        {
+            ulong bits = Convert.ToUInt64(value);
+            foreach (object flag in Enum.GetValues(type))
+            {
+                ulong bit = Convert.ToUInt64(flag);
+                if (bit == 0)
+                    continue;
+                bool enabled = (bits & bit) == bit;
+                if (ImGui.Checkbox($"{Humanize(Enum.GetName(type, flag)!)}{id}", ref enabled))
+                {
+                    bits = enabled ? bits | bit : bits & ~bit;
+                    Execute(context, component, member, read, write, Enum.ToObject(type, bits), false);
+                }
+            }
+            return;
+        }
+        string[] names = [.. Enum.GetNames(type).Select(Humanize)];
+        int index = Array.IndexOf(Enum.GetNames(type), Enum.GetName(type, value));
         if (index < 0)
             index = 0;
         if (ImGui.Combo(id, ref index, names, names.Length))

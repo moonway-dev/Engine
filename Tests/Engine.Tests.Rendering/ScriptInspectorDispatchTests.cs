@@ -1,8 +1,10 @@
+using System.Reflection;
 using Engine.Editor;
 using Engine.Editor.Documents;
 using Engine.Editor.Inspection;
 using Engine.Mathematics;
 using Engine.Physics;
+using Engine.Rendering;
 using Engine.Scene;
 using Xunit;
 
@@ -85,6 +87,21 @@ public sealed class ScriptInspectorDispatchTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void RigidbodyInspectorDrawsFromGenericAttributes()
+    {
+        PropertyInfo constraints = typeof(RigidBodyComponent).GetProperty(nameof(RigidBodyComponent.Constraints))!;
+        Assert.NotNull(constraints.GetCustomAttribute<InspectorGroupAttribute>());
+        Assert.True(typeof(RigidbodyConstraints).GetCustomAttribute<FlagsAttribute>() is not null);
+        MethodInfo sleep = typeof(RigidBodyComponent).GetMethod(nameof(RigidBodyComponent.Sleep))!;
+        Assert.NotNull(sleep.GetCustomAttribute<InspectorButtonAttribute>());
+        Assert.NotNull(typeof(RigidBodyComponent).GetProperty(nameof(RigidBodyComponent.IsKinematic))!.GetCustomAttribute<InspectorHiddenAttribute>());
+        PropertyInfo resourceKey = typeof(MeshRendererComponent).GetProperty(nameof(MeshRendererComponent.ResourceKey))!;
+        InspectorAssetDropAttribute? drop = resourceKey.GetCustomAttribute<InspectorAssetDropAttribute>();
+        Assert.NotNull(drop);
+        Assert.Equal("Mesh", drop!.Kind);
     }
 
     [Fact]

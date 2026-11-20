@@ -43,9 +43,9 @@ public sealed class PlayerControllerTests : IDisposable
         SceneModel scene = new("Camera relative movement");
         scripting.AttachScene(scene);
         GameObject player = scene.CreateObject("Player");
-        player.Transform.Rotation = Quaternion.FromYawPitchRoll(parentYaw * MathUtil.DegToRad, 0f, 0f);
+        player.Transform.Rotation = Quaternion.FromYawPitchRoll((parentYaw + yaw) * MathUtil.DegToRad, 0f, 0f);
         GameObject cameraObject = scene.CreateObject("Camera", player);
-        cameraObject.Transform.LocalRotation = Quaternion.FromYawPitchRoll(yaw * MathUtil.DegToRad, pitch * MathUtil.DegToRad, 0f);
+        cameraObject.Transform.LocalRotation = Quaternion.FromYawPitchRoll(0f, pitch * MathUtil.DegToRad, 0f);
         cameraObject.AddComponent<CameraComponent>();
         ScriptComponent component = (ScriptComponent)player.AddComponent("PlayerController");
         component.Instance!.GetType().GetField("LockCursor")!.SetValue(component.Instance, false);
@@ -85,13 +85,18 @@ public sealed class PlayerControllerTests : IDisposable
         scripting.BeginPlay(scene);
         scripting.Update(new FrameTime(1f / 60f, 1f / 60f, 0f, 1f / 60f, 0));
         float sensitivity = (float)component.Instance.GetType().GetField("MouseSensitivity")!.GetValue(component.Instance)!;
-        Quaternion expected = Quaternion.FromYawPitchRoll(-mouseX * sensitivity, -mouseY * sensitivity, 0f);
-        Assert.Equal(expected.X, cameraObject.Transform.LocalRotation.X, 5);
-        Assert.Equal(expected.Y, cameraObject.Transform.LocalRotation.Y, 5);
-        Assert.Equal(expected.Z, cameraObject.Transform.LocalRotation.Z, 5);
-        Assert.Equal(expected.W, cameraObject.Transform.LocalRotation.W, 5);
+        Quaternion expectedPlayer = Quaternion.FromYawPitchRoll(-mouseX * sensitivity, 0f, 0f);
+        Assert.Equal(expectedPlayer.X, player.Transform.Rotation.X, 5);
+        Assert.Equal(expectedPlayer.Y, player.Transform.Rotation.Y, 5);
+        Assert.Equal(expectedPlayer.Z, player.Transform.Rotation.Z, 5);
+        Assert.Equal(expectedPlayer.W, player.Transform.Rotation.W, 5);
+        Quaternion expectedCamera = Quaternion.FromYawPitchRoll(0f, -mouseY * sensitivity, 0f);
+        Assert.Equal(expectedCamera.X, cameraObject.Transform.LocalRotation.X, 5);
+        Assert.Equal(expectedCamera.Y, cameraObject.Transform.LocalRotation.Y, 5);
+        Assert.Equal(expectedCamera.Z, cameraObject.Transform.LocalRotation.Z, 5);
+        Assert.Equal(expectedCamera.W, cameraObject.Transform.LocalRotation.W, 5);
         if (mouseX != 0f)
-            Assert.Equal(mouseX > 0f, cameraObject.Transform.Forward.X > 0f);
+            Assert.Equal(mouseX > 0f, player.Transform.Forward.X > 0f);
     }
 
     [Fact]

@@ -11,6 +11,8 @@ public sealed class HierarchyPanel : EditorPanel
     private Guid? _renamingId;
     private string _renameBuffer = string.Empty;
     private bool _focusRename;
+    private Guid? _lastSelectedId;
+    private readonly HashSet<Guid> _pendingExpand = [];
 
     public override string Title => "Hierarchy";
 
@@ -33,6 +35,7 @@ public sealed class HierarchyPanel : EditorPanel
         IsOpen = open;
         DrawToolbar();
         SceneDocument document = _context.Document;
+        TrackSelectionExpansion(document);
         foreach (GameObject root in document.Scene.RootObjects.ToArray())
             DrawObjectNode(root);
         if (ImGui.BeginDragDropTarget())
@@ -79,6 +82,19 @@ public sealed class HierarchyPanel : EditorPanel
         ImGui.Separator();
     }
 
+    private void TrackSelectionExpansion(SceneDocument document)
+    {
+        Guid? selected = document.SelectedObjectId;
+        if (selected == _lastSelectedId)
+            return;
+        _lastSelectedId = selected;
+        _pendingExpand.Clear();
+        if (selected is not { } id)
+            return;
+        for (GameObject? current = document.Scene.FindById(id)?.Parent; current is not null; current = current.Parent)
+            _pendingExpand.Add(current.Id);
+    }
+
     private void DrawObjectNode(GameObject gameObject)
     {
         SceneDocument document = _context.Document;
@@ -117,6 +133,8 @@ public sealed class HierarchyPanel : EditorPanel
             flags |= ImGuiTreeNodeFlags.Selected;
         if (gameObject.Children.Count == 0)
             flags |= ImGuiTreeNodeFlags.Leaf;
+        if (_pendingExpand.Remove(gameObject.Id))
+            ImGui.SetNextItemOpen(true, ImGuiCond.Always);
         if (!gameObject.Active)
             ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
         bool treeOpen = ImGui.TreeNodeEx($"{gameObject.Name}##Node", flags);

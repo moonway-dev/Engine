@@ -18,4 +18,7 @@
   <ItemGroup>
     <PackageReference Include="ImGui.NET" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Icons\*.png" />
+  </ItemGroup>
 </Project>

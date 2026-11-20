@@ -11,19 +11,18 @@ public sealed class ProjectSettings
     public CascadedShadowSettings Shadows = new();
     public float ShadowConstantBias = 1.25f;
     public float ShadowSlopeBias = 1.75f;
-    public bool ScreenSpaceGiEnabled = true;
+    public GlobalIlluminationMode GiMode = GlobalIlluminationMode.ScreenSpace;
     public float ScreenSpaceGiIntensity = 0.5f;
     public float ScreenSpaceGiRadius = 1.5f;
     public bool RayTracingEnabled = true;
-    public bool RayTracingShadowsEnabled = true;
     public bool RayTracingReflectionsEnabled = true;
-    public bool RayTracingGiEnabled = true;
     public float RayTracingReflectionStrength = 0.6f;
     public int RayTracingSamples = 2;
     public float RayTracingResolutionScale = 1f;
     public float RayTracingRayBias = 0.002f;
     public float RayTracingMaxDistance = 200f;
     public float RayTracingReflectionRoughnessLimit = 0.3f;
+    public ShadowMode ShadowMode = ShadowMode.Cascaded;
     public RayTracingQualityPreset RayTracingShadowQuality = RayTracingQualityPreset.High;
     public RayTracingQualityPreset RayTracingReflectionQuality = RayTracingQualityPreset.High;
     public RayTracingQualityPreset RayTracingGiQuality = RayTracingQualityPreset.High;
@@ -40,10 +39,46 @@ public sealed class ProjectSettings
     {
         if (!File.Exists(path))
             return new ProjectSettings();
-        ProjectSettings settings = JsonSerializer.Deserialize<ProjectSettings>(File.ReadAllText(path), SerializerOptions)
+        string json = File.ReadAllText(path);
+        ProjectSettings settings = JsonSerializer.Deserialize<ProjectSettings>(json, SerializerOptions)
             ?? throw new InvalidOperationException($"Project settings file '{path}' is empty or invalid.");
+        settings.ApplyLegacyFields(json);
         settings.Shadows.Validate();
         return settings;
+    }
+
+    private void ApplyLegacyFields(string json)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return;
+            foreach (JsonProperty property in document.RootElement.EnumerateObject())
+            {
+                switch (property.Name)
+                {
+                    case "ScreenSpaceGiEnabled" when property.Value.ValueKind == JsonValueKind.True && GiMode == GlobalIlluminationMode.ScreenSpace:
+                        GiMode = GlobalIlluminationMode.ScreenSpace;
+                        break;
+                    case "ScreenSpaceGiEnabled" when property.Value.ValueKind == JsonValueKind.False:
+                        GiMode = GlobalIlluminationMode.Off;
+                        break;
+                    case "RayTracingGiEnabled" when property.Value.ValueKind == JsonValueKind.True && RayTracingEnabled:
+                        GiMode = GlobalIlluminationMode.RayTraced;
+                        break;
+                    case "RayTracingShadowsEnabled" when property.Value.ValueKind == JsonValueKind.True && RayTracingEnabled:
+                        ShadowMode = ShadowMode.RayTraced;
+                        break;
+                    case "RayTracingShadowsEnabled" when property.Value.ValueKind == JsonValueKind.False && ShadowMode == ShadowMode.Cascaded:
+                        ShadowMode = ShadowMode.Cascaded;
+                        break;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
     }
 
     public void Save(string path)
@@ -62,19 +97,18 @@ public sealed class ProjectSettings
         renderer.ShadowSettings = Shadows;
         renderer.ShadowConstantBias = ShadowConstantBias;
         renderer.ShadowSlopeBias = ShadowSlopeBias;
-        renderer.ScreenSpaceGIEnabled = ScreenSpaceGiEnabled;
+        renderer.GiMode = GiMode;
         renderer.ScreenSpaceGIIntensity = ScreenSpaceGiIntensity;
         renderer.ScreenSpaceGIRadius = ScreenSpaceGiRadius;
         renderer.RayTracingEnabled = RayTracingEnabled;
-        renderer.RayTracingShadowsEnabled = RayTracingShadowsEnabled;
         renderer.RayTracingReflectionsEnabled = RayTracingReflectionsEnabled;
-        renderer.RayTracingGiEnabled = RayTracingGiEnabled;
         renderer.RayTracingReflectionStrength = RayTracingReflectionStrength;
         renderer.RayTracingSamples = RayTracingSamples;
         renderer.RayTracingResolutionScale = RayTracingResolutionScale;
         renderer.RayTracingRayBias = RayTracingRayBias;
         renderer.RayTracingMaxDistance = RayTracingMaxDistance;
         renderer.RayTracingReflectionRoughnessLimit = RayTracingReflectionRoughnessLimit;
+        renderer.ShadowMode = ShadowMode;
         renderer.RayTracingShadowQuality = RayTracingShadowQuality;
         renderer.RayTracingReflectionQuality = RayTracingReflectionQuality;
         renderer.RayTracingGiQuality = RayTracingGiQuality;
@@ -91,19 +125,18 @@ public sealed class ProjectSettings
             Shadows = renderer.ShadowSettings,
             ShadowConstantBias = renderer.ShadowConstantBias,
             ShadowSlopeBias = renderer.ShadowSlopeBias,
-            ScreenSpaceGiEnabled = renderer.ScreenSpaceGIEnabled,
+            GiMode = renderer.GiMode,
             ScreenSpaceGiIntensity = renderer.ScreenSpaceGIIntensity,
             ScreenSpaceGiRadius = renderer.ScreenSpaceGIRadius,
             RayTracingEnabled = renderer.RayTracingEnabled,
-            RayTracingShadowsEnabled = renderer.RayTracingShadowsEnabled,
             RayTracingReflectionsEnabled = renderer.RayTracingReflectionsEnabled,
-            RayTracingGiEnabled = renderer.RayTracingGiEnabled,
             RayTracingReflectionStrength = renderer.RayTracingReflectionStrength,
             RayTracingSamples = renderer.RayTracingSamples,
             RayTracingResolutionScale = renderer.RayTracingResolutionScale,
             RayTracingRayBias = renderer.RayTracingRayBias,
             RayTracingMaxDistance = renderer.RayTracingMaxDistance,
             RayTracingReflectionRoughnessLimit = renderer.RayTracingReflectionRoughnessLimit,
+            ShadowMode = renderer.ShadowMode,
             RayTracingShadowQuality = renderer.RayTracingShadowQuality,
             RayTracingReflectionQuality = renderer.RayTracingReflectionQuality,
             RayTracingGiQuality = renderer.RayTracingGiQuality,

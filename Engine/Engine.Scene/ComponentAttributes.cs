@@ -25,3 +25,21 @@ public sealed class InspectorHiddenAttribute : Attribute;
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class InspectorColorAttribute : Attribute;
+
+[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class InspectorGroupAttribute(string name) : Attribute
+{
+    public string Name { get; } = name;
+}
+
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class InspectorButtonAttribute(string label) : Attribute
+{
+    public string Label { get; } = label;
+}
+
+[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class InspectorAssetDropAttribute(string kind) : Attribute
+{
+    public string Kind { get; } = kind;
+}

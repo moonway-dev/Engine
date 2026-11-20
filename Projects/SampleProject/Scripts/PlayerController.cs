@@ -51,14 +51,10 @@ public sealed class PlayerController : ScriptBehaviour
     public override void OnStart()
     {
         _camera = Owner.GetComponentsInChildren<CameraComponent>().FirstOrDefault();
-        Vector3 bodyYaw = Transform.Rotation.ToYawPitchRoll();
-        _yaw = bodyYaw.X;
+        Vector3 bodyAngles = Transform.Rotation.ToYawPitchRoll();
+        _yaw = bodyAngles.X;
         if (_camera is not null)
-        {
-            Vector3 cameraAngles = _camera.Transform.LocalRotation.ToYawPitchRoll();
-            _yaw = cameraAngles.X;
-            _pitch = cameraAngles.Y;
-        }
+            _pitch = _camera.Transform.LocalRotation.ToYawPitchRoll().Y;
     }
 
     public override void OnUpdate()
@@ -69,13 +65,13 @@ public sealed class PlayerController : ScriptBehaviour
 
     private void ApplyLook()
     {
-        if (_camera is null)
-            return;
         Vector2 delta = ScriptInput.MouseDelta;
         _yaw -= delta.X * MouseSensitivity;
         float maxPitch = MaxPitchDegrees * MathUtil.DegToRad;
         _pitch = MathUtil.Clamp(_pitch - delta.Y * MouseSensitivity, -maxPitch, maxPitch);
-        _camera.Transform.LocalRotation = Quaternion.FromYawPitchRoll(_yaw, _pitch, 0f);
+        Transform.Rotation = Quaternion.FromAxisAngle(Vector3.Up, _yaw);
+        if (_camera is not null)
+            _camera.Transform.LocalRotation = Quaternion.FromYawPitchRoll(0f, _pitch, 0f);
     }
 
     private void ApplyMovement()
@@ -87,15 +83,9 @@ public sealed class PlayerController : ScriptBehaviour
             forward = Quaternion.FromAxisAngle(Vector3.Up, _yaw).Rotate(Vector3.Forward);
         forward = forward.Normalized;
         Vector3 right = Vector3.Cross(forward, Vector3.Up).Normalized;
-        Vector3 wish = Vector3.Zero;
-        if (ScriptInput.IsKeyDown(KeyCode.W))
-            wish += forward;
-        if (ScriptInput.IsKeyDown(KeyCode.S))
-            wish -= forward;
-        if (ScriptInput.IsKeyDown(KeyCode.A))
-            wish -= right;
-        if (ScriptInput.IsKeyDown(KeyCode.D))
-            wish += right;
+        float steer = ScriptInput.GetAxis("Horizontal");
+        float throttle = ScriptInput.GetAxis("Vertical");
+        Vector3 wish = forward * throttle + right * steer;
         if (wish.Length > MathUtil.Epsilon)
             wish = wish.Normalized * MoveSpeed;
 

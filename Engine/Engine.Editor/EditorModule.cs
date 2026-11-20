@@ -21,6 +21,8 @@ public sealed class EditorModule : IUpdatableModule
     private readonly Scene.SceneHost _sceneHost = new();
     private SceneHostAdapter? _sceneHostAdapter;
     private ImGuiBackend? _backend;
+    private AssetPreviewCache? _previews;
+    private GpuResourceRetirement? _resourceRetirement;
     private EditorOverlay? _overlay;
     private ILogger? _log;
     private IEngineContext? _engineContext;
@@ -85,7 +87,11 @@ public sealed class EditorModule : IUpdatableModule
         _window.KeyPressed += OnKeyPressed;
         _window.FocusChanged += OnFocusChanged;
         Inspection.ScriptComponentInspector.Register();
-        _backend = new ImGuiBackend(rhi.Device, _window, _log, _shaderDirectory, _renderer.OverlayFormat, ResolveLayoutPath());
+        _backend = new ImGuiBackend(rhi.Device, _window, _log, _shaderDirectory, _renderer.OverlayFormat, ResolveLayoutPath(), Path.Combine(ResolveAssetsPath(), "Cache", "Shaders"));
+        _resourceRetirement = new GpuResourceRetirement((int)rhi.FramesInFlight);
+        _backend.RetireResource = _resourceRetirement.Retire;
+        _renderer.PrepareEditorResources = PrepareEditorResources;
+        _renderer.RenderEditorResources = RenderEditorResources;
         _renderer.EnableEditorMode(new Size2D(1280, 720));
         CreateOverlay();
         _initialized = true;
@@ -99,6 +105,8 @@ public sealed class EditorModule : IUpdatableModule
 
     public System.Numerics.Vector2 SceneViewWindowPosition => _overlay?.SceneViewWindowPosition ?? System.Numerics.Vector2.Zero;
 
+    public System.Numerics.Vector2 GameViewCenter => _overlay?.GameViewCenter ?? System.Numerics.Vector2.Zero;
+
     public bool ApplicationFocused => _window?.IsFocused ?? false;
 
     public bool WantCaptureMouse => _overlay?.WantCaptureMouse ?? false;
@@ -109,8 +117,20 @@ public sealed class EditorModule : IUpdatableModule
 
     public bool SceneViewMouseCaptured => _overlay?.SceneViewMouseCaptured ?? false;
 
+    public bool IsPlayModeActive => PlayMode is { State: not EditorPlayState.Stopped };
+
+    private System.Numerics.Vector2? _mousePositionOverride;
+
+    public void SetMousePositionOverride(System.Numerics.Vector2? position) => _mousePositionOverride = position;
+
     private void CreateOverlay()
     {
+        if (_previews is not null)
+        {
+            _rhiModule.Instance?.WaitIdle();
+            _previews.Dispose();
+            _previews = null;
+        }
         if (_overlay is not null)
         {
             _overlay.VSyncChanged -= OnVSyncChanged;
@@ -123,13 +143,19 @@ public sealed class EditorModule : IUpdatableModule
             _sceneHostAdapter.Dispose();
             _sceneHostAdapter = null;
         }
-        if (_scene is null || _memoryLogSink is null || _window is null)
+        if (_scene is null || _memoryLogSink is null || _window is null || _backend is null)
             return;
         _sceneHost.ActiveScene = _scene;
         _sceneHostAdapter = new SceneHostAdapter(_sceneHost);
         _sceneHostAdapter.ActiveSceneChanged += OnActiveSceneChanged;
         SceneDocument document = new(_sceneHostAdapter, _scene);
         EditorContext editorContext = new(document, ResolveAssetsPath(), MaterialStore) { ModelAssets = ModelAssets };
+        if (_resourceRetirement is not null && _rhiModule.Instance is { } rhi)
+        {
+            _previews = new AssetPreviewCache(rhi.Device, editorContext.Materials, editorContext.AssetsRoot,
+                () => new AssetPreviewRenderer(rhi.Device, _log!, _shaderDirectory, Path.Combine(editorContext.AssetsRoot, "Cache", "Shaders"), _renderer.ImageBasedLighting!),
+                _backend.GetTextureId, _backend.RemoveTexture, _resourceRetirement);
+        }
         string projectSettingsPath = ResolveProjectSettingsPath();
         ProjectSettings projectSettings = LoadProjectSettings(projectSettingsPath);
         projectSettings.ApplyTo(_renderer);
@@ -145,17 +171,55 @@ public sealed class EditorModule : IUpdatableModule
             projectSettingsPath,
             _rhiModule.Instance?.Device.Features,
             _rhiModule.Instance,
-            PlayMode);
+            PlayMode,
+            name => _backend.GetIconTexture(name),
+            entry => _previews?.Request(entry) ?? default);
         _overlay.VSyncChanged += OnVSyncChanged;
+    }
+
+    private string? _lastWindowTitle;
+
+    private void UpdateWindowTitle()
+    {
+        if (_overlay is null || _window is null)
+            return;
+        string title = $"Engine — {_overlay.Context.ActiveTitle}";
+        if (title == _lastWindowTitle)
+            return;
+        _lastWindowTitle = title;
+        _window.Title = title;
     }
 
     private string ResolveProjectSettingsPath()
     {
         string assetsRoot = ResolveAssetsPath();
+        string? projectFile = FindProjectFile(assetsRoot);
+        if (projectFile is not null)
+            return projectFile;
         string? projectRoot = Path.GetDirectoryName(assetsRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrEmpty(projectRoot)
             ? Path.Combine(assetsRoot, "Project.project")
             : Path.Combine(projectRoot, "Project.project");
+    }
+
+    private static string? FindProjectFile(string directory)
+    {
+        string? current = directory;
+        for (int depth = 0; depth < 3 && current is not null; depth++)
+        {
+            try
+            {
+                string? match = Directory.EnumerateFiles(current, "*.project", SearchOption.TopDirectoryOnly).FirstOrDefault();
+                if (match is not null)
+                    return Path.GetFullPath(match);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+            current = Path.GetDirectoryName(current.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        }
+        return null;
     }
 
     private ProjectSettings LoadProjectSettings(string path)
@@ -222,18 +286,71 @@ public sealed class EditorModule : IUpdatableModule
             _overlay.HandleHotkey(input.Key, input.Modifiers, textInputActive);
     }
 
+    private System.Numerics.Vector2? ResolveMousePositionOverride()
+    {
+        if (_mousePositionOverride is { } explicitOverride)
+            return explicitOverride;
+        if (IsPlayModeActive && _window is { CursorMode: CursorMode.Disabled })
+            return _overlay?.GameViewCenter;
+        return null;
+    }
+
+    private bool _playModeCursorLockDesired;
+
+    private void TrackPlayModeCursorLock()
+    {
+        if (_window is null)
+            return;
+        if (!IsPlayModeActive)
+        {
+            _playModeCursorLockDesired = false;
+            return;
+        }
+        if (_window.CursorMode == CursorMode.Disabled)
+            _playModeCursorLockDesired = true;
+        if (_window.Keyboard.IsPressed(KeyCode.Escape))
+        {
+            _playModeCursorLockDesired = true;
+            if (_window.CursorMode != CursorMode.Normal)
+                _window.CursorMode = CursorMode.Normal;
+            return;
+        }
+        if (_overlay is { GameViewFocused: false, GameViewHovered: false })
+        {
+            if (_window.CursorMode != CursorMode.Normal)
+                _window.CursorMode = CursorMode.Normal;
+            return;
+        }
+        if (_playModeCursorLockDesired
+            && _overlay is { GameViewHovered: true }
+            && _window.Mouse.IsReleased(MouseButton.Left)
+            && _window.CursorMode != CursorMode.Disabled)
+            _window.CursorMode = CursorMode.Disabled;
+    }
+
     private void OnVSyncChanged(bool value)
     {
         if (_rhiModule.Instance is not null)
             _rhiModule.Instance.VSync = value;
     }
 
+    private void PrepareEditorResources(int frameSlot)
+    {
+        _resourceRetirement?.BeginFrame(frameSlot);
+        _previews?.PrepareFrame();
+    }
+
+    private void RenderEditorResources(ICommandBuffer commands, int frameSlot) => _previews?.Record(commands);
+
     public void Update(in FrameTime frameTime)
     {
         if (!_initialized || _backend is null)
             return;
-        _renderer.SetViewExtent(_overlay?.DesiredViewExtent ?? new Size2D(1280, 720));
+        if (_overlay is not null)
+            _renderer.SetViewExtents(_overlay.DesiredViewExtent, _overlay.DesiredGameViewExtent);
         _renderer.RefreshTargets();
+        _backend.MousePositionOverride = ResolveMousePositionOverride();
+        TrackPlayModeCursorLock();
         if (_overlay is not null && _renderer.ViewTexture is ITexture viewTexture)
         {
             if (_viewTexture is not null && !ReferenceEquals(_viewTexture, viewTexture))
@@ -250,13 +367,24 @@ public sealed class EditorModule : IUpdatableModule
         }
         _backend.NewFrame(frameTime);
         ProcessPendingHotkeys();
+        _previews?.BeginRequests();
         _overlay?.Draw();
+        UpdateWindowTitle();
         ImGui.Render();
         _renderer.OverlayRender = _backend.Render;
     }
 
     public void Shutdown()
     {
+        _rhiModule.Instance?.WaitIdle();
+        _renderer.PrepareEditorResources = null;
+        _renderer.RenderEditorResources = null;
+        _previews?.Dispose();
+        _previews = null;
+        _resourceRetirement?.Dispose();
+        _resourceRetirement = null;
+        if (_backend is not null)
+            _backend.RetireResource = null;
         if (_overlay is not null)
         {
             _overlay.VSyncChanged -= OnVSyncChanged;

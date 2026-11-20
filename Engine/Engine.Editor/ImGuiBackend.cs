@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Engine.Core;
 using Engine.Mathematics;
@@ -37,7 +38,8 @@ public sealed class ImGuiBackend : IDisposable
         ILogger log,
         string shaderDirectory,
         TextureFormat overlayFormat,
-        string iniPath)
+        string iniPath,
+        string? shaderCacheDirectory = null)
     {
         _device = device;
         _window = window;
@@ -49,7 +51,7 @@ public sealed class ImGuiBackend : IDisposable
         io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
         io.ConfigFlags |= ImGuiConfigFlags.DockingEnable | ImGuiConfigFlags.NavEnableKeyboard;
         ConfigureIniFile(io, iniPath);
-        CreateDeviceObjects(shaderDirectory, overlayFormat);
+        CreateDeviceObjects(shaderDirectory, overlayFormat, shaderCacheDirectory);
         for (int i = 0; i < FrameBufferCount; i++)
             _frameBuffers.Add(new BufferPair());
     }
@@ -83,17 +85,36 @@ public sealed class ImGuiBackend : IDisposable
         return id;
     }
 
+    public Action<IDisposable>? RetireResource { get; set; }
+
+    private void Retire(IDisposable resource)
+    {
+        if (RetireResource is { } retire)
+            retire(resource);
+        else
+            resource.Dispose();
+    }
+
     public void RemoveTexture(ITexture texture)
     {
         if (!_textureIds.Remove(texture, out IntPtr id))
             return;
-        if (_descriptorSets.Remove(id, out IDescriptorSet? set))
-            set.Dispose();
+        if (_descriptorSets.TryGetValue(id, out IDescriptorSet? set))
+            Retire(new RetiredDescriptor(this, id, set));
     }
 
-    private void CreateDeviceObjects(string shaderDirectory, TextureFormat overlayFormat)
+    private sealed class RetiredDescriptor(ImGuiBackend backend, IntPtr id, IDescriptorSet set) : IDisposable
     {
-        ShaderProgramDescription program = new SlangShaderCompiler(_log).CompileProgram(
+        public void Dispose()
+        {
+            if (backend._descriptorSets.Remove(id))
+                set.Dispose();
+        }
+    }
+
+    private void CreateDeviceObjects(string shaderDirectory, TextureFormat overlayFormat, string? shaderCacheDirectory)
+    {
+        ShaderProgramDescription program = new SlangShaderCompiler(_log, cacheDirectory: shaderCacheDirectory).CompileProgram(
             Path.Combine(shaderDirectory, "ImGui.slang"),
             [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
         _program = _device.CreateShaderProgram(program);
@@ -163,6 +184,119 @@ public sealed class ImGuiBackend : IDisposable
         atlas.SetTexID(FontTextureId);
     }
 
+    private readonly Dictionary<string, IntPtr> _iconTextureIds = [];
+
+    public IntPtr GetIconTexture(string name)
+    {
+        if (_iconTextureIds.TryGetValue(name, out IntPtr id))
+            return id;
+        byte[] bytes = LoadIconResource(name);
+        Engine.Assets.ImageData image = Engine.Assets.ImageLoader.Load(bytes);
+        IntPtr textureId = CreateFileTexture(image.Pixels, image.Width, image.Height);
+        _iconTextureIds[name] = textureId;
+        return textureId;
+    }
+
+    private readonly Dictionary<string, (IntPtr Texture, long Revision)> _fileTextureIds = [];
+    private const int MaxThumbnailDimension = 256;
+
+    public IntPtr GetFileTexture(string path)
+    {
+        long revision;
+        try
+        {
+            revision = File.GetLastWriteTimeUtc(path).Ticks;
+        }
+        catch (IOException)
+        {
+            return IntPtr.Zero;
+        }
+        if (_fileTextureIds.TryGetValue(path, out (IntPtr Texture, long Revision) cached))
+        {
+            if (cached.Revision == revision)
+                return cached.Texture;
+            ITexture previous = _textureKeys[cached.Texture];
+            RemoveTexture(previous);
+            Retire(previous);
+            _textureKeys.Remove(cached.Texture);
+            _fileTextureIds.Remove(path);
+        }
+        byte[] bytes;
+        try
+        {
+            bytes = File.ReadAllBytes(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return IntPtr.Zero;
+        }
+        Engine.Assets.ImageData image;
+        try
+        {
+            image = Engine.Assets.ImageLoader.Load(bytes);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            return IntPtr.Zero;
+        }
+        if (Math.Max(image.Width, image.Height) > MaxThumbnailDimension)
+            image = Downsample(image, MaxThumbnailDimension);
+        IntPtr textureId = CreateFileTexture(image.Pixels, image.Width, image.Height);
+        _fileTextureIds[path] = (textureId, revision);
+        return textureId;
+    }
+
+    private readonly Dictionary<IntPtr, ITexture> _textureKeys = [];
+
+    private IntPtr CreateFileTexture(byte[] pixels, int width = 0, int height = 0)
+    {
+        if (width == 0 || height == 0)
+            (width, height) = (pixels.Length / 4, 1);
+        ITexture texture = _device.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(width, height),
+            Format = TextureFormat.R8G8B8A8UNorm,
+        });
+        _device.UploadTextureData(texture, pixels);
+        IntPtr textureId = GetTextureId(texture);
+        _textureKeys[textureId] = texture;
+        return textureId;
+    }
+
+    private static Engine.Assets.ImageData Downsample(Engine.Assets.ImageData image, int maximum)
+    {
+        float scale = (float)maximum / Math.Max(image.Width, image.Height);
+        int width = Math.Max(1, (int)MathF.Round(image.Width * scale));
+        int height = Math.Max(1, (int)MathF.Round(image.Height * scale));
+        byte[] result = new byte[width * height * 4];
+        for (int y = 0; y < height; y++)
+        {
+            int sourceY = Math.Min(image.Height - 1, (int)((y + 0.5f) / scale));
+            for (int x = 0; x < width; x++)
+            {
+                int sourceX = Math.Min(image.Width - 1, (int)((x + 0.5f) / scale));
+                int sourceIndex = (sourceY * image.Width + sourceX) * 4;
+                int targetIndex = (y * width + x) * 4;
+                result[targetIndex] = image.Pixels[sourceIndex];
+                result[targetIndex + 1] = image.Pixels[sourceIndex + 1];
+                result[targetIndex + 2] = image.Pixels[sourceIndex + 2];
+                result[targetIndex + 3] = image.Pixels[sourceIndex + 3];
+            }
+        }
+        return new Engine.Assets.ImageData(result, width, height, 4);
+    }
+
+    private static byte[] LoadIconResource(string name)
+    {
+        Assembly assembly = typeof(ImGuiBackend).Assembly;
+        string resourceName = $"Engine.Editor.Icons.{name}.png";
+        using Stream? stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Icon '{name}' is not embedded.");
+        using MemoryStream memory = new();
+        stream.CopyTo(memory);
+        return memory.ToArray();
+    }
+
     private static string? ResolveFontPath()
     {
         string[] candidates = OperatingSystem.IsWindows()
@@ -178,6 +312,8 @@ public sealed class ImGuiBackend : IDisposable
     }
 
     public IntPtr FontTextureId { get; private set; }
+
+    public System.Numerics.Vector2? MousePositionOverride { get; set; }
 
     public static VertexLayoutDescription ImGuiVertexLayout { get; } = new()
     {
@@ -216,7 +352,10 @@ public sealed class ImGuiBackend : IDisposable
         foreach ((KeyCode keyCode, ImGuiKey imguiKey) in KeyMap)
             io.AddKeyEvent(imguiKey, keyboard.IsDown(keyCode));
         MouseState mouse = _window.Mouse;
-        io.AddMousePosEvent(mouse.Position.X * scaleX, mouse.Position.Y * scaleY);
+        if (MousePositionOverride is { } overridePosition)
+            io.AddMousePosEvent(overridePosition.X, overridePosition.Y);
+        else
+            io.AddMousePosEvent(mouse.Position.X * scaleX, mouse.Position.Y * scaleY);
         io.AddMouseButtonEvent(0, mouse.IsDown(MouseButton.Left));
         io.AddMouseButtonEvent(1, mouse.IsDown(MouseButton.Right));
         io.AddMouseButtonEvent(2, mouse.IsDown(MouseButton.Middle));
@@ -425,6 +564,11 @@ public sealed class ImGuiBackend : IDisposable
             set.Dispose();
         _descriptorSets.Clear();
         _textureIds.Clear();
+        foreach (ITexture texture in _textureKeys.Values)
+            texture.Dispose();
+        _textureKeys.Clear();
+        _iconTextureIds.Clear();
+        _fileTextureIds.Clear();
         _frameDataBuffer?.Dispose();
         _fontTexture?.Dispose();
         _sampler?.Dispose();

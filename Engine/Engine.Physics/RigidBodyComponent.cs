@@ -31,6 +31,7 @@ public sealed class RigidBodyComponent : Component
     public bool DetectCollisions { get; set; } = true;
 
     [SceneIgnore]
+    [InspectorHidden]
     [InspectorTooltip("Drive the body from transforms or velocity rather than forces and gravity.")]
     public bool IsKinematic
     {
@@ -44,6 +45,7 @@ public sealed class RigidBodyComponent : Component
     [InspectorTooltip("Discrete uses speculative contacts, Passive expands bounds by velocity, Continuous uses sweep tests.")]
     public RigidbodyCollisionDetection CollisionDetection { get; set; } = RigidbodyCollisionDetection.Passive;
 
+    [InspectorGroup("Constraints")]
     [InspectorTooltip("Prevent physics motion on selected position and rotation axes.")]
     public RigidbodyConstraints Constraints { get; set; }
 
@@ -86,7 +88,9 @@ public sealed class RigidBodyComponent : Component
         }
     }
 
+    [InspectorButton("Sleep")]
     public void Sleep() => IsAwake = false;
+    [InspectorButton("Wake Up")]
     public void WakeUp() => IsAwake = true;
 
     internal BodyHandle Body { get; set; }

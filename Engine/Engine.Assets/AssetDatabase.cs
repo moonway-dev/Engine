@@ -33,7 +33,7 @@ public sealed class AssetDatabase : IDisposable
     public double LastMeshImportMilliseconds { get; private set; }
     public bool LastMeshCacheHit { get; private set; }
     private sealed record MeshImportResult(ModelData Model, double Milliseconds, bool CacheHit);
-    private string ModelCacheDirectory => Path.Combine(Path.GetDirectoryName(_rootDirectory)!, "Cache", "Models");
+    private string ModelCacheDirectory => Path.Combine(_rootDirectory, "Cache", "Models");
     private readonly Dictionary<string, ModelData> _models = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<(string Path, string Part), Mesh> _partMeshes = [];
 
