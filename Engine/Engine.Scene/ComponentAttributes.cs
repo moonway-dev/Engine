@@ -27,6 +27,9 @@ public sealed class InspectorHiddenAttribute : Attribute;
 public sealed class InspectorColorAttribute : Attribute;
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
+public sealed class InspectorLayerAttribute : Attribute;
+
+[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class InspectorGroupAttribute(string name) : Attribute
 {
     public string Name { get; } = name;

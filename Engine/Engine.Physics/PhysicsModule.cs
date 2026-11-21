@@ -70,14 +70,34 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         return true;
     }
 
+    private float _lastFixedDeltaTime = 1f / 60f;
+
     public bool TryGetRenderPose(GameObject gameObject, out Vector3 position, out Quaternion rotation)
     {
         position = default;
         rotation = Quaternion.Identity;
         if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
             return false;
-        position = registration.RenderPosition;
-        rotation = registration.RenderRotation;
+        RigidbodyInterpolation interpolation = registration.RigidBody?.Interpolation ?? RigidbodyInterpolation.Interpolate;
+        if (!SimulationActive || registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody || interpolation == RigidbodyInterpolation.None)
+        {
+            position = gameObject.Transform.Position;
+            rotation = gameObject.Transform.Rotation;
+            return true;
+        }
+        if (interpolation == RigidbodyInterpolation.Extrapolate)
+        {
+            float dt = _lastFixedDeltaTime * RenderInterpolationAlpha;
+            Vector3 linear = _world.GetBodyLinearVelocity(registration.Body);
+            Vector3 angular = _world.GetBodyAngularVelocity(registration.Body);
+            position = gameObject.Transform.Position + linear * dt;
+            rotation = angular.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon
+                ? Quaternion.FromAxisAngle(angular.Normalized, angular.Length * dt) * gameObject.Transform.Rotation
+                : gameObject.Transform.Rotation;
+            return true;
+        }
+        position = Vector3.Lerp(registration.PreviousPosition, gameObject.Transform.Position, RenderInterpolationAlpha);
+        rotation = Quaternion.Slerp(registration.PreviousRotation, gameObject.Transform.Rotation, RenderInterpolationAlpha);
         return true;
     }
 
@@ -124,6 +144,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             return;
         SyncBodies();
         RenderInterpolationAlpha = SimulationActive ? Math.Clamp(frameTime.FixedInterpolationAlpha, 0f, 1f) : 1f;
+        _lastFixedDeltaTime = MathF.Max(frameTime.FixedDeltaTime, 1e-4f);
         foreach ((GameObject gameObject, Registration registration) in _bodies)
         {
             RigidbodyInterpolation interpolation = registration.RigidBody?.Interpolation ?? RigidbodyInterpolation.Interpolate;
@@ -434,7 +455,10 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             if (rigidBody is { Enabled: false })
                 continue;
             bool hasCollider = gameObject.Components.OfType<ColliderComponent>().Any(collider => collider.IsActiveInHierarchy);
-            if (rigidBody is not null || hasCollider)
+            bool foldedIntoAncestor = hasCollider
+                && gameObject.GetComponent<RigidBodyComponent>() is null
+                && HasRigidBodyAncestor(gameObject);
+            if ((rigidBody is not null || hasCollider) && !foldedIntoAncestor)
                 active.Add(gameObject);
         }
         HashSet<GameObject> activeSet = [.. active];
@@ -474,16 +498,19 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             }
             if (!registration.HasBody)
                 continue;
+            int bodyLayer = ResolveBodyLayer(gameObject);
             if (kind != RigidBodyKind.Static)
             {
                 if (kind == RigidBodyKind.Dynamic && registration.Mass != mass)
                     _world.SetBodyMass(registration.Body, mass);
                 registration.Mass = mass;
                 _world.ConfigureBody(registration.Body, rigidBody?.Settings ?? RigidbodySettings.Default);
+                _world.SetBodyLayer(registration.Body, bodyLayer);
             }
             else
             {
                 _world.SetStaticCollisionEnabled(registration.Static, rigidBody?.DetectCollisions ?? true);
+                _world.SetStaticLayer(registration.Static, bodyLayer);
             }
             Vector3 position = gameObject.Transform.Position;
             Quaternion rotation = gameObject.Transform.Rotation;
@@ -511,8 +538,6 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         {
             if (!collider.IsActiveInHierarchy)
                 continue;
-            if (collider.Ignore)
-                continue;
             PhysicsColliderSpec spec = collider.CreateSpec(scale, MeshDataResolver);
             if (spec.Kind == PhysicsColliderKind.Mesh)
             {
@@ -529,11 +554,95 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
             }
             specs.Add(spec);
         }
+        CollectDescendantColliders(gameObject, gameObject.Transform, specs);
+        CollectWheelSpecs(gameObject, specs);
         return specs;
     }
 
+    private void CollectDescendantColliders(GameObject root, Transform rootTransform, List<PhysicsColliderSpec> specs)
+    {
+        foreach (GameObject child in root.Children)
+        {
+            if (!child.IsActiveInHierarchy)
+                continue;
+            if (child.GetComponent<RigidBodyComponent>() is not null)
+                continue;
+            foreach (ColliderComponent collider in child.Components.OfType<ColliderComponent>())
+            {
+                if (!collider.IsActiveInHierarchy)
+                    continue;
+                Vector3 childScale = new(
+                    MathF.Abs(child.Transform.Scale.X),
+                    MathF.Abs(child.Transform.Scale.Y),
+                    MathF.Abs(child.Transform.Scale.Z));
+                PhysicsColliderSpec spec = collider.CreateSpec(childScale, MeshDataResolver);
+                Vector3 worldCenter = child.Transform.Position + child.Transform.Rotation.Rotate(spec.Center);
+                Quaternion worldRotation = child.Transform.Rotation * spec.Rotation;
+                Quaternion inverse = rootTransform.Rotation.Inverse;
+                Vector3 localCenter = inverse.Rotate(worldCenter - rootTransform.Position);
+                Quaternion localRotation = inverse * worldRotation;
+                specs.Add(new PhysicsColliderSpec(
+                    spec.Kind, localCenter, localRotation, spec.Size, spec.Radius, spec.MeshKey, spec.Mesh,
+                    spec.WeightScale, spec.Length, Math.Clamp(collider.PhysicsLayer, 0, PhysicsLayers.MaxLayers - 1)));
+            }
+            CollectDescendantColliders(child, rootTransform, specs);
+        }
+    }
+
+    private void CollectWheelSpecs(GameObject gameObject, List<PhysicsColliderSpec> specs)
+    {
+        foreach (GameObject child in gameObject.Children)
+        {
+            if (!child.IsActiveInHierarchy)
+                continue;
+            foreach (WheelColliderComponent wheel in child.Components.OfType<WheelColliderComponent>())
+            {
+                if (!wheel.IsActiveInHierarchy || wheel.Radius <= 0f)
+                    continue;
+                specs.Add(new PhysicsColliderSpec(
+                    PhysicsColliderKind.Cylinder,
+                    wheel.LocalAnchor,
+                    Quaternion.FromAxisAngle(new Vector3(0f, 0f, 1f), -MathF.PI * 0.5f),
+                    Vector3.Zero,
+                    wheel.Radius,
+                    string.Empty,
+                    null,
+                    0.15f,
+                    MathF.Max(wheel.Width, 0.05f),
+                    Math.Clamp(wheel.PhysicsLayer, 0, PhysicsLayers.MaxLayers - 1)));
+            }
+        }
+    }
+
+    private static bool HasRigidBodyAncestor(GameObject gameObject)
+    {
+        for (GameObject? current = gameObject.Parent; current is not null; current = current.Parent)
+            if (current.GetComponent<RigidBodyComponent>() is not null)
+                return true;
+        return false;
+    }
+
+    private int ResolveBodyLayer(GameObject gameObject)
+    {
+        foreach (ColliderComponent collider in gameObject.Components.OfType<ColliderComponent>())
+        {
+            if (!collider.IsActiveInHierarchy)
+                continue;
+            return Math.Clamp(collider.PhysicsLayer, 0, PhysicsLayers.MaxLayers - 1);
+        }
+        return 0;
+    }
+
+    public void SetLayerMasks(IReadOnlyList<long> masks)
+    {
+        if (_world is null || masks is null)
+            return;
+        for (int i = 0; i < masks.Count && i < PhysicsLayers.MaxLayers; i++)
+            _world.SetLayerMask(i, masks[i]);
+    }
+
     private static string BuildConfigKey(RigidBodyKind kind, IReadOnlyList<PhysicsColliderSpec> specs) =>
-        $"{kind}|{string.Join(";", specs.Select(spec => $"{spec.Kind}:{FormatVector(spec.Center)}:{FormatQuaternion(spec.Rotation)}:{FormatVector(spec.Size)}:{FormatFloat(spec.Radius)}:{spec.MeshKey}"))}";
+        $"{kind}|{string.Join(";", specs.Select(spec => $"{spec.Kind}:{FormatVector(spec.Center)}:{FormatQuaternion(spec.Rotation)}:{FormatVector(spec.Size)}:{FormatFloat(spec.Radius)}:{spec.MeshKey}:{spec.Layer}"))}";
 
     private static string FormatFloat(float value) =>
         MathF.Round(value, 4).ToString("R", CultureInfo.InvariantCulture);

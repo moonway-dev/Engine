@@ -396,6 +396,12 @@ public sealed class SlangShaderCompiler
 
     private string GetCompilerIdentity()
     {
+        if (VirtualFileSystem.IsMounted)
+        {
+            string fingerprint = ReadCompilerFingerprint();
+            if (fingerprint.Length > 0)
+                return fingerprint;
+        }
         string? slangcPath = ResolveSlangcPath();
         if (slangcPath is null)
         {

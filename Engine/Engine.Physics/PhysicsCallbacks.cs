@@ -14,10 +14,10 @@ internal readonly struct NarrowPhaseCallbacks(PhysicsBodySettings settings) : IN
     }
 
     public bool AllowContactGeneration(int workerIndex, CollidableReference a, CollidableReference b, ref float speculativeMargin) =>
-        settings.AllowsCollision(a) && settings.AllowsCollision(b);
+        settings.AllowsCollisionPair(a, b);
 
     public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB) =>
-        settings.AllowsCollision(pair.A) && settings.AllowsCollision(pair.B);
+        settings.AllowsCollisionPair(pair.A, pair.B, childIndexA, childIndexB);
 
     public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial)
         where TManifold : unmanaged, IContactManifold<TManifold>
@@ -26,11 +26,11 @@ internal readonly struct NarrowPhaseCallbacks(PhysicsBodySettings settings) : IN
         pairMaterial.FrictionCoefficient = 0.7f;
         pairMaterial.MaximumRecoveryVelocity = 2f;
         pairMaterial.SpringSettings = new BepuPhysics.Constraints.SpringSettings(120f, 1f);
-        return manifold.Count > 0 && settings.AllowsCollision(pair.A) && settings.AllowsCollision(pair.B);
+        return manifold.Count > 0 && settings.AllowsCollisionPair(pair.A, pair.B);
     }
 
     public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold) =>
-        manifold.Count > 0 && settings.AllowsCollision(pair.A) && settings.AllowsCollision(pair.B);
+        manifold.Count > 0 && settings.AllowsCollisionPair(pair.A, pair.B, childIndexA, childIndexB);
 
     public void Dispose()
     {

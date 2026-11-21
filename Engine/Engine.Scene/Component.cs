@@ -12,6 +12,8 @@ public abstract class Component
 
     public bool Enabled { get; set; } = true;
 
+    public virtual void OnDrawGizmos() { }
+
     public bool IsActiveInHierarchy => Owner.IsActiveInHierarchy && Enabled;
 
     public virtual bool AllowMultiplePerObject => false;

@@ -18,6 +18,12 @@ public sealed class WheelColliderComponent : Component
     public Vector3 LocalAnchor { get; set; }
     [InspectorRange(0.05f, 3f)]
     public float Radius { get; set; } = 0.6f;
+    [InspectorRange(0.05f, 1.5f)]
+    [InspectorTooltip("Physical wheel width along the axle, in meters; the wheel collider is a cylinder of this width.")]
+    public float Width { get; set; } = 0.3f;
+    [InspectorLayer]
+    [InspectorTooltip("Physics layer index from Project Settings; the wheel's collision cylinder uses it inside the vehicle body.")]
+    public int PhysicsLayer { get; set; }
     [InspectorRange(0.05f, 2f)]
     [InspectorTooltip("Maximum suspension travel in meters.")]
     public float SuspensionDistance { get; set; } = 0.3f;
@@ -135,17 +141,63 @@ public sealed class WheelColliderComponent : Component
         travel = suspensionDistance;
         normal = up;
         contact = Vector3.Zero;
+        if (TrySmallSweep(world, ignore, start, down, maximumDistance, anchor, up, suspensionDistance, radius, out travel, out normal, out contact))
+            return SuspensionProbeState.Supported;
+        Vector3 higherStart = anchor + up * (radius * 1.5f);
+        if (TrySmallSweep(world, ignore, higherStart, down, maximumDistance + radius, anchor, up, suspensionDistance, radius, out travel, out normal, out contact))
+            return SuspensionProbeState.Supported;
+        return SuspensionProbeState.Blocked;
+    }
+
+    private static bool TrySmallSweep(
+        PhysicsWorld world,
+        BodyHandle? ignore,
+        Vector3 start,
+        Vector3 down,
+        float maximumDistance,
+        Vector3 anchor,
+        Vector3 up,
+        float suspensionDistance,
+        float radius,
+        out float travel,
+        out Vector3 normal,
+        out Vector3 contact)
+    {
+        travel = suspensionDistance;
+        normal = up;
+        contact = Vector3.Zero;
         if (!world.SweepSphere(start, down, maximumDistance, radius * 0.5f, out PhysicsSweepHit sweep, ignore))
-            return SuspensionProbeState.Blocked;
+            return false;
         if (sweep.StartedIntersecting || Vector3.Dot(sweep.Normal, up) < MinSupportNormal)
-            return SuspensionProbeState.Blocked;
+            return false;
         float rawTravel = Vector3.Dot(anchor - (sweep.Position + sweep.Normal * radius), up);
         if (rawTravel > suspensionDistance + ProbeMargin)
-            return SuspensionProbeState.Airborne;
+            return false;
         travel = MathUtil.Clamp(rawTravel, 0f, suspensionDistance);
         normal = sweep.Normal;
         contact = sweep.Position;
-        return SuspensionProbeState.Supported;
+        return true;
+    }
+
+    public override void OnDrawGizmos()
+    {
+        Transform owner = Owner.Transform;
+        Transform chassis = owner.Parent ?? owner;
+        Vector3 chassisScale = new(
+            MathF.Abs(chassis.Scale.X),
+            MathF.Abs(chassis.Scale.Y),
+            MathF.Abs(chassis.Scale.Z));
+        Vector3 anchor = chassis.Position + chassis.Rotation.Rotate(LocalAnchor * chassisScale);
+        Quaternion axle = chassis.Rotation * Quaternion.FromAxisAngle(new Vector3(0f, 0f, 1f), -MathF.PI * 0.5f);
+        Vector3 axleDirection = axle.Rotate(Vector3.Up);
+        Vector3 down = -chassis.Rotation.Rotate(Vector3.Up);
+        Vector4 cylinderColor = new(1f, 0.6f, 0.2f, 1f);
+        Vector4 travelColor = new(1f, 0.95f, 0.3f, 1f);
+        DebugDraw.DrawWireCylinder(anchor, axle, Radius, MathF.Max(Width, 0.05f), cylinderColor);
+        Vector3 travelEnd = anchor + down * SuspensionDistance;
+        DebugDraw.DrawLine(anchor, travelEnd, travelColor);
+        float markerHalf = MathF.Max(Width * 0.5f, 0.05f);
+        DebugDraw.DrawLine(travelEnd - axleDirection * markerHalf, travelEnd + axleDirection * markerHalf, travelColor);
     }
 
     internal void Apply(

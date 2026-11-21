@@ -21,6 +21,10 @@ public interface IWindow : IDisposable
 
     CursorMode CursorMode { get; set; }
 
+    FullscreenMode FullscreenMode { get; }
+
+    void SetFullscreen(FullscreenMode mode);
+
     void SetCursorPosition(Vector2 position);
 
     void ResetMouseDelta();

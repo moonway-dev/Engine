@@ -46,6 +46,7 @@ public static class ShaderWarmup
         log?.Invoke("shaders: compiling pipeline variants…");
         Compile("Shadow.slang", vsPs);
         Compile("Tonemap.slang", vsPs);
+        Compile("DebugLines.slang", vsPs);
         Compile("Bloom.slang", cs);
         Compile("IBLBake.slang", cs);
         Compile("TemporalResolve.slang", cs);

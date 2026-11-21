@@ -9,37 +9,38 @@ public sealed class ChaseCamera : ScriptBehaviour
     public EntityReference Target;
     [InspectorTooltip("Camera offset behind the car, in the car's local space.")]
     public Vector3 Offset = new(0f, 3.2f, 7.5f);
-    [InspectorRange(0f, 1f)]
-    [InspectorTooltip("How much of the car's velocity is added to the look target as look-ahead.")]
-    public float LookAhead = 0.35f;
     public Vector3 LookOffset = new(0f, 1.2f, 0f);
-    [InspectorRange(0f, 25f)]
-    [InspectorTooltip("Extra field of view added with speed, in degrees.")]
-    public float SpeedFovKick = 8f;
     [InspectorRange(20f, 200f)]
     [InspectorTooltip("Speed in km/h at which the FOV kick reaches its maximum.")]
     public float SpeedFovKmh = 120f;
-
+    [InspectorRange(0f, 25f)]
+    [InspectorTooltip("Extra field of view added with speed, in degrees.")]
+    public float SpeedFovKick = 8f;
     [InspectorRange(0.5f, 12f)]
     [InspectorTooltip("Rotation speed of the free camera orbit, in radians per second.")]
     public float OrbitSpeed = 4f;
+    [InspectorRange(0.3f, 8f)]
+    [InspectorTooltip("How fast the orbit returns behind the car after the mouse goes idle.")]
+    public float OrbitReturnSpeed = 1.2f;
+    [InspectorRange(0f, 3f)]
+    [InspectorTooltip("Seconds of mouse inactivity before the orbit starts returning behind the car.")]
+    public float OrbitIdleDelay = 1.5f;
     [InspectorRange(0.5f, 8f)]
-    [InspectorTooltip("How fast the camera returns behind the car after orbiting.")]
-    public float OrbitReturnSpeed = 2.5f;
-    [InspectorRange(2f, 30f)]
-    [InspectorTooltip("How fast the camera position follows the car; higher removes lag but can look jittery.")]
-    public float FollowDamping = 9f;
-    [InspectorRange(2f, 30f)]
-    [InspectorTooltip("How fast the look target settles; smooths out suspension bumps in the view direction.")]
-    public float LookDamping = 6.5f;
+    [InspectorTooltip("How fast the camera yaw catches up with the car's heading; lower values make the camera trail the car in turns.")]
+    public float YawFollowSpeed = 2.5f;
+    [InspectorRange(0f, 1f)]
+    [InspectorTooltip("Fraction of the camera position that trails the car per second; 0 keeps the camera rigidly bolted to the car.")]
+    public float FollowTrail = 0f;
 
     private float _baseFov;
     private CameraComponent? _camera;
     private float _orbitYaw;
     private float _orbitPitch;
-    private Vector3 _smoothedLookPoint;
-    private Vector3 _smoothedVelocity;
-    private bool _hasLookPoint;
+    private float _orbitIdleTime;
+    private float _smoothedYaw;
+    private bool _hasSmoothedYaw;
+    private Vector3 _trailingPosition;
+    private bool _hasTrailingPosition;
 
     public override void OnEnable()
     {
@@ -60,9 +61,8 @@ public sealed class ChaseCamera : ScriptBehaviour
         {
             Transform.Position = target.Transform.Position + target.Transform.Rotation.Rotate(Offset);
             Transform.Rotation = toTargetRotation((target.Transform.Position + LookOffset - Transform.Position).Normalized);
-            _smoothedLookPoint = target.Transform.Position + LookOffset;
-            _smoothedVelocity = Vector3.Zero;
-            _hasLookPoint = true;
+            _smoothedYaw = target.Transform.Rotation.ToYawPitchRoll().X;
+            _hasSmoothedYaw = true;
         }
     }
 
@@ -72,26 +72,47 @@ public sealed class ChaseCamera : ScriptBehaviour
             return;
         (Vector3 targetPosition, Quaternion targetRotation) = ScriptPhysics.GetInterpolatedPose(target);
         Vector3 velocity = ScriptPhysics.HasBody(target) ? ScriptPhysics.GetLinearVelocity(target) : Vector3.Zero;
-        float blend = 1f - MathF.Exp(-LookDamping * ScriptTime.DeltaTime);
-        _smoothedVelocity = Vector3.Lerp(_smoothedVelocity, velocity, blend);
-        Vector3 rawLookPoint = targetPosition + LookOffset + _smoothedVelocity * LookAhead * 0.1f;
-        _smoothedLookPoint = _hasLookPoint ? Vector3.Lerp(_smoothedLookPoint, rawLookPoint, blend) : rawLookPoint;
-        _hasLookPoint = true;
 
         UpdateOrbit();
         float yaw = targetRotation.ToYawPitchRoll().X + _orbitYaw;
+        if (!_hasSmoothedYaw)
+        {
+            _smoothedYaw = yaw;
+            _hasSmoothedYaw = true;
+        }
+        bool mouseActive = ScriptInput.MouseDelta.Length > 0.5f;
+        float yawFollowSpeed = mouseActive ? YawFollowSpeed * 4f : YawFollowSpeed;
+        float yawBlend = 1f - MathF.Exp(-yawFollowSpeed * ScriptTime.DeltaTime);
+        _smoothedYaw += AngleDelta(_smoothedYaw, yaw) * yawBlend;
         float distance = Offset.Length;
         float basePitch = MathF.Asin(MathUtil.Clamp(Offset.Y / distance, -1f, 1f));
         float pitch = MathUtil.Clamp(basePitch + _orbitPitch, -0.3f, 1.35f);
         Vector3 offset = new(
-            MathF.Sin(yaw) * MathF.Cos(pitch) * distance,
+            MathF.Sin(_smoothedYaw) * MathF.Cos(pitch) * distance,
             MathF.Sin(pitch) * distance,
-            MathF.Cos(yaw) * MathF.Cos(pitch) * distance);
+            MathF.Cos(_smoothedYaw) * MathF.Cos(pitch) * distance);
         Vector3 desiredPosition = targetPosition + offset;
-        float followBlend = 1f - MathF.Exp(-FollowDamping * ScriptTime.DeltaTime);
-        Transform.Position = Vector3.Lerp(Transform.Position, desiredPosition, followBlend);
+        if (FollowTrail > MathUtil.Epsilon)
+        {
+            if (!_hasTrailingPosition)
+            {
+                _trailingPosition = desiredPosition;
+                _hasTrailingPosition = true;
+            }
+            float blend = 1f - MathF.Exp(-FollowTrail * 12f * ScriptTime.DeltaTime);
+            _trailingPosition = Vector3.Lerp(_trailingPosition, desiredPosition, blend);
+            float trailGap = Vector3.Distance(_trailingPosition, desiredPosition);
+            Transform.Position = trailGap > 0.01f
+                ? _trailingPosition + (desiredPosition - _trailingPosition).Normalized * MathF.Min(trailGap, 1.5f)
+                : desiredPosition;
+        }
+        else
+        {
+            Transform.Position = desiredPosition;
+        }
 
-        Vector3 toLook = _smoothedLookPoint - Transform.Position;
+        Vector3 lookPoint = targetPosition + LookOffset;
+        Vector3 toLook = lookPoint - Transform.Position;
         Transform.Rotation = toTargetRotation(toLook);
 
         if (_camera is not null && SpeedFovKick > MathUtil.Epsilon)
@@ -105,11 +126,35 @@ public sealed class ChaseCamera : ScriptBehaviour
     private void UpdateOrbit()
     {
         Vector2 delta = ScriptInput.MouseDelta;
-        _orbitYaw -= delta.X * 0.003f * OrbitSpeed;
-        _orbitPitch = MathUtil.Clamp(_orbitPitch + delta.Y * 0.003f * OrbitSpeed, -1.0f, 1.1f);
+        if (delta.Length > 0.5f)
+        {
+            _orbitIdleTime = 0f;
+            _orbitYaw -= delta.X * 0.003f * OrbitSpeed;
+            _orbitPitch = MathUtil.Clamp(_orbitPitch + delta.Y * 0.003f * OrbitSpeed, -1.0f, 1.1f);
+            return;
+        }
+        _orbitIdleTime += ScriptTime.DeltaTime;
+        float idle = MathF.Max(_orbitIdleTime - OrbitIdleDelay, 0f);
+        if (idle <= 0f || (_orbitYaw == 0f && _orbitPitch == 0f))
+            return;
+        float decay = MathF.Exp(-OrbitReturnSpeed * idle);
+        _orbitYaw *= decay;
+        _orbitPitch *= decay;
+        if (MathF.Abs(_orbitYaw) < 0.002f)
+            _orbitYaw = 0f;
+        if (MathF.Abs(_orbitPitch) < 0.002f)
+            _orbitPitch = 0f;
     }
 
-    private bool Orbiting() => MathF.Abs(_orbitYaw) > 0.02f || MathF.Abs(_orbitPitch) > 0.02f;
+    private static float AngleDelta(float from, float to)
+    {
+        float delta = (to - from) % (MathF.PI * 2f);
+        if (delta > MathF.PI)
+            delta -= MathF.PI * 2f;
+        if (delta < -MathF.PI)
+            delta += MathF.PI * 2f;
+        return delta;
+    }
 
     private static Quaternion toTargetRotation(Vector3 toTarget)
     {

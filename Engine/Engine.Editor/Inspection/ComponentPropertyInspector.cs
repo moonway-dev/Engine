@@ -3,6 +3,7 @@ using Engine.Editor.DragDrop;
 using Engine.Editor.Models;
 using Engine.Mathematics;
 using Engine.Rendering;
+using Engine.Physics;
 using Engine.Scene;
 using ImGuiNET;
 using NumericsVector2 = System.Numerics.Vector2;
@@ -244,11 +245,31 @@ public static class ComponentPropertyInspector
     {
         int value = (int)read(component)!;
         InspectorRangeAttribute? range = member.GetCustomAttribute<InspectorRangeAttribute>();
+        if (member.GetCustomAttribute<InspectorLayerAttribute>() is not null)
+        {
+            DrawLayerCombo(context, component, member, id, read, write, value);
+            return;
+        }
         bool changed = range is { } r
             ? ImGui.SliderInt(id, ref value, (int)r.Min, (int)r.Max)
             : ImGui.DragInt(id, ref value, 0.2f);
         if (changed)
             Execute(context, component, member, read, write, value, false);
+    }
+
+    private static void DrawLayerCombo(
+        EditorContext context,
+        Component component,
+        MemberInfo member,
+        string id,
+        Func<Component, object> read,
+        Action<Component, object> write,
+        int value)
+    {
+        string[] names = [.. PhysicsLayers.Names];
+        int index = value >= 0 && value < names.Length ? value : 0;
+        if (ImGui.Combo(id, ref index, names, names.Length))
+            Execute(context, component, member, read, write, index, false);
     }
 
     private static void DrawFloat(

@@ -21,4 +21,11 @@ public sealed class SphereColliderComponent : ColliderComponent
             string.Empty,
             null);
     }
+
+    public override void OnDrawGizmos()
+    {
+        Transform owner = Owner.Transform;
+        PhysicsColliderSpec spec = CreateSpec(AbsScale(owner.Scale), null);
+        DebugDraw.DrawWireSphere(owner.Position + owner.Rotation.Rotate(spec.Center), spec.Radius);
+    }
 }

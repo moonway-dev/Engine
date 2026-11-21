@@ -2,6 +2,7 @@ using System.Text.Json;
 using Engine.Mathematics;
 using Engine.Rendering;
 using Engine.Editor.Build;
+using Engine.Physics;
 
 namespace Engine.Editor;
 
@@ -30,7 +31,32 @@ public sealed class ProjectSettings
     public bool RayTracingAdaptiveQuality = true;
     public string LastScene = string.Empty;
     public bool VSync = true;
+    public List<string> PhysicsLayers = ["Default"];
+    public List<long> LayerCollisionMasks = [-1L];
     public EngineBuildProfile Build = new();
+
+    public long MaskForLayer(int layer)
+    {
+        if (layer < 0)
+            return -1L;
+        if (layer < LayerCollisionMasks.Count)
+            return LayerCollisionMasks[layer];
+        return -1L;
+    }
+
+    public void NormalizeLayers()
+    {
+        if (PhysicsLayers.Count == 0)
+            PhysicsLayers.Add("Default");
+        if (PhysicsLayers.Count > global::Engine.Physics.PhysicsLayers.MaxLayers)
+            PhysicsLayers.RemoveRange(global::Engine.Physics.PhysicsLayers.MaxLayers, PhysicsLayers.Count - global::Engine.Physics.PhysicsLayers.MaxLayers);
+        if (LayerCollisionMasks.Count > PhysicsLayers.Count)
+            LayerCollisionMasks.RemoveRange(PhysicsLayers.Count, LayerCollisionMasks.Count - PhysicsLayers.Count);
+        while (LayerCollisionMasks.Count < PhysicsLayers.Count)
+            LayerCollisionMasks.Add(-1L);
+        if (string.IsNullOrWhiteSpace(PhysicsLayers[0]))
+            PhysicsLayers[0] = "Default";
+    }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {

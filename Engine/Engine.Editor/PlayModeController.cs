@@ -28,8 +28,11 @@ public sealed class PlayModeController : IDisposable
 
     public event EventHandler? StateChanged;
 
-    public PlayModeController(EditorContext context, ScriptingModule? scripts, Engine.Physics.PhysicsModule? physics = null, Engine.Scene.SceneBehavioursModule? behaviours = null)
+    private readonly Func<IReadOnlyList<long>?>? _layerMasksProvider;
+
+    public PlayModeController(EditorContext context, ScriptingModule? scripts, Engine.Physics.PhysicsModule? physics = null, Engine.Scene.SceneBehavioursModule? behaviours = null, Func<IReadOnlyList<long>?>? layerMasksProvider = null)
     {
+        _layerMasksProvider = layerMasksProvider;
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _scripts = scripts;
         _physics = physics;
@@ -39,6 +42,12 @@ public sealed class PlayModeController : IDisposable
 
     public void EnterPlay()
     {
+        if (_physics is not null && _layerMasksProvider is not null)
+        {
+            IReadOnlyList<long>? masks = _layerMasksProvider();
+            if (masks is not null)
+                _physics.SetLayerMasks(masks);
+        }
         if (State != EditorPlayState.Stopped)
             return;
         SceneDocument document = _context.Document;

@@ -1,3 +1,4 @@
+using BepuPhysics;
 using Engine.Core;
 using Engine.Mathematics;
 using Engine.Physics;
@@ -547,4 +548,112 @@ public sealed class PhysicsModuleTests : IDisposable
     }
 
     public void Dispose() => _physics.Shutdown();
+
+    [Fact]
+    public void ChildCollidersFoldIntoParentBody()
+    {
+        GameObject ground = Ground();
+        GameObject platform = _scene.CreateObject("Platform");
+        platform.Transform.Position = new Vector3(0, 2.5f, 0);
+        platform.AddComponent<RigidBodyComponent>();
+        BoxColliderComponent body = platform.AddComponent<BoxColliderComponent>();
+        body.Size = new Vector3(0.4f, 0.3f, 0.4f);
+        body.Center = new Vector3(0, 0.15f, 0);
+        GameObject bumper = _scene.CreateObject("Bumper");
+        bumper.SetParent(platform);
+        BoxColliderComponent plate = bumper.AddComponent<BoxColliderComponent>();
+        plate.Size = new Vector3(2f, 0.3f, 2f);
+        plate.Center = new Vector3(0, -0.45f, 0);
+
+        Step(240);
+        Assert.InRange(platform.Transform.Position.Y, -0.25f, -0.05f);
+        Assert.False(_physics.TryGetStaticHandle(bumper, out _),
+            "A collider child without its own rigidbody must be folded into the parent body, not registered as static.");
+        _ = ground;
+    }
+
+    [Fact]
+    public void Layers_BlockCollisionsWhenMaskDisallows()
+    {
+        Ground();
+        GameObject crate = Crate();
+        crate.Transform.Position = new Vector3(0, 0.8f, 0);
+        BoxColliderComponent collider = crate.GetComponent<BoxColliderComponent>()!;
+        collider.PhysicsLayer = 1;
+        _physics.SetLayerMasks([-1L & ~(1L << 1), -1L & ~(1L << 0)]);
+        Step(120);
+        Assert.True(crate.Transform.Position.Y < -1f,
+            $"The crate should fall through the ground on a blocked layer, but it is at {crate.Transform.Position.Y}");
+        _physics.SetLayerMasks([-1L, -1L]);
+        crate.Transform.Position = new Vector3(3, 4.5f, 0);
+        _physics.Synchronize();
+        if (_physics.TryGetBodyHandle(crate, out BodyHandle crateHandle))
+            _physics.World.SetBodyVelocity(crateHandle, Vector3.Zero);
+        Step(300);
+        Assert.InRange(crate.Transform.Position.Y - 0.7f, -0.77f, -0.73f);
+    }
+
+    [Fact]
+    public void Layers_KeepDefaultCollisionWhenMasksAllowEverything()
+    {
+        GameObject ground = Ground();
+        GameObject crate = Crate();
+        Step(300);
+        Assert.InRange(crate.Transform.Position.Y - 0.7f, -0.77f, -0.73f);
+        _ = ground;
+    }
+
+    [Fact]
+    public void WheelColliderComponentAddsPhysicalSphereToChassisBody()
+    {
+        GameObject ground = _scene.CreateObject("Ground");
+        ground.Transform.Position = new Vector3(0, -0.75f, 0);
+        ground.AddComponent<RigidBodyComponent>().Kind = RigidBodyKind.Static;
+        BoxColliderComponent groundCollider = ground.AddComponent<BoxColliderComponent>();
+        groundCollider.Size = new Vector3(24, 0.25f, 24);
+        groundCollider.Center = new Vector3(0, -0.125f, 0);
+
+        GameObject car = _scene.CreateObject("Car");
+        car.Transform.Position = new Vector3(0, 0.6f, 0);
+        car.AddComponent<RigidBodyComponent>();
+        BoxColliderComponent body = car.AddComponent<BoxColliderComponent>();
+        body.Size = new Vector3(0.4f, 0.3f, 0.6f);
+        body.Center = new Vector3(0, 0.3f, 0);
+        GameObject wheelFront = _scene.CreateObject("WheelFront");
+        wheelFront.SetParent(car);
+        WheelColliderComponent wheel = wheelFront.AddComponent<WheelColliderComponent>();
+        wheel.LocalAnchor = new Vector3(0, 0.3f, -1.2f);
+        wheel.Radius = 0.5f;
+        GameObject wheelRear = _scene.CreateObject("WheelRear");
+        wheelRear.SetParent(car);
+        WheelColliderComponent wheelRearComponent = wheelRear.AddComponent<WheelColliderComponent>();
+        wheelRearComponent.LocalAnchor = new Vector3(0, 0.3f, 1.2f);
+        wheelRearComponent.Radius = 0.5f;
+
+        GameObject obstacle = _scene.CreateObject("Obstacle");
+        obstacle.Transform.Position = new Vector3(0, 0.25f, -2.4f);
+        obstacle.AddComponent<RigidBodyComponent>().Kind = RigidBodyKind.Static;
+        BoxColliderComponent obstacleCollider = obstacle.AddComponent<BoxColliderComponent>();
+        obstacleCollider.Size = new Vector3(1.5f, 0.5f, 0.5f);
+        obstacleCollider.Center = new Vector3(0, 0f, 0);
+
+        Step(120);
+        if (_physics.TryGetBodyHandle(car, out BodyHandle carHandle))
+        {
+            _physics.World.SetBodyVelocity(carHandle, new Vector3(0, 0, -8f));
+            _physics.World.SetBodyAwake(carHandle, true);
+        }
+        Step(240);
+        Assert.InRange(car.Transform.Position.Z, -0.6f, -0.1f);
+        Assert.True(car.Transform.Position.Z > -2.0f,
+            $"The front wheel cylinder should stop the car at the obstacle face (its edge extends to carZ - 1.7), but the car reached {car.Transform.Position.Z}");
+        bool sideHit = _physics.World.RayCast(car.Transform.Position + new Vector3(0.3f, 3f, -1.2f), new Vector3(0, -1f, 0), 6f, out Engine.Physics.PhysicsRayHit sideRay);
+        float sideTop = car.Transform.Position.Y + 3f - sideRay.Distance;
+        Assert.True(!sideHit || sideTop < car.Transform.Position.Y + 0.45f,
+            $"The wheel collider must be a narrow cylinder: a ray 0.3 m off the axle hit at {sideTop:F2}, which is above the chassis and inside a sphere-shaped wheel.");
+        _ = wheel;
+        _ = wheelRearComponent;
+        _ = ground;
+        _ = obstacleCollider;
+    }
 }

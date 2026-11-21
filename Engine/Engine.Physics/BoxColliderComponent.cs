@@ -23,4 +23,11 @@ public sealed class BoxColliderComponent : ColliderComponent
             string.Empty,
             null);
     }
+
+    public override void OnDrawGizmos()
+    {
+        Transform owner = Owner.Transform;
+        PhysicsColliderSpec spec = CreateSpec(AbsScale(owner.Scale), null);
+        DebugDraw.DrawWireBox(owner.Position + owner.Rotation.Rotate(spec.Center), spec.Size, owner.Rotation * spec.Rotation);
+    }
 }

@@ -5,6 +5,8 @@ using Engine.RHI;
 using Engine.Rendering;
 using ImGuiNET;
 
+using Engine.Physics;
+
 namespace Engine.Editor.Panels;
 
 public sealed class ViewportPanel : EditorPanel
@@ -193,6 +195,10 @@ public sealed class ViewportPanel : EditorPanel
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled) && localScale)
             ImGui.SetTooltip("Scale uses local axes.");
+        ImGui.SameLine(0f, 6f);
+        ImGui.TextDisabled("|");
+        ImGui.SameLine(0f, 5f);
+        DrawGizmoButton(_editorContext);
         ImGui.EndGroup();
         System.Numerics.Vector2 cardMaximum = ImGui.GetItemRectMax() + new System.Numerics.Vector2(4f, 4f);
         System.Numerics.Vector2 cardMinimum = ImGui.GetItemRectMin() - new System.Numerics.Vector2(4f, 4f);
@@ -222,6 +228,22 @@ public sealed class ViewportPanel : EditorPanel
             ImGui.PopStyleColor(2);
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(tooltip);
+    }
+
+    private void DrawGizmoButton(EditorContext context)
+    {
+        bool selected = context.ShowColliderGizmos;
+        if (selected)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Button, EditorTheme.AccentActive);
+            ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.Text);
+        }
+        if (ImGui.SmallButton("Gizmo"))
+            context.ShowColliderGizmos = !context.ShowColliderGizmos;
+        if (selected)
+            ImGui.PopStyleColor(2);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Draw collider debug shapes in the scene view.");
     }
 
     private void DrawSpaceButton(string label, TransformSpace space, bool selected)
@@ -370,9 +392,17 @@ public sealed class ProjectSettingsPanel : EditorPanel
         }
         IsOpen = open;
         bool rtAvailable = _renderer.RayTracingAvailable;
-        ImGui.TextUnformatted("Rendering");
-        ImGui.Separator();
-        if (ImGui.SliderFloat("Exposure", ref _settings.Exposure, 0.1f, 4f))
+        if (!ImGui.BeginTabBar("project_settings_tabs"))
+        {
+            ImGui.End();
+            return;
+        }
+        ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.Text);
+        if (ImGui.BeginTabItem("Graphics"))
+        {
+            ImGui.TextDisabled("Rendering and post-processing quality.");
+            ImGui.Separator();
+            if (ImGui.SliderFloat("Exposure", ref _settings.Exposure, 0.1f, 4f))
         {
             _renderer.Exposure = _settings.Exposure;
             _dirty = true;
@@ -385,15 +415,121 @@ public sealed class ProjectSettingsPanel : EditorPanel
         DrawRayTracingSettings(rtAvailable);
         DrawShadowSettings(rtAvailable);
         DrawGiSettings(rtAvailable);
-        ImGui.TextUnformatted("Application");
-        ImGui.Separator();
-        if (ImGui.Checkbox("VSync", ref _settings.VSync))
-        {
-            VSyncChanged?.Invoke(_settings.VSync);
-            _dirty = true;
+            ImGui.EndTabItem();
         }
+        if (ImGui.BeginTabItem("Physics"))
+        {
+            ImGui.TextDisabled("Physics layers and per-layer collision matrix.");
+            ImGui.Separator();
+            DrawPhysicsLayerSettings();
+            ImGui.EndTabItem();
+        }
+        if (ImGui.BeginTabItem("Application"))
+        {
+            ImGui.TextDisabled("Frame pacing and window presentation.");
+            ImGui.Separator();
+            if (ImGui.Checkbox("VSync", ref _settings.VSync))
+            {
+                VSyncChanged?.Invoke(_settings.VSync);
+                _dirty = true;
+            }
+            ImGui.EndTabItem();
+        }
+        ImGui.EndTabBar();
+        ImGui.PopStyleColor();
         Save();
         ImGui.End();
+    }
+
+    private void DrawPhysicsLayerSettings()
+    {
+        ImGui.TextUnformatted("Physics Layers");
+        ImGui.Separator();
+        _settings.NormalizeLayers();
+        List<string> layers = _settings.PhysicsLayers;
+        List<long> masks = _settings.LayerCollisionMasks;
+        int removeIndex = -1;
+        for (int i = 0; i < layers.Count; i++)
+        {
+            ImGui.PushID($"layer{i}");
+            string name = layers[i];
+            ImGui.TextUnformatted(i == 0 ? "Default" : $"Layer {i}");
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(-70f);
+            if (i == 0)
+            {
+                ImGui.BeginDisabled();
+                ImGui.InputText("##layername", ref name, 64);
+                ImGui.EndDisabled();
+            }
+            else if (ImGui.InputText("##layername", ref name, 64) && !string.IsNullOrWhiteSpace(name))
+            {
+                layers[i] = name.Trim();
+                _dirty = true;
+            }
+            ImGui.SameLine();
+            ImGui.BeginDisabled(layers.Count <= 1);
+            if (ImGui.SmallButton("X##layerremove"))
+                removeIndex = i;
+            ImGui.EndDisabled();
+            ImGui.PopID();
+        }
+        if (ImGui.SmallButton("+ Add layer") && layers.Count < global::Engine.Physics.PhysicsLayers.MaxLayers)
+        {
+            layers.Add($"Layer {layers.Count}");
+            masks.Add(-1L);
+            _dirty = true;
+        }
+        if (removeIndex >= 0)
+        {
+            layers.RemoveAt(removeIndex);
+            masks.RemoveAt(removeIndex);
+            _dirty = true;
+        }
+        _settings.NormalizeLayers();
+        PhysicsLayers.SetNames(layers);
+
+        ImGui.TextDisabled("The collision matrix defines which layers interact with each other.");
+        if (ImGui.BeginTable("layer_collision_matrix", layers.Count + 1, ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchSame))
+        {
+            ImGui.TableSetupColumn("layer");
+            for (int column = 0; column < layers.Count; column++)
+                ImGui.TableSetupColumn(layers[column]);
+            ImGui.TableHeadersRow();
+            for (int row = 0; row < layers.Count; row++)
+            {
+                ImGui.TableNextRow();
+                ImGui.TableSetColumnIndex(0);
+                ImGui.TextUnformatted(layers[row]);
+                for (int column = 0; column < layers.Count; column++)
+                {
+                    ImGui.TableSetColumnIndex(column + 1);
+                    if (column < row)
+                    {
+                        ImGui.TextDisabled(" ");
+                        continue;
+                    }
+                    long maskRow = masks[row];
+                    long maskColumn = masks[column];
+                    bool enabled = ((maskRow >> column) & 1L) != 0L && ((maskColumn >> row) & 1L) != 0L;
+                    if (ImGui.Checkbox($"##cell{row}_{column}", ref enabled))
+                    {
+                        if (enabled)
+                        {
+                            masks[row] |= 1L << column;
+                            masks[column] |= 1L << row;
+                        }
+                        else
+                        {
+                            masks[row] &= ~(1L << column);
+                            masks[column] &= ~(1L << row);
+                        }
+                        _dirty = true;
+                    }
+                }
+            }
+            ImGui.EndTable();
+        }
     }
 
     private void DrawRayTracingSettings(bool rtAvailable)

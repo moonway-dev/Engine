@@ -33,6 +33,12 @@ public sealed class RendererModule : IUpdatableModule
     private IGraphicsPipeline? _shadowPipeline;
     private IGraphicsPipeline? _pbrPipeline;
     private IGraphicsPipeline? _tonemapPipeline;
+    private IShaderProgram? _debugLinesProgram;
+    private IGraphicsPipeline? _debugLinesPipeline;
+    private IBuffer? _debugLinesBuffer;
+    private ulong _debugLinesBufferCapacity;
+    private uint _debugLinesVertexCount;
+    public Action? ColliderGizmoSource { get; set; }
     private IComputePipeline? _bloomPipeline;
     private IComputePipeline? _temporalPipeline;
     private IComputePipeline? _rtGiTemporalPipeline;
@@ -833,6 +839,11 @@ public sealed class RendererModule : IUpdatableModule
         long start = System.Diagnostics.Stopwatch.GetTimestamp();
         SyncScene();
         UpdateLights();
+        ColliderGizmoSource?.Invoke();
+        if (DebugDraw.HasLines)
+            UploadDebugLines();
+        else
+            _debugLinesVertexCount = 0;
         SceneSyncMilliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds;
         if (_rhi!.LatestGpuFrameTiming is { } completedTiming && completedTiming.FrameNumber != _lastReportedTimingFrame)
         {
@@ -1244,6 +1255,12 @@ public sealed class RendererModule : IUpdatableModule
         _graph.WritesColor(_tonemapPass, tonemapOutput, clear: true, SkyColor);
         _graph.ReadsShader(_tonemapPass, sceneColor, PipelineStages.FragmentShader);
         _graph.ReadsShader(_tonemapPass, sceneBloom, PipelineStages.FragmentShader);
+
+        RenderGraphPass gizmoPass = _graph.AddGraphicsPassBefore(_tonemapPass, "ColliderGizmos",
+            (commandBuffer, _) => ExecuteColliderGizmoPass(commandBuffer, sceneExtent));
+        gizmoPass.ShouldExecute = () => DebugDraw.HasLines;
+        _graph.WritesColor(gizmoPass, sceneColor, clear: false);
+        _graph.ReadsDepth(gizmoPass, _mainDepth!);
 
         if (_editorMode)
         {
@@ -2172,6 +2189,39 @@ public sealed class RendererModule : IUpdatableModule
         commandBuffer.Dispatch((uint)(destinationSize.Width + 7) / 8, (uint)(destinationSize.Height + 7) / 8);
     }
 
+    private void UploadDebugLines()
+    {
+        Span<DebugLineVertex> span = DebugDraw.GetSpan();
+        _debugLinesVertexCount = (uint)span.Length;
+        ulong bytes = (ulong)(span.Length * Marshal.SizeOf<DebugLineVertex>());
+        if (_debugLinesBuffer is null || _debugLinesBufferCapacity < bytes)
+        {
+            _debugLinesBuffer?.Dispose();
+            ulong capacity = Math.Max(bytes, 262144UL);
+            _debugLinesBuffer = _device!.CreateBuffer(new BufferDescription
+            {
+                Size = capacity,
+                Usage = BufferUsage.Vertex | BufferUsage.TransferDestination,
+                Memory = MemoryUsage.CpuToGpu,
+            });
+            _debugLinesBufferCapacity = capacity;
+        }
+        _device!.UploadBufferData(_debugLinesBuffer, MemoryMarshal.AsBytes(span), 0);
+    }
+
+    private void ExecuteColliderGizmoPass(ICommandBuffer commandBuffer, Size2D extent)
+    {
+        if (_debugLinesPipeline is null || _debugLinesVertexCount == 0 || _debugLinesBuffer is null)
+            return;
+        Matrix4x4 viewProjection = EditorCamera.ViewProjection;
+        commandBuffer.BindGraphicsPipeline(_debugLinesPipeline);
+        commandBuffer.SetViewport(new Viewport(0f, 0f, extent.Width, extent.Height, 0f, 1f));
+        commandBuffer.SetScissor(new Rect(0, 0, (int)extent.Width, (int)extent.Height));
+        commandBuffer.PushConstants(MemoryMarshal.AsBytes(new ReadOnlySpan<Matrix4x4>(ref viewProjection)), ShaderStages.Vertex);
+        commandBuffer.BindVertexBuffer(0, _debugLinesBuffer);
+        commandBuffer.Draw(_debugLinesVertexCount);
+    }
+
     private void ExecuteTonemapPass(ICommandBuffer commandBuffer, Size2D extent) =>
         ExecuteTonemapPass(commandBuffer, extent, _historyWrite!, _bloomTarget!);
 
@@ -2725,6 +2775,25 @@ public sealed class RendererModule : IUpdatableModule
             DepthTest = false,
             DepthWrite = false,
             ColorAttachmentFormats = [TextureFormat.B8G8R8A8Srgb],
+        });
+        ShaderProgramDescription debugLinesProgram = _compiler!.CompileProgram(
+            Path.Combine(_shaderDirectory, "DebugLines.slang"),
+            [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
+        _debugLinesProgram = _device.CreateShaderProgram(debugLinesProgram);
+        _debugLinesPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            Name = "ColliderGizmoLines",
+            ShaderProgram = _debugLinesProgram,
+            VertexLayouts = [VertexLayoutDescription.FromStruct<DebugLineVertex>(
+                new VertexAttributeDescription { Offset = 0, Format = VertexFormat.Float3 },
+                new VertexAttributeDescription { Offset = 12, Format = VertexFormat.Float4 })],
+            Topology = PrimitiveTopology.LineList,
+            CullMode = CullMode.None,
+            DepthTest = true,
+            DepthWrite = false,
+            BlendMode = BlendMode.None,
+            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
+            DepthAttachmentFormat = TextureFormat.D32Float,
         });
         if (_temporalEnabled)
         {

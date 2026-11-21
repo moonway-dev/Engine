@@ -135,8 +135,6 @@ public sealed class PlayerRuntimeModule : IUpdatableModule
         EnsureScene();
         if (_scene is null)
             return;
-        if (_window is { IsFocused: true } && _window.Keyboard.IsPressed(KeyCode.Escape))
-            _context!.RequestExit();
         if (_options.Frames > 0 && frameTime.FrameIndex >= (ulong)_options.Frames)
             _context!.RequestExit();
         if (_window is not null)

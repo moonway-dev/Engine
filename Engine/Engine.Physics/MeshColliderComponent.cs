@@ -20,4 +20,11 @@ public sealed class MeshColliderComponent : ColliderComponent
             ResourceKey,
             string.IsNullOrWhiteSpace(ResourceKey) ? null : meshResolver?.Invoke(ResourceKey));
     }
+
+    public override void OnDrawGizmos()
+    {
+        Transform owner = Owner.Transform;
+        PhysicsColliderSpec spec = CreateSpec(AbsScale(owner.Scale), null);
+        DebugDraw.DrawWireBox(owner.Position + owner.Rotation.Rotate(spec.Center), spec.Size, owner.Rotation * spec.Rotation, new Vector4(0.9f, 0.4f, 1f, 1f));
+    }
 }

@@ -29,12 +29,27 @@ public readonly record struct AssetDragPayload(AssetKind Kind, string RelativePa
 public static class ImGuiDragPayloads
 {
     public const string GameObjectPayloadType = "ENGINE_GAME_OBJECT";
+    public const string SceneOrderPayloadType = "ENGINE_SCENE_ORDER";
 
     public static unsafe void SetAsset(AssetDragPayload payload)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(payload.Serialize());
         fixed (byte* data = bytes)
             ImGui.SetDragDropPayload(AssetDragPayload.PayloadType, (IntPtr)data, (uint)bytes.Length);
+    }
+
+    public static unsafe void SetSceneOrder(int index)
+    {
+        int* data = &index;
+        ImGui.SetDragDropPayload(SceneOrderPayloadType, (IntPtr)data, sizeof(int));
+    }
+
+    public static unsafe int? AcceptSceneOrder()
+    {
+        ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload(SceneOrderPayloadType);
+        if (payload.NativePtr == null || !payload.IsDelivery() || payload.Data == IntPtr.Zero || payload.DataSize != sizeof(int))
+            return null;
+        return *(int*)payload.Data;
     }
 
     public static unsafe AssetDragPayload? AcceptAsset()

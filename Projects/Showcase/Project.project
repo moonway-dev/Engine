@@ -33,5 +33,23 @@
   "RayTracingReflectionQuality": 1,
   "RayTracingGiQuality": 1,
   "RayTracingAdaptiveQuality": true,
-  "VSync": true
+  "LastScene": "Scenes/PhysicsPlayground.scene",
+  "VSync": true,
+  "PhysicsLayers": [
+    "Default"
+  ],
+  "LayerCollisionMasks": [
+    -1
+  ],
+  "Build": {
+    "ProductName": "Game",
+    "Version": "1.0.0",
+    "Scenes": [],
+    "StartupScene": "",
+    "Platform": "win-x64",
+    "Mode": "Aot",
+    "Configuration": "Debug",
+    "OutputDirectory": "Builds",
+    "PackKey": ""
+  }
 }

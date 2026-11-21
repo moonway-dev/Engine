@@ -60,6 +60,7 @@ public sealed class PhysicsWorld : IDisposable
             throw new ArgumentException("At least one collider is required.", nameof(colliders));
         RigidPose pose = new(ToSystem(position), ToSystemQuaternion(rotation));
         BodyDescription description;
+        List<int> childLayers = [];
         if (TryGetSingleShape(colliders, out PhysicsColliderSpec? single))
         {
             PhysicsColliderSpec spec = single!;
@@ -67,12 +68,13 @@ public sealed class PhysicsWorld : IDisposable
             {
                 PhysicsColliderKind.Sphere => BodyDescription.CreateConvexDynamic(pose, MathF.Max(mass, Epsilon), _simulation.Shapes, new Sphere(MathF.Max(spec.Radius, Epsilon))),
                 PhysicsColliderKind.Capsule => BodyDescription.CreateConvexDynamic(pose, MathF.Max(mass, Epsilon), _simulation.Shapes, CreateCapsule(spec)),
+                PhysicsColliderKind.Cylinder => BodyDescription.CreateConvexDynamic(ApplySpecToPose(pose, spec), MathF.Max(mass, Epsilon), _simulation.Shapes, CreateCylinder(spec)),
                 _ => BodyDescription.CreateConvexDynamic(pose, MathF.Max(mass, Epsilon), _simulation.Shapes, CreateBox(spec)),
             };
         }
         else
         {
-            Buffer<CompoundChild> children = BuildCompound(colliders, RigidBodyKind.Dynamic, mass, out BodyInertia inertia, out Vector3 centerOfMass);
+            Buffer<CompoundChild> children = BuildCompound(colliders, RigidBodyKind.Dynamic, mass, out BodyInertia inertia, out Vector3 centerOfMass, out childLayers);
             TypedIndex compoundIndex = _simulation.Shapes.Add(new Compound(children));
             centerOfMassOffset = centerOfMass;
             pose.Position += ToSystem(rotation.Rotate(centerOfMass));
@@ -80,6 +82,7 @@ public sealed class PhysicsWorld : IDisposable
         }
         BodyHandle handle = _simulation.Bodies.Add(description);
         _settings.Bodies.Add(handle, new PhysicsBodyState(description.LocalInertia, ToEngine(description.Pose.Position), ToEngine(description.Pose.Orientation)));
+        _settings.SetBodyChildLayers(handle, childLayers);
         return handle;
     }
 
@@ -103,12 +106,13 @@ public sealed class PhysicsWorld : IDisposable
             {
                 PhysicsColliderKind.Sphere => BodyDescription.CreateConvexKinematic(pose, _simulation.Shapes, new Sphere(MathF.Max(spec.Radius, Epsilon))),
                 PhysicsColliderKind.Capsule => BodyDescription.CreateConvexKinematic(pose, _simulation.Shapes, CreateCapsule(spec)),
+                PhysicsColliderKind.Cylinder => BodyDescription.CreateConvexKinematic(ApplySpecToPose(pose, spec), _simulation.Shapes, CreateCylinder(spec)),
                 _ => BodyDescription.CreateConvexKinematic(pose, _simulation.Shapes, CreateBox(spec)),
             };
         }
         else
         {
-            Buffer<CompoundChild> children = BuildCompound(colliders, RigidBodyKind.Kinematic, 1f, out _, out _);
+            Buffer<CompoundChild> children = BuildCompound(colliders, RigidBodyKind.Kinematic, 1f, out _, out _, out _);
             TypedIndex compoundIndex = _simulation.Shapes.Add(new Compound(children));
             description = BodyDescription.CreateKinematic(pose, new CollidableDescription(compoundIndex, 0.1f), new BodyActivityDescription(0.01f));
         }
@@ -142,7 +146,7 @@ public sealed class PhysicsWorld : IDisposable
         }
         else
         {
-            Buffer<CompoundChild> children = BuildCompound(colliders, RigidBodyKind.Static, 1f, out _, out Vector3 centerOfMass);
+            Buffer<CompoundChild> children = BuildCompound(colliders, RigidBodyKind.Static, 1f, out _, out Vector3 centerOfMass, out _);
             shapeIndex = _simulation.Shapes.Add(new Compound(children));
             pose.Position += ToSystem(rotation.Rotate(centerOfMass));
         }
@@ -157,6 +161,17 @@ public sealed class PhysicsWorld : IDisposable
         MathF.Max(spec.Size.X, Epsilon),
         MathF.Max(spec.Size.Y, Epsilon),
         MathF.Max(spec.Size.Z, Epsilon));
+
+    private static Cylinder CreateCylinder(PhysicsColliderSpec spec) =>
+        new(MathF.Max(spec.Radius, Epsilon), MathF.Max(spec.Length, Epsilon));
+
+    private static RigidPose ApplySpecToPose(RigidPose pose, PhysicsColliderSpec spec)
+    {
+        RigidPose result = pose;
+        result.Position += NVector3.Transform(ToSystem(spec.Center), pose.Orientation);
+        result.Orientation = pose.Orientation * ToSystemQuaternion(spec.Rotation);
+        return result;
+    }
 
     private static Capsule CreateCapsule(PhysicsColliderSpec spec)
     {
@@ -177,15 +192,18 @@ public sealed class PhysicsWorld : IDisposable
         return true;
     }
 
-    private Buffer<CompoundChild> BuildCompound(IReadOnlyList<PhysicsColliderSpec> colliders, RigidBodyKind kind, float mass, out BodyInertia inertia, out Vector3 centerOfMass)
+    private Buffer<CompoundChild> BuildCompound(IReadOnlyList<PhysicsColliderSpec> colliders, RigidBodyKind kind, float mass, out BodyInertia inertia, out Vector3 centerOfMass, out List<int> childLayers)
     {
         List<(PhysicsColliderSpec Spec, RigidPose Pose)> children = [];
+        List<int> layers = [];
         foreach (PhysicsColliderSpec spec in colliders)
         {
             if (spec.Kind == PhysicsColliderKind.Mesh && (spec.Mesh is null || spec.Mesh.Indices.Length < 3))
                 continue;
             children.Add((spec, new RigidPose(ToSystem(spec.Center), ToSystemQuaternion(spec.Rotation))));
+            layers.Add(spec.Layer);
         }
+        childLayers = layers;
 
         CompoundBuilder builder = new(_bufferPool, _simulation.Shapes, Math.Max(children.Count, 1));
         try
@@ -196,28 +214,32 @@ public sealed class PhysicsWorld : IDisposable
             float weight = kind == RigidBodyKind.Dynamic ? MathF.Max(mass, Epsilon) / children.Count : 1f;
             foreach ((PhysicsColliderSpec spec, RigidPose pose) in children)
             {
+                float childWeight = MathF.Max(weight * spec.WeightScale, Epsilon);
                 switch (spec.Kind)
                 {
                     case PhysicsColliderKind.Sphere:
-                        builder.Add(new Sphere(MathF.Max(spec.Radius, Epsilon)), pose, weight);
+                        builder.Add(new Sphere(MathF.Max(spec.Radius, Epsilon)), pose, childWeight);
                         break;
                     case PhysicsColliderKind.Capsule:
-                        builder.Add(CreateCapsule(spec), pose, weight);
+                        builder.Add(CreateCapsule(spec), pose, childWeight);
+                        break;
+                    case PhysicsColliderKind.Cylinder:
+                        builder.Add(CreateCylinder(spec), pose, childWeight);
                         break;
                     case PhysicsColliderKind.Mesh:
                         TypedIndex meshIndex = CreateMeshShape(spec, out BepuPhysics.Collidables.Mesh meshShape);
                         if (kind == RigidBodyKind.Dynamic)
                         {
-                            BodyInertia meshInertia = meshShape.ComputeClosedInertia(weight);
+                            BodyInertia meshInertia = meshShape.ComputeClosedInertia(childWeight);
                             builder.Add(meshIndex, pose, meshInertia.InverseInertiaTensor, 1f / meshInertia.InverseMass);
                         }
                         else
                         {
-                            builder.AddForKinematic(meshIndex, pose, weight);
+                            builder.AddForKinematic(meshIndex, pose, childWeight);
                         }
                         break;
                     default:
-                        builder.Add(CreateBox(spec), pose, weight);
+                        builder.Add(CreateBox(spec), pose, childWeight);
                         break;
                 }
             }
@@ -265,8 +287,15 @@ public sealed class PhysicsWorld : IDisposable
         TypedIndex shape = _simulation.Bodies[handle].Collidable.Shape;
         _simulation.Bodies.Remove(handle);
         _settings.Bodies.Remove(handle);
+        _settings.ForgetBodyLayer(handle);
         _simulation.Shapes.RecursivelyRemoveAndDispose(shape, _bufferPool);
     }
+
+    public void SetBodyLayer(BodyHandle handle, int layer) => _settings.SetBodyLayer(handle, layer);
+
+    public void SetStaticLayer(StaticHandle handle, int layer) => _settings.SetStaticLayer(handle, layer);
+
+    public void SetLayerMask(int layer, long mask) => _settings.SetLayerMask(layer, mask);
 
     public const float LinearConstraintFrequency = 60f;
     public const float AngularConstraintFrequency = 10f;
@@ -426,6 +455,7 @@ public sealed class PhysicsWorld : IDisposable
         TypedIndex shape = _simulation.Statics[handle].Shape;
         _simulation.Statics.Remove(handle);
         _settings.StaticCollisions.Remove(handle);
+        _settings.ForgetStaticLayer(handle);
         _simulation.Shapes.RecursivelyRemoveAndDispose(shape, _bufferPool);
     }
 

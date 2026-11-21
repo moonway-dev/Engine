@@ -21,6 +21,7 @@ public sealed class EditorContext : IDisposable
     public CommandHistory History => SelectedMaterial?.History ?? Document.History;
     public string ActiveTitle => SelectedMaterial?.Title ?? Document.Title;
     public string? Error { get; set; }
+    public bool ShowColliderGizmos { get; set; }
     public bool Undo() => History.Undo();
     public bool Redo() => History.Redo();
     public void SaveActive()

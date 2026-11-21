@@ -22,6 +22,10 @@ internal unsafe sealed class GlfwWindow : IWindow
     private GlfwCallbacks.FramebufferSizeCallback? _framebufferSizeCallback;
     private GlfwCallbacks.WindowFocusCallback? _focusCallback;
     private GlfwCallbacks.KeyCallback? _keyCallback;
+    private readonly int _monitorIndex;
+    private FullscreenMode _fullscreenMode;
+    private Vector2 _savedWindowedPosition;
+    private Size2D _savedWindowedSize;
     private GlfwCallbacks.CharCallback? _charCallback;
     private GlfwCallbacks.MouseButtonCallback? _mouseButtonCallback;
     private GlfwCallbacks.CursorPosCallback? _cursorPosCallback;
@@ -63,6 +67,36 @@ internal unsafe sealed class GlfwWindow : IWindow
     private CursorMode _cursorMode = CursorMode.Normal;
     private bool _rawMouseMotionEnabled;
     private readonly bool _rawMouseMotionSupported;
+
+    public FullscreenMode FullscreenMode => _fullscreenMode;
+
+    public unsafe void SetFullscreen(FullscreenMode mode)
+    {
+        if (mode == _fullscreenMode)
+            return;
+        if (mode == FullscreenMode.Windowed)
+        {
+            _glfw.SetWindowMonitor(
+                _handle, null, (int)_savedWindowedPosition.X, (int)_savedWindowedPosition.Y,
+                Math.Max(_savedWindowedSize.Width, 320), Math.Max(_savedWindowedSize.Height, 240), 0);
+            _fullscreenMode = FullscreenMode.Windowed;
+            RefreshSizes();
+            return;
+        }
+        _glfw.GetWindowPos(_handle, out int x, out int y);
+        _glfw.GetWindowSize(_handle, out int width, out int height);
+        _savedWindowedPosition = new Vector2(x, y);
+        _savedWindowedSize = new Size2D(width, height);
+        GlfwMonitor* monitor = GetMonitorByIndex(_monitorIndex);
+        if (monitor is null)
+            monitor = _glfw.GetPrimaryMonitor();
+        if (monitor is null)
+            return;
+        VideoMode* videoMode = _glfw.GetVideoMode(monitor);
+        _glfw.SetWindowMonitor(_handle, monitor, 0, 0, videoMode->Width, videoMode->Height, videoMode->RefreshRate);
+        _fullscreenMode = mode;
+        RefreshSizes();
+    }
 
     public CursorMode CursorMode
     {
@@ -133,6 +167,8 @@ internal unsafe sealed class GlfwWindow : IWindow
         _glfw.WindowHint(WindowHintBool.Visible, false);
         _glfw.WindowHint(WindowHintBool.Decorated, description.Decorated);
 
+        _monitorIndex = description.MonitorIndex;
+        _fullscreenMode = description.Fullscreen;
         GlfwMonitor* monitor = null;
         if (description.Fullscreen != FullscreenMode.Windowed)
         {

@@ -30,8 +30,8 @@ public sealed class BuildRunner
             string outputRoot = PrepareOutput();
             string shaderDirectory = WarmShaders();
             Dictionary<string, byte[]> entries = BundleStep(shaderDirectory);
-            byte[] packKey = RandomNumberGenerator.GetBytes(PackCrypto.KeySizeBytes);
-            string keyHex = Convert.ToHexString(packKey);
+            string keyHex = ResolvePackKey();
+            byte[] packKey = PackCrypto.ParseKeyHex(keyHex);
             (int entryCount, int chunkCount, long packedBytes) = WritePacks(outputRoot, entries, packKey);
             string executable = PublishStep(enginePlayerCsproj, outputRoot, keyHex);
             if (_errors.Count > 0)
@@ -46,6 +46,27 @@ public sealed class BuildRunner
             string outputRoot = OutputRoot();
             return Finish(total, outputRoot, string.Empty, success: false);
         }
+    }
+
+    private string ResolvePackKey()
+    {
+        string stored = _request.Profile.PackKey?.Trim() ?? string.Empty;
+        if (stored.Length == PackCrypto.KeySizeBytes * 2)
+        {
+            try
+            {
+                PackCrypto.ParseKeyHex(stored);
+                return stored;
+            }
+            catch (Exception exception) when (exception is InvalidDataException or FormatException or ArgumentException)
+            {
+                Log("pack: stored pack key is invalid, generating a new one");
+            }
+        }
+        string generated = Convert.ToHexString(RandomNumberGenerator.GetBytes(PackCrypto.KeySizeBytes));
+        _request.Profile.PackKey = generated;
+        Log("pack: generated a new project pack key (persist it in project settings for launcher increments)");
+        return generated;
     }
 
     private BuildReport Finish(Stopwatch total, string outputRoot, string executable, bool success)
@@ -345,7 +366,7 @@ public sealed class BuildRunner
                     ? "NativeAOT (no managed IL) + encrypted asset packs"
                     : "managed single-file IL + encrypted asset packs; use Native AOT mode for decompilation resistance",
             },
-            chunks = System.IO.Directory.GetFiles(Path.Combine(outputRoot, "Data", "packs"), "*.pack", SearchOption.AllDirectories)
+            chunks = System.IO.Directory.GetFiles(Path.Combine(outputRoot, "Data"), "*.pack", SearchOption.TopDirectoryOnly)
                 .Select(path => new
                 {
                     name = Path.GetRelativePath(outputRoot, path).Replace('\\', '/'),

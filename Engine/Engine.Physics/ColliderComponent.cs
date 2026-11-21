@@ -8,6 +8,7 @@ public enum PhysicsColliderKind
     Box,
     Sphere,
     Capsule,
+    Cylinder,
     Mesh,
 }
 
@@ -18,14 +19,18 @@ public sealed record PhysicsColliderSpec(
     Vector3 Size,
     float Radius,
     string MeshKey,
-    PhysicsMeshData? Mesh);
+    PhysicsMeshData? Mesh,
+    float WeightScale = 1f,
+    float Length = 0f,
+    int Layer = -1);
 
 public abstract class ColliderComponent : Component
 {
     public override bool AllowMultiplePerObject => true;
 
-    [InspectorTooltip("Exclude this collider from physics simulation entirely (mesh stays visible).")]
-    public bool Ignore { get; set; }
+    [InspectorLayer]
+    [InspectorTooltip("Physics layer index from Project Settings; the collision matrix decides which layers interact.")]
+    public int PhysicsLayer { get; set; }
 
     [InspectorTooltip("Collider offset from the object origin in local space.")]
     public Vector3 Center { get; set; } = Vector3.Zero;
@@ -40,6 +45,11 @@ public abstract class ColliderComponent : Component
         MathF.Abs(objectScale.X * ColliderScale.X),
         MathF.Abs(objectScale.Y * ColliderScale.Y),
         MathF.Abs(objectScale.Z * ColliderScale.Z));
+
+    protected static Vector3 AbsScale(Vector3 scale) => new(
+        MathF.Abs(scale.X),
+        MathF.Abs(scale.Y),
+        MathF.Abs(scale.Z));
 
     internal abstract PhysicsColliderSpec CreateSpec(Vector3 scale, Func<string, PhysicsMeshData?>? meshResolver);
 }

@@ -135,8 +135,15 @@ public sealed class BuildPipelineTests : IDisposable
     [Fact]
     public void PackWriter_ChunkNameIsStablePerAsset()
     {
-        Assert.Equal("packs/Scenes/Main.scene.pack", AssetPackWriter.ChunkName("Scenes/Main.scene"));
-        Assert.Equal(AssetPackWriter.ChunkName("Scenes/Main.scene"), AssetPackWriter.ChunkName(@"Scenes\Main.scene"));
+        byte[] payload = [1, 2, 3];
+        string first = AssetPackWriter.ChunkName("Scenes/Main.scene", payload);
+        Assert.Equal(AssetPackWriter.ChunkName(@"Scenes\Main.scene", payload), first);
+        Assert.Equal(AssetPackWriter.ChunkName("Scenes/Main.scene", [1, 2, 3]), first);
+        Assert.DoesNotContain("/", first);
+        Assert.DoesNotContain("\\", first);
+        Assert.EndsWith(".pack", first);
+        Assert.NotEqual(AssetPackWriter.ChunkName("Scenes/Other.scene", payload), first);
+        Assert.NotEqual(AssetPackWriter.ChunkName("Scenes/Main.scene", [9, 9, 9]), first);
     }
 
     [Fact]

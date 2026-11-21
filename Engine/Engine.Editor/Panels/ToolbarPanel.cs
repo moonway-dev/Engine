@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Engine.Editor.Build;
 using Engine.Editor.Documents;
+using Engine.Editor.DragDrop;
+using Engine.Editor.Models;
 using Engine.Scene;
 using ImGuiNET;
 using NumericsVector2 = System.Numerics.Vector2;
@@ -331,6 +333,7 @@ public sealed class ToolbarPanel
         _lastReport = null;
         _buildLog.Clear();
         _buildRunning = true;
+        SyncStartupScene(_projectSettings.Build);
         _projectSettings.Build.ProductName = _productName.Trim();
         _projectSettings.Build.Version = _version.Trim();
         _projectSettings.Build.Platform = Platforms[_platformIndex];
@@ -344,11 +347,12 @@ public sealed class ToolbarPanel
         {
             _buildLog.Add($"warning: could not save build settings: {exception.Message}");
         }
+        EngineBuildProfile buildProfile = Profile;
         BuildRequest request = new()
         {
             ProjectRoot = _context.AssetsRoot,
             EngineRoot = string.IsNullOrWhiteSpace(_engineRoot) ? FindEngineRoot(_context.AssetsRoot) ?? _context.AssetsRoot : _engineRoot!,
-            Profile = Profile,
+            Profile = buildProfile,
             Log = line => _buildLog.Add(line),
         };
         _runner = new BuildRunner(request);
@@ -368,9 +372,27 @@ public sealed class ToolbarPanel
             }
             finally
             {
+                PersistPackKey(buildProfile);
                 _buildRunning = false;
             }
         });
+    }
+
+    private void PersistPackKey(EngineBuildProfile buildProfile)
+    {
+        if (_projectSettings is null || string.IsNullOrWhiteSpace(buildProfile.PackKey))
+            return;
+        if (buildProfile.PackKey.Equals(_projectSettings.Build.PackKey, StringComparison.Ordinal))
+            return;
+        _projectSettings.Build.PackKey = buildProfile.PackKey;
+        try
+        {
+            _projectSettings.Save(_projectSettingsPath!);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _buildLog.Add($"warning: could not persist the project pack key: {exception.Message}");
+        }
     }
 
     private static string? FindEngineRoot(string directory)
@@ -406,41 +428,79 @@ public sealed class ToolbarPanel
                 ImGui.TextDisabled("Managed single-file: .NET runtime bundled, scripts shipped as a compiled assembly.");
 
             EngineBuildProfile current = _projectSettings?.Build ?? new EngineBuildProfile();
-            List<string> available = ListSceneFiles(_context.AssetsRoot);
-            if (available.Count == 0)
-                ImGui.TextDisabled("No .scene files found in the project.");
-            else
+            ImGui.SeparatorText("Scenes In Build");
+            ImGui.TextDisabled("Drag scenes from the Project window. The top scene is the startup scene.");
+            List<string> scenes = current.Scenes;
+            float listHeight = MathF.Max(ImGui.GetFrameHeightWithSpacing() * (scenes.Count + 1), ImGui.GetFrameHeightWithSpacing() * 3f);
+            ImGui.BeginChild("scenes_in_build", new NumericsVector2(0f, listHeight), ImGuiChildFlags.Borders);
+            if (scenes.Count == 0)
+                ImGui.TextDisabled("Drop .scene files here");
+            for (int i = 0; i < scenes.Count; i++)
             {
-                ImGui.SeparatorText("Scenes In Build");
-                HashSet<string> selected = new(current.Scenes, StringComparer.OrdinalIgnoreCase);
-                bool startupMissing = !string.IsNullOrEmpty(current.StartupScene) && !available.Contains(current.StartupScene, StringComparer.OrdinalIgnoreCase);
-                foreach (string scene in available)
+                string scene = scenes[i];
+                ImGui.PushID(i);
+                if (i == 0)
                 {
-                    bool included = selected.Contains(scene);
-                    if (ImGui.Checkbox(scene, ref included))
+                    ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.Accent);
+                    ImGui.TextUnformatted("Startup");
+                    ImGui.PopStyleColor();
+                    ImGui.SameLine();
+                }
+                bool rowSelected = false;
+                if (ImGui.Selectable(scene, ref rowSelected, ImGuiSelectableFlags.AllowOverlap))
+                {
+                }
+                if (ImGui.BeginDragDropSource())
+                {
+                    ImGuiDragPayloads.SetSceneOrder(i);
+                    ImGui.TextUnformatted(scene);
+                    ImGui.EndDragDropSource();
+                }
+                if (ImGui.BeginDragDropTarget())
+                {
+                    int? reorderFrom = ImGuiDragPayloads.AcceptSceneOrder();
+                    if (reorderFrom.HasValue && reorderFrom.Value != i)
                     {
-                        if (included)
-                            current.Scenes.Add(scene);
-                        else
-                            current.Scenes.RemoveAll(value => value.Equals(scene, StringComparison.OrdinalIgnoreCase));
+                        string moved = scenes[reorderFrom.Value];
+                        scenes.RemoveAt(reorderFrom.Value);
+                        scenes.Insert(i, moved);
                     }
+                    AssetDragPayload? dropped = ImGuiDragPayloads.AcceptAsset();
+                    if (dropped is { Kind: AssetKind.Scene, RelativePath: var rowPath })
+                    {
+                        scenes.RemoveAll(value => value.Equals(rowPath, StringComparison.OrdinalIgnoreCase));
+                        int insertAt = Math.Clamp(i, 0, scenes.Count);
+                        scenes.Insert(insertAt, rowPath);
+                    }
+                    ImGui.EndDragDropTarget();
                 }
-                ImGui.SeparatorText("Startup Scene");
-                string[] startupOptions = [.. available, "(first included)"];
-                int startupIndex = Math.Max(0, available.FindIndex(value => value.Equals(current.StartupScene, StringComparison.OrdinalIgnoreCase)));
-                if (startupMissing)
+                ImGui.SameLine();
+                float removeX = ImGui.GetContentRegionAvail().X - ImGui.GetFrameHeight();
+                if (removeX > 0f)
+                    ImGui.SetCursorPosX(ImGui.GetCursorPosX() + removeX);
+                if (ImGui.SmallButton("X##remove"))
                 {
-                    startupOptions = [current.StartupScene, .. startupOptions];
-                    startupIndex = 0;
+                    scenes.RemoveAt(i);
+                    ImGui.PopID();
+                    ImGui.EndChild();
+                    SyncStartupScene(current);
+                    goto buildSection;
                 }
-                if (ImGui.Combo("##StartupScene", ref startupIndex, startupOptions, startupOptions.Length))
-                {
-                    int offset = startupMissing ? 1 : 0;
-                    current.StartupScene = startupIndex - offset >= 0 && startupIndex - offset < available.Count
-                        ? available[startupIndex - offset]
-                        : string.Empty;
-                }
+                ImGui.PopID();
             }
+            if (ImGui.BeginDragDropTarget())
+            {
+                AssetDragPayload? dropped = ImGuiDragPayloads.AcceptAsset();
+                if (dropped is { Kind: AssetKind.Scene, RelativePath: var droppedPath })
+                {
+                    if (!scenes.Any(value => value.Equals(droppedPath, StringComparison.OrdinalIgnoreCase)))
+                        scenes.Add(droppedPath);
+                }
+                ImGui.EndDragDropTarget();
+            }
+            ImGui.EndChild();
+            SyncStartupScene(current);
+            buildSection:
             ImGui.SeparatorText("Build");
             ImGui.BeginDisabled(_buildRunning || _projectSettings is null);
             if (ImGui.Button(_buildRunning ? "Building..." : "Build"))
@@ -482,24 +542,9 @@ public sealed class ToolbarPanel
         ImGui.End();
     }
 
-    private static List<string> ListSceneFiles(string projectRoot)
+    private static void SyncStartupScene(EngineBuildProfile profile)
     {
-        string scenesRoot = Path.Combine(projectRoot, "Scenes");
-        List<string> scenes = [];
-        if (!Directory.Exists(scenesRoot))
-            return scenes;
-        foreach (string file in Directory.EnumerateFiles(scenesRoot, "*.scene", SearchOption.AllDirectories))
-        {
-            try
-            {
-                scenes.Add(Path.GetRelativePath(projectRoot, file).Replace(Path.DirectorySeparatorChar, '/'));
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-            }
-        }
-        scenes.Sort(StringComparer.OrdinalIgnoreCase);
-        return scenes;
+        profile.StartupScene = profile.Scenes.Count > 0 ? profile.Scenes[0] : string.Empty;
     }
 
     private static readonly string[] BuildModes = ["Native AOT", "Managed"];

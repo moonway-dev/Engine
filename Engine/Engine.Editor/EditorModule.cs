@@ -1,4 +1,6 @@
 using Engine.Core;
+using Engine.Physics;
+using Engine.Scene;
 using Engine.Editor.Documents;
 using Engine.Mathematics;
 using Engine.Platform;
@@ -202,11 +204,14 @@ public sealed class EditorModule : IUpdatableModule
         }
         string projectSettingsPath = ResolveProjectSettingsPath();
         ProjectSettings projectSettings = LoadProjectSettings(projectSettingsPath);
+        projectSettings.NormalizeLayers();
+        Engine.Physics.PhysicsLayers.SetNames(projectSettings.PhysicsLayers);
         projectSettings.ApplyTo(_renderer);
         OnVSyncChanged(projectSettings.VSync);
         PlayMode?.Dispose();
         PlayMode = null;
-        PlayMode = new PlayModeController(editorContext, ScriptRuntime, Physics, Behaviours);
+        PlayMode = new PlayModeController(editorContext, ScriptRuntime, Physics, Behaviours,
+            () => projectSettings.LayerCollisionMasks);
         _overlay = new EditorOverlay(
             _renderer,
             editorContext,
@@ -220,6 +225,7 @@ public sealed class EditorModule : IUpdatableModule
             entry => _previews?.Request(entry) ?? default,
             path => RequestProjectOpen(path),
             EngineRoot);
+        _renderer.ColliderGizmoSource = CollectColliderGizmos;
         _overlay.VSyncChanged += OnVSyncChanged;
     }
 
@@ -234,6 +240,24 @@ public sealed class EditorModule : IUpdatableModule
             return;
         _lastWindowTitle = title;
         _window.Title = title;
+    }
+
+    private void CollectColliderGizmos()
+    {
+        DebugDraw.Clear();
+        if (_overlay is null || !_overlay.Context.ShowColliderGizmos)
+            return;
+        foreach (GameObject gameObject in _overlay.Context.Document.Scene.EnumerateHierarchy())
+        {
+            if (!gameObject.IsActiveInHierarchy)
+                continue;
+            foreach (Component component in gameObject.Components)
+            {
+                if (!component.IsActiveInHierarchy)
+                    continue;
+                component.OnDrawGizmos();
+            }
+        }
     }
 
     private string ResolveProjectSettingsPath()

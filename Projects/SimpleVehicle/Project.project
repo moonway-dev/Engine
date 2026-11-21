@@ -17,10 +17,10 @@
   },
   "ShadowConstantBias": 1.25,
   "ShadowSlopeBias": 1.75,
-  "GiMode": 2,
+  "GiMode": 0,
   "ScreenSpaceGiIntensity": 0.608,
   "ScreenSpaceGiRadius": 1.117,
-  "RayTracingEnabled": true,
+  "RayTracingEnabled": false,
   "RayTracingReflectionsEnabled": true,
   "RayTracingReflectionStrength": 1,
   "RayTracingSamples": 8,
@@ -28,23 +28,36 @@
   "RayTracingRayBias": 0.0015,
   "RayTracingMaxDistance": 1000,
   "RayTracingReflectionRoughnessLimit": 0.542,
-  "ShadowMode": 2,
+  "ShadowMode": 0,
   "RayTracingShadowQuality": 3,
   "RayTracingReflectionQuality": 3,
   "RayTracingGiQuality": 3,
   "RayTracingAdaptiveQuality": true,
   "LastScene": "Scenes/SimpleVehicle.scene",
   "VSync": false,
+  "PhysicsLayers": [
+    "Default",
+    "Vehicle",
+    "Wheel",
+    "Terrain"
+  ],
+  "LayerCollisionMasks": [
+    -1,
+    -5,
+    -11,
+    -9
+  ],
   "Build": {
     "ProductName": "SimpleVehicleGame",
     "Version": "1.0.0",
     "Scenes": [
       "Scenes/SimpleVehicle.scene"
     ],
-    "StartupScene": "",
+    "StartupScene": "Scenes/SimpleVehicle.scene",
     "Platform": "win-x64",
     "Mode": "Managed",
     "Configuration": "Release",
-    "OutputDirectory": "Builds"
+    "OutputDirectory": "Builds",
+    "PackKey": "5D611534094CD9F54485DA45D53050CBC3C5335288D89F3CA3E15600B3458072"
   }
 }

@@ -25,4 +25,12 @@ public sealed class CapsuleColliderComponent : ColliderComponent
             string.Empty,
             null);
     }
+
+    public override void OnDrawGizmos()
+    {
+        Transform owner = Owner.Transform;
+        PhysicsColliderSpec spec = CreateSpec(AbsScale(owner.Scale), null);
+        float cylinderLength = MathF.Max(spec.Size.Y - spec.Radius * 2f, 0f);
+        DebugDraw.DrawWireCapsule(owner.Position + owner.Rotation.Rotate(spec.Center), owner.Rotation * spec.Rotation, spec.Radius, cylinderLength);
+    }
 }

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Engine.Core;
 
 namespace Engine.Editor.Build;
@@ -9,6 +10,7 @@ public static class AssetPackWriter
     private const uint ChunkMagic = 0x50474E45;
     private const int ManifestVersion = 1;
     private const int ChunkHeaderBytes = 8;
+    private const int ChunkNameHexChars = 20;
 
     public sealed record PackResult(int EntryCount, int ChunkCount, long TotalBytes, string ManifestPath);
 
@@ -19,59 +21,38 @@ public static class AssetPackWriter
         Action<string>? log = null)
     {
         Directory.CreateDirectory(dataDirectory);
-        string packsDirectory = Path.Combine(dataDirectory, "packs");
-        Directory.CreateDirectory(packsDirectory);
         byte[]? key = encryptionKey;
         if (key is not null && key.Length != PackCrypto.KeySizeBytes)
             throw new ArgumentException($"Encryption key must be {PackCrypto.KeySizeBytes} bytes.", nameof(encryptionKey));
         bool encrypted = key is not null;
 
         List<string> paths = [.. entries.Keys.OrderBy(value => value, StringComparer.Ordinal)];
-        Dictionary<string, List<string>> chunkAssignment = [];
-        foreach (string path in paths)
-        {
-            string chunk = ChunkName(path);
-            if (!chunkAssignment.TryGetValue(chunk, out List<string> list))
-                chunkAssignment[chunk] = list = [];
-            list.Add(path);
-        }
-
         long totalBytes = 0;
         List<(string Name, long Size, byte[] Sha256)> chunks = [];
         Dictionary<string, (int ChunkIndex, long Offset, int Length, byte[] Nonce)> written = new(StringComparer.OrdinalIgnoreCase);
-        int chunkIndex = 0;
-        foreach ((string chunkName, List<string> chunkPaths) in chunkAssignment.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        foreach (string path in paths)
         {
-            string chunkPath = Path.Combine(dataDirectory, chunkName.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(chunkPath)!);
-            long chunkSize;
-            using (FileStream stream = File.Create(chunkPath))
+            byte[] payload = entries[path];
+            byte[] nonce = DeterministicNonce(path, payload);
+            byte[] blob = key is not null ? PackCrypto.Encrypt(payload, key, nonce) : payload;
+            byte[] fileBytes = BuildChunkFile(blob);
+            string name = ChunkName(path, payload);
+            string chunkPath = Path.Combine(dataDirectory, name);
+            File.WriteAllBytes(chunkPath, fileBytes);
+            int chunkIndex = chunks.FindIndex(chunk => chunk.Name == name);
+            if (chunkIndex < 0)
             {
-                using BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: false);
-                writer.Write(ChunkMagic);
-                writer.Write(ManifestVersion);
-                foreach (string path in chunkPaths)
-                {
-                    byte[] payload = entries[path];
-                    byte[] nonce = RandomNumberGenerator.GetBytes(PackCrypto.NonceSizeBytes);
-                    byte[] blob = key is not null ? PackCrypto.Encrypt(payload, key, nonce) : payload;
-                    long offset = stream.Position;
-                    writer.Write(blob);
-                    written[path] = (chunkIndex, offset, blob.Length, nonce);
-                    totalBytes += blob.Length;
-                }
-                chunkSize = stream.Length;
-                stream.Flush(true);
+                chunks.Add((name, fileBytes.LongLength, SHA256.HashData(fileBytes)));
+                chunkIndex = chunks.Count - 1;
+                totalBytes += fileBytes.LongLength;
             }
-            byte[] hash = SHA256.HashData(File.ReadAllBytes(chunkPath));
-            chunks.Add((chunkName, chunkSize, hash));
-            chunkIndex++;
+            written[path] = (chunkIndex, ChunkHeaderBytes, blob.Length, nonce);
         }
 
         string manifestPath = Path.Combine(dataDirectory, "manifest.bin");
         using (FileStream manifestStream = File.Create(manifestPath))
         {
-            using BinaryWriter writer = new(manifestStream, System.Text.Encoding.UTF8, leaveOpen: false);
+            using BinaryWriter writer = new(manifestStream, Encoding.UTF8, leaveOpen: false);
             writer.Write(ManifestMagic);
             writer.Write(ManifestVersion);
             writer.Write(encrypted ? 1 : 0);
@@ -97,13 +78,38 @@ public static class AssetPackWriter
         return new PackResult(written.Count, chunks.Count, totalBytes, manifestPath);
     }
 
-    public static string ChunkName(string entryPath)
+    private static byte[] BuildChunkFile(byte[] blob)
+    {
+        using MemoryStream buffer = new(ChunkHeaderBytes + blob.Length);
+        using (BinaryWriter writer = new(buffer, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(ChunkMagic);
+            writer.Write(ManifestVersion);
+        }
+        buffer.Write(blob, 0, blob.Length);
+        return buffer.ToArray();
+    }
+
+    public static string ChunkName(string entryPath, ReadOnlySpan<byte> payload)
     {
         string normalized = entryPath.Replace('\\', '/').TrimStart('/');
-        string directory = Path.GetDirectoryName(normalized)?.Replace('\\', '/') ?? string.Empty;
-        string fileName = Path.GetFileName(normalized);
-        return string.IsNullOrEmpty(directory) || directory == "."
-            ? $"packs/{fileName}.pack"
-            : $"packs/{directory}/{fileName}.pack";
+        byte[] pathBytes = Encoding.UTF8.GetBytes(normalized);
+        byte[] combined = new byte[pathBytes.Length + payload.Length];
+        pathBytes.AsSpan().CopyTo(combined);
+        payload.CopyTo(combined.AsSpan(pathBytes.Length));
+        return Convert.ToHexString(SHA256.HashData(combined), 0, ChunkNameHexChars).ToLowerInvariant() + ".pack";
+    }
+
+    private static byte[] DeterministicNonce(string entryPath, ReadOnlySpan<byte> payload)
+    {
+        string normalized = entryPath.Replace('\\', '/').TrimStart('/');
+        byte[] pathBytes = Encoding.UTF8.GetBytes(normalized);
+        byte[] combined = new byte[pathBytes.Length + payload.Length];
+        pathBytes.AsSpan().CopyTo(combined);
+        payload.CopyTo(combined.AsSpan(pathBytes.Length));
+        byte[] hash = SHA256.HashData(combined);
+        byte[] nonce = new byte[PackCrypto.NonceSizeBytes];
+        hash.AsSpan(0, PackCrypto.NonceSizeBytes).CopyTo(nonce);
+        return nonce;
     }
 }

@@ -101,13 +101,14 @@ public sealed class ScriptCompiler
             trees.Add(GenerateComponentTree(className, componentName));
 
         CSharpCompilation compilation = CSharpCompilation.Create(
-            $"EngineScripts-{Guid.NewGuid():N}",
+            "EngineScripts",
             trees,
             BuildReferences(),
             new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
                 optimizationLevel: OptimizationLevel.Release,
                 concurrentBuild: false,
+                deterministic: true,
                 assemblyIdentityComparer: DesktopAssemblyIdentityComparer.Default));
 
         using MemoryStream peStream = new();

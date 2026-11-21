@@ -35,6 +35,7 @@ public static class PlayerApplication
         renderer.ShaderCacheDirectory = Path.Combine(projectRoot, "Cache", "Shaders");
         PlayerSettingsApplier.Apply(renderer, projectRoot);
         PhysicsModule physics = new();
+        ApplyPhysicsLayerConfig(projectRoot, physics);
         ScriptingModule scripting = new(Path.Combine(projectRoot, "Scripts"))
         {
             Physics = physics,
@@ -76,6 +77,38 @@ public static class PlayerApplication
             packs?.Dispose();
         }
         return exitCode;
+    }
+
+    private static void ApplyPhysicsLayerConfig(string projectRoot, PhysicsModule physics)
+    {
+        string? json = VirtualFileSystem.TryReadAllText(Path.Combine(projectRoot, "Project.project"));
+        if (json is null)
+            return;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return;
+            if (document.RootElement.TryGetProperty("PhysicsLayers", out JsonElement layersElement) && layersElement.ValueKind == JsonValueKind.Array)
+            {
+                List<string> names = [];
+                foreach (JsonElement name in layersElement.EnumerateArray())
+                    if (name.ValueKind == JsonValueKind.String)
+                        names.Add(name.GetString() ?? string.Empty);
+                Engine.Physics.PhysicsLayers.SetNames(names);
+            }
+            if (document.RootElement.TryGetProperty("LayerCollisionMasks", out JsonElement masksElement) && masksElement.ValueKind == JsonValueKind.Array)
+            {
+                List<long> masks = [];
+                foreach (JsonElement mask in masksElement.EnumerateArray())
+                    if (mask.ValueKind == JsonValueKind.Number && mask.TryGetInt64(out long value))
+                        masks.Add(value);
+                physics.SetLayerMasks(masks);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+        }
     }
 
     private static AssetPackSet? MountPack(string projectRoot)

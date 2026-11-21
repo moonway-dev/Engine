@@ -10,6 +10,7 @@ public sealed class EngineBuildProfile
     public string Mode = "Aot";
     public string Configuration = "Debug";
     public string OutputDirectory = "Builds";
+    public string PackKey = string.Empty;
 }
 
 public sealed class BuildRequest
