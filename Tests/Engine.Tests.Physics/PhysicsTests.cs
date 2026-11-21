@@ -202,6 +202,35 @@ public sealed class PhysicsWorldRayCastTests
     }
 
     [Fact]
+    public void WheelSphereProbe_TouchesBumpBeforeCenterCrossesItsEdge()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        world.AddStatic(new Vector3(0f, -0.5f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(40f, 1f, 40f))]);
+        world.AddStatic(new Vector3(-0.5f, 0.1f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 0.2f, 1f))]);
+
+        const float Radius = 0.6f;
+        const float Suspension = 0.3f;
+        const float AnchorHeight = Radius + Suspension;
+        Vector3 down = new(0f, -1f, 0f);
+        float wheelCenterX = -1.2f;
+
+        float centerPenetration = 0f;
+        if (world.RayCast(new Vector3(wheelCenterX, AnchorHeight, 0f), down, Suspension + Radius + 0.05f, out PhysicsRayHit center))
+            centerPenetration = Suspension - (center.Distance - Radius);
+
+        bool sphereHit = world.SweepSphere(new Vector3(wheelCenterX, AnchorHeight, 0f), down, Suspension + 0.05f, Radius, out PhysicsSweepHit sweep);
+        float sphereCompression = sphereHit ? MathF.Max(0f, Suspension - sweep.Distance) : 0f;
+
+        Assert.InRange(centerPenetration, -1e-4f, 1e-4f);
+        Assert.True(sphereHit, "The sphere sweep should touch the bump while the center column still sees only the floor.");
+        Assert.True(sphereCompression > 0.03f,
+            $"Sphere contact should start before the center crosses the edge, but compression is {sphereCompression:F3}");
+        Assert.True(sphereCompression <= Suspension + 1e-3f,
+            $"Sphere compression {sphereCompression:F3} must stay within the suspension travel {Suspension}");
+        Assert.InRange(sweep.Normal.Y, 0.2f, 1.01f);
+    }
+
+    [Fact]
     public void BodySettingsApplyGravityDampingAndAxisConstraints()
     {
         using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
@@ -341,5 +370,113 @@ public sealed class PhysicsWorldRayCastTests
 
         world.ApplyAngularImpulse(handle, new Vector3(0f, 2f, 0f));
         Assert.NotEqual(Vector3.Zero, world.GetBodyAngularVelocity(handle));
+    }
+}
+
+public sealed class WheelSuspensionProbeTests
+{
+    private static PhysicsColliderSpec BoxSpec(Vector3 size) => new(
+        PhysicsColliderKind.Box, Vector3.Zero, Quaternion.Identity, size, 0f, string.Empty, null);
+
+    private const float Radius = 0.6f;
+    private const float Suspension = 0.42f;
+
+    private static PhysicsWorld CreateGroundWorld()
+    {
+        PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        world.AddStatic(new Vector3(0f, -1f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(40f, 2f, 40f))]);
+        return world;
+    }
+
+    private static SuspensionProbeState Probe(PhysicsWorld world, Vector3 anchor, out float travel, out Vector3 normal)
+    {
+        return WheelColliderComponent.ProbeSupport(world, null, anchor, Vector3.Up, Suspension, Radius, out travel, out normal, out _);
+    }
+
+    [Fact]
+    public void Probe_FlatGroundReturnsSupportAtRestTravel()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        SuspensionProbeState state = Probe(world, new Vector3(0f, 0.9f, 0f), out float travel, out Vector3 normal);
+        Assert.Equal(SuspensionProbeState.Supported, state);
+        Assert.InRange(travel, 0.29f, 0.31f);
+        Assert.InRange(normal.Y, 0.99f, 1.01f);
+    }
+
+    [Fact]
+    public void Probe_AirborneFarAboveGround()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        SuspensionProbeState state = Probe(world, new Vector3(0f, 2.5f, 0f), out _, out _);
+        Assert.Equal(SuspensionProbeState.Airborne, state);
+    }
+
+    [Fact]
+    public void Probe_OnBumpTopUsesBumpSurface()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        world.AddStatic(new Vector3(-0.5f, 0.1f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 0.2f, 1f))]);
+        SuspensionProbeState state = Probe(world, new Vector3(-0.5f, 1.0f, 0f), out float travel, out Vector3 normal);
+        Assert.Equal(SuspensionProbeState.Supported, state);
+        Assert.InRange(travel, 0.19f, 0.21f);
+        Assert.InRange(normal.Y, 0.99f, 1.01f);
+    }
+
+    [Fact]
+    public void Probe_ApproachingBumpCornerGivesSmoothCornerSupport()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        world.AddStatic(new Vector3(-0.5f, 0.1f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 0.2f, 1f))]);
+        SuspensionProbeState state = Probe(world, new Vector3(-1.3f, 0.9f, 0f), out float travel, out Vector3 normal);
+        Assert.Equal(SuspensionProbeState.Supported, state);
+        Assert.InRange(travel, 0.14f, 0.27f);
+        Assert.InRange(normal.Y, 0.6f, 0.95f);
+    }
+
+    [Fact]
+    public void Probe_BumpApproachTravelIsContinuousAcrossTheEdge()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        world.AddStatic(new Vector3(-0.5f, 0.1f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1f, 0.2f, 1f))]);
+        float previous = 0.3f;
+        for (float x = -1.8f; x <= -0.6f; x += 0.02f)
+        {
+            SuspensionProbeState state = Probe(world, new Vector3(x, 0.9f, 0f), out float travel, out _);
+            Assert.Equal(SuspensionProbeState.Supported, state);
+            Assert.True(MathF.Abs(travel - previous) < 0.05f,
+                $"Travel jumped from {previous:F3} to {travel:F3} at x={x:F2}");
+            previous = travel;
+        }
+    }
+
+    [Fact]
+    public void Probe_WallAheadStillSupportedByGround()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        world.AddStatic(new Vector3(5f, 0.9f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1.2f, 1.8f, 1.2f))]);
+        SuspensionProbeState state = Probe(world, new Vector3(4.0f, 0.9f, 0f), out float travel, out Vector3 normal);
+        Assert.Equal(SuspensionProbeState.Supported, state);
+        Assert.InRange(travel, 0.29f, 0.31f);
+        Assert.InRange(normal.Y, 0.99f, 1.01f);
+    }
+
+    [Fact]
+    public void Probe_HangingBesideTallWallOverVoidIsBlocked()
+    {
+        using PhysicsWorld world = new(new Vector3(0f, -9.81f, 0f));
+        world.AddStatic(new Vector3(5f, 1.5f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1.2f, 3f, 1.2f))]);
+        SuspensionProbeState state = Probe(world, new Vector3(4.0f, 2.0f, 0f), out _, out _);
+        Assert.Equal(SuspensionProbeState.Blocked, state);
+    }
+
+    [Fact]
+    public void Probe_NextToWallStillSupportedByGround()
+    {
+        using PhysicsWorld world = CreateGroundWorld();
+        world.AddStatic(new Vector3(5f, 0.9f, 0f), Quaternion.Identity, [BoxSpec(new Vector3(1.2f, 1.8f, 1.2f))]);
+        SuspensionProbeState state = Probe(world, new Vector3(3.4f, 0.9f, 0f), out float travel, out Vector3 normal);
+        Assert.Equal(SuspensionProbeState.Supported, state);
+        Assert.InRange(travel, 0.29f, 0.31f);
+        Assert.InRange(normal.Y, 0.99f, 1.01f);
     }
 }

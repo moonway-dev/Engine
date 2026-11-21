@@ -20,7 +20,7 @@ public sealed class ImageData
 
 public static class ImageLoader
 {
-    public static ImageData Load(string path) => Load(File.ReadAllBytes(path));
+    public static ImageData Load(string path) => Load(Core.VirtualFileSystem.ReadAllBytes(path));
 
     public static ImageData Load(byte[] bytes)
     {

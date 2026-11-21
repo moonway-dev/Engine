@@ -507,13 +507,13 @@ public sealed class AssetDatabase : IDisposable
 
     private static FileStamp GetFileStamp(string path)
     {
-        FileInfo info = new(path);
-        return info.Exists ? new FileStamp(true, info.Length, info.LastWriteTimeUtc) : default;
+        (long Length, long LastWriteTicks)? stamp = Core.VirtualFileSystem.TryGetStamp(path);
+        return stamp is { } value ? new FileStamp(true, value.Item1, new DateTime(value.Item2, DateTimeKind.Utc)) : default;
     }
 
     private static string HashTextureFile(string path)
     {
-        using FileStream stream = File.OpenRead(path);
+        using Stream stream = Core.VirtualFileSystem.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 

@@ -220,7 +220,14 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 Vector3 up = rotation.Rotate(Vector3.Up);
                 Vector3 forward = rotation.Rotate(Vector3.Forward);
                 Vector3 anchor = position + rotation.Rotate(wheel.LocalAnchor);
-                wheel.UpdateVisualOnly(wheel.Owner.Transform, rotation, anchor, -up, wheel.LastTravel, up, forward, wheel.SteerAngle * MathF.PI / 180f, wheel.LastRoll);
+                float travel = wheel.LastTravel;
+                if (wheel.Enabled && _world is not null)
+                {
+                    SuspensionProbeState state = WheelColliderComponent.ProbeSupport(_world, registration.Body, anchor, up, wheel.SuspensionDistance, wheel.Radius, out float probed, out _, out _);
+                    if (state == SuspensionProbeState.Supported)
+                        travel = probed;
+                }
+                wheel.UpdateVisualOnly(wheel.Owner.Transform, rotation, anchor, -up, travel, up, forward, wheel.SteerAngle * MathF.PI / 180f, wheel.LastRoll);
             }
         }
     }
@@ -266,6 +273,45 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 wheel.Apply(_world, registration.Body, chassis.Transform, transform, sprungMass, deltaTime);
                 if (wheel.IsGrounded)
                     _groundedWheels.Add(wheel);
+            }
+            ApplyAntiRollBars(_world, registration.Body, chassis.Transform, wheels, deltaTime);
+        }
+    }
+
+    private static void ApplyAntiRollBars(
+        PhysicsWorld world,
+        BodyHandle body,
+        Transform chassisTransform,
+        List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)> wheels,
+        float deltaTime)
+    {
+        Quaternion rotation = chassisTransform.Rotation;
+        Vector3 up = rotation.Rotate(Vector3.Up);
+        Vector3 position = chassisTransform.Position;
+        for (int i = 0; i < wheels.Count; i++)
+        {
+            (WheelColliderComponent leftWheel, _) = wheels[i];
+            if (leftWheel.AntiRollStiffness <= 0f)
+                continue;
+            for (int j = i + 1; j < wheels.Count; j++)
+            {
+                (WheelColliderComponent rightWheel, _) = wheels[j];
+                if (MathF.Abs(MathF.Abs(rightWheel.LocalAnchor.Z) - MathF.Abs(leftWheel.LocalAnchor.Z)) > 0.05f)
+                    continue;
+                if (leftWheel.LocalAnchor.X * rightWheel.LocalAnchor.X >= 0f)
+                    continue;
+                float stiffness = (leftWheel.AntiRollStiffness + rightWheel.AntiRollStiffness) * 0.5f;
+                if (stiffness <= 0f)
+                    break;
+                float compressionDifference = leftWheel.Compression - rightWheel.Compression;
+                if (MathF.Abs(compressionDifference) < MathUtil.Epsilon)
+                    break;
+                float impulse = compressionDifference * stiffness * deltaTime;
+                Vector3 leftAnchor = position + rotation.Rotate(leftWheel.LocalAnchor);
+                Vector3 rightAnchor = position + rotation.Rotate(rightWheel.LocalAnchor);
+                world.ApplyImpulseAtPoint(body, up * impulse, leftAnchor);
+                world.ApplyImpulseAtPoint(body, -up * impulse, rightAnchor);
+                break;
             }
         }
     }

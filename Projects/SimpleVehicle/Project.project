@@ -34,5 +34,17 @@
   "RayTracingGiQuality": 3,
   "RayTracingAdaptiveQuality": true,
   "LastScene": "Scenes/SimpleVehicle.scene",
-  "VSync": false
+  "VSync": false,
+  "Build": {
+    "ProductName": "SimpleVehicleGame",
+    "Version": "1.0.0",
+    "Scenes": [
+      "Scenes/SimpleVehicle.scene"
+    ],
+    "StartupScene": "",
+    "Platform": "win-x64",
+    "Mode": "Managed",
+    "Configuration": "Release",
+    "OutputDirectory": "Builds"
+  }
 }

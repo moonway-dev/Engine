@@ -54,3 +54,6 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /.zcode
+
+# Engine game builds
+Builds/

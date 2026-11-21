@@ -3238,6 +3238,8 @@ public sealed class RendererModule : IUpdatableModule
         {
             if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "PBR.slang")))
                 return candidate;
+            if (Engine.Core.VirtualFileSystem.Exists(Path.Combine(candidate, "PBR.slang")))
+                return Path.GetFullPath(candidate);
         }
         throw new DirectoryNotFoundException("Shader directory not found. Searched: " + string.Join(", ", candidates.Select(Path.GetFullPath)));
     }

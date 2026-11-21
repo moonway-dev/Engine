@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Engine.Core;
 using Engine.Mathematics;
 
 namespace Engine.Scene;
@@ -41,7 +42,7 @@ public static class SceneSerializer
     public static Scene Load(string path, ComponentRegistry? componentRegistry = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        string json = File.ReadAllText(path);
+        string json = VirtualFileSystem.ReadAllText(path);
         return FromJson(json, componentRegistry);
     }
 

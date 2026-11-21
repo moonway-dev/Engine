@@ -4,7 +4,14 @@ using Engine.Scene;
 
 namespace Engine.Physics;
 
-[InspectorTooltip("Unity-style raycast suspension wheel. Place on a child object of the vehicle, one per wheel; drives the wheel mesh rotation and travel.")]
+internal enum SuspensionProbeState
+{
+    Airborne,
+    Supported,
+    Blocked,
+}
+
+[InspectorTooltip("Unity-style sphere-cast suspension wheel. Place on a child object of the vehicle, one per wheel; drives the wheel mesh rotation and travel.")]
 public sealed class WheelColliderComponent : Component
 {
     [InspectorTooltip("Suspension attachment point relative to the vehicle body.")]
@@ -31,6 +38,20 @@ public sealed class WheelColliderComponent : Component
     [InspectorRange(1f, 40f)]
     [InspectorTooltip("Maximum sideways acceleration the tires can generate, in m/s². Prevents rolling over in sharp turns.")]
     public float MaxLateralAcceleration { get; set; } = 12f;
+    [InspectorRange(0.2f, 3f)]
+    [InspectorTooltip("Peak tire friction coefficient. Total tire force is limited to this times the current suspension load.")]
+    public float FrictionCoefficient { get; set; } = 1.1f;
+    [InspectorRange(0f, 50000f)]
+    [InspectorTooltip("Anti-roll bar stiffness shared with the opposite wheel on the same axle, in newtons per meter of compression difference.")]
+    public float AntiRollStiffness { get; set; }
+
+    [SceneIgnore]
+    [InspectorHidden]
+    public float Load { get; internal set; }
+
+    [SceneIgnore]
+    [InspectorHidden]
+    public float SlipFraction { get; internal set; }
 
     [InspectorTooltip("Motor torque around the wheel axle; set from scripts.")]
     public float MotorTorque { get; set; }
@@ -52,10 +73,80 @@ public sealed class WheelColliderComponent : Component
     public float Compression { get; internal set; }
 
     private float _rollAngle;
+    private float _smoothedCompression;
+    private Vector3 _smoothedNormal = Vector3.Up;
     internal float LastTravel { get; set; }
-    internal float LastSurfaceDistance { get; set; }
     internal float LastRoll { get; set; }
     internal bool HasVisual { get; set; }
+
+    private const float TireComplianceRate = 60f;
+    private const float MaxDampingForce = 4500f;
+    private const float NormalSmoothingRate = 45f;
+    private const float MinSupportNormal = 0.35f;
+    private const float ProbeMargin = 0.05f;
+
+    internal static SuspensionProbeState ProbeSupport(
+        PhysicsWorld world,
+        BodyHandle? ignore,
+        Vector3 anchor,
+        Vector3 up,
+        float suspensionDistance,
+        float radius,
+        out float travel,
+        out Vector3 normal,
+        out Vector3 contact)
+    {
+        travel = suspensionDistance;
+        normal = up;
+        contact = Vector3.Zero;
+        Vector3 down = -up;
+        float raise = radius * 0.5f;
+        Vector3 start = anchor + up * raise;
+        float maximumDistance = suspensionDistance + raise + radius;
+        if (!world.SweepSphere(start, down, maximumDistance, radius, out PhysicsSweepHit sweep, ignore))
+            return SuspensionProbeState.Airborne;
+        if (sweep.StartedIntersecting)
+            return ProbeFallback(world, ignore, start, down, maximumDistance, anchor, up, suspensionDistance, radius, out travel, out normal, out contact);
+        if (Vector3.Dot(sweep.Normal, up) < MinSupportNormal)
+            return SuspensionProbeState.Blocked;
+        float rawTravel = Vector3.Dot(anchor - (sweep.Position + sweep.Normal * radius), up);
+        if (rawTravel > suspensionDistance + ProbeMargin)
+            return SuspensionProbeState.Airborne;
+        travel = MathUtil.Clamp(rawTravel, 0f, suspensionDistance);
+        normal = sweep.Normal;
+        contact = sweep.Position;
+        return SuspensionProbeState.Supported;
+    }
+
+    private static SuspensionProbeState ProbeFallback(
+        PhysicsWorld world,
+        BodyHandle? ignore,
+        Vector3 start,
+        Vector3 down,
+        float maximumDistance,
+        Vector3 anchor,
+        Vector3 up,
+        float suspensionDistance,
+        float radius,
+        out float travel,
+        out Vector3 normal,
+        out Vector3 contact)
+    {
+        travel = suspensionDistance;
+        normal = up;
+        contact = Vector3.Zero;
+        if (!world.SweepSphere(start, down, maximumDistance, radius * 0.5f, out PhysicsSweepHit sweep, ignore))
+            return SuspensionProbeState.Blocked;
+        if (sweep.StartedIntersecting || Vector3.Dot(sweep.Normal, up) < MinSupportNormal)
+            return SuspensionProbeState.Blocked;
+        float rawTravel = Vector3.Dot(anchor - (sweep.Position + sweep.Normal * radius), up);
+        if (rawTravel > suspensionDistance + ProbeMargin)
+            return SuspensionProbeState.Airborne;
+        travel = MathUtil.Clamp(rawTravel, 0f, suspensionDistance);
+        normal = sweep.Normal;
+        contact = sweep.Position;
+        return SuspensionProbeState.Supported;
+    }
 
     internal void Apply(
         PhysicsWorld world,
@@ -67,81 +158,98 @@ public sealed class WheelColliderComponent : Component
     {
         IsGrounded = false;
         Compression = 0f;
+        Load = 0f;
+        SlipFraction = 0f;
         Quaternion chassisRotation = chassisTransform.Rotation;
         Vector3 chassisPosition = chassisTransform.Position;
         Vector3 up = chassisRotation.Rotate(Vector3.Up);
         Vector3 forward = chassisRotation.Rotate(Vector3.Forward);
         Vector3 anchor = chassisPosition + chassisRotation.Rotate(LocalAnchor);
         Vector3 down = -up;
-        float maximumDistance = SuspensionDistance + Radius;
         Quaternion steerRotation = Quaternion.FromAxisAngle(up, -SteerAngle * MathF.PI / 180f);
         Vector3 steeredForward = steerRotation.Rotate(forward);
 
         Vector3 velocityAtAnchor = world.GetBodyVelocityAtPoint(chassisBody, anchor);
         float compressionVelocity = Vector3.Dot(velocityAtAnchor, down);
-
-        if (!world.RayCast(anchor, down, maximumDistance, out PhysicsRayHit hit, chassisBody))
-        {
-            float airborneForce = MathUtil.Clamp(
-                SuspensionDistance * sprungMass * 4f * MathF.PI * MathF.PI * Frequency * Frequency * 0.25f,
-                0f,
-                MathF.Max(sprungMass * MathF.Abs(world.Gravity.Y) * 0.5f, 1f));
-        world.ApplyImpulseAtPoint(chassisBody, up * airborneForce * deltaTime, anchor);
-        LastTravel = SuspensionDistance;
-        LastSurfaceDistance = 0f;
-        LastRoll = _rollAngle;
-        HasVisual = true;
-        UpdateVisual(wheelTransform, chassisRotation, anchor, down, LastTravel, up, steerRotation, LastRoll);
-        return;
-    }
-
-    if (LastSurfaceDistance - hit.Distance > Radius)
-    {
-        LastTravel = SuspensionDistance;
-        LastRoll = _rollAngle;
-        HasVisual = true;
-        UpdateVisual(wheelTransform, chassisRotation, anchor, down, LastTravel, up, steerRotation, LastRoll);
-        return;
-    }
-
-    IsGrounded = true;
-        Compression = MathUtil.Clamp(maximumDistance - hit.Distance, 0f, SuspensionDistance);
-        ContactPoint = anchor + down * hit.Distance;
         float springStrength = sprungMass * 4f * MathF.PI * MathF.PI * Frequency * Frequency;
         float damping = 2f * DampingRatio * MathF.Sqrt(springStrength * sprungMass);
-        float force = MathUtil.Clamp(
-            Compression * springStrength + compressionVelocity * damping,
-            0f,
-            MaxSuspensionForce);
+        float dampingForce = MathUtil.Clamp(compressionVelocity * damping, -MaxDampingForce, MaxDampingForce);
+
+        SuspensionProbeState state = ProbeSupport(world, chassisBody, anchor, up, SuspensionDistance, Radius, out float travel, out Vector3 surfaceNormal, out Vector3 contact);
+        if (state == SuspensionProbeState.Airborne)
+        {
+            _smoothedCompression = MathUtil.Lerp(_smoothedCompression, 0f, MathUtil.Clamp(deltaTime * TireComplianceRate, 0f, 1f));
+            float travelVisual = SuspensionDistance - _smoothedCompression;
+            LastTravel = travelVisual;
+            LastRoll = _rollAngle;
+            HasVisual = true;
+            UpdateVisual(wheelTransform, chassisRotation, anchor, down, travelVisual, up, steerRotation, LastRoll);
+            return;
+        }
+
+        IsGrounded = true;
+        if (state == SuspensionProbeState.Blocked)
+        {
+            Compression = SuspensionDistance - _smoothedCompression;
+        }
+        else
+        {
+            float compression = SuspensionDistance - travel;
+            Compression = compression;
+            ContactPoint = contact;
+            Vector3 wheelCenter = anchor - up * travel;
+            Vector3 contactToCenter = wheelCenter - contact;
+            Vector3 rawNormal = contactToCenter.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon
+                ? contactToCenter.Normalized
+                : surfaceNormal;
+            Vector3 normal = Vector3.Lerp(_smoothedNormal, rawNormal, MathUtil.Clamp(deltaTime * NormalSmoothingRate, 0f, 1f));
+            normal = normal.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon ? normal.Normalized : rawNormal;
+            _smoothedNormal = normal;
+            _smoothedCompression = MathUtil.Lerp(_smoothedCompression, compression, MathUtil.Clamp(deltaTime * TireComplianceRate, 0f, 1f));
+        }
+
+        float force = MathUtil.Clamp(_smoothedCompression * springStrength + dampingForce, 0f, MaxSuspensionForce);
         world.ApplyImpulseAtPoint(chassisBody, up * force * deltaTime, anchor);
 
-        Vector3 normal = hit.Normal;
-        Vector3 planeForward = steeredForward - normal * Vector3.Dot(steeredForward, normal);
+        Vector3 planeForward = steeredForward - _smoothedNormal * Vector3.Dot(steeredForward, _smoothedNormal);
         planeForward = planeForward.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon ? planeForward.Normalized : steeredForward;
-        Vector3 lateral = Vector3.Cross(normal, planeForward);
+        Vector3 lateral = Vector3.Cross(_smoothedNormal, planeForward);
         lateral = lateral.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon ? lateral.Normalized : Vector3.Up;
         Vector3 velocityAtContact = world.GetBodyVelocityAtPoint(chassisBody, anchor);
         float forwardSpeed = Vector3.Dot(velocityAtContact, planeForward);
         float lateralSpeed = Vector3.Dot(velocityAtContact, lateral);
 
+        float load = MathF.Max(force, 0f);
+        Load = load;
         float driveImpulse = MotorTorque / MathF.Max(Radius, MathUtil.Epsilon) * deltaTime * ForwardGrip;
         float brakeImpulse = MathF.Min(
             MathF.Min(BrakeTorque / MathF.Max(Radius, MathUtil.Epsilon) * deltaTime, sprungMass * MathF.Abs(world.Gravity.Y) * deltaTime),
             MathF.Abs(forwardSpeed) * sprungMass);
         float forwardImpulse = driveImpulse - MathF.Sign(forwardSpeed) * brakeImpulse;
+        float lateralImpulse = -lateralSpeed * load * MathUtil.Clamp(LateralGrip, 0f, 2f) * deltaTime;
+        float maxTireImpulse = FrictionCoefficient * load * deltaTime;
+        float demandedImpulse = MathF.Sqrt(forwardImpulse * forwardImpulse + lateralImpulse * lateralImpulse);
+        if (demandedImpulse > maxTireImpulse && demandedImpulse > MathUtil.Epsilon)
+        {
+            float tractionScale = maxTireImpulse / demandedImpulse;
+            forwardImpulse *= tractionScale;
+            lateralImpulse *= tractionScale;
+            SlipFraction = 1f - tractionScale;
+        }
+        else
+        {
+            SlipFraction = 0f;
+        }
         float maxLateralImpulse = sprungMass * MaxLateralAcceleration * deltaTime;
-        float lateralImpulse = MathUtil.Clamp(
-            -lateralSpeed * sprungMass * MathUtil.Clamp(LateralGrip, 0f, 1f) * 0.5f,
-            -maxLateralImpulse,
-            maxLateralImpulse);
+        lateralImpulse = MathUtil.Clamp(lateralImpulse, -maxLateralImpulse, maxLateralImpulse);
         world.ApplyImpulseAtPoint(chassisBody, planeForward * forwardImpulse + lateral * lateralImpulse, anchor);
 
         _rollAngle -= forwardSpeed / MathF.Max(Radius, MathUtil.Epsilon) * deltaTime;
-        LastTravel = hit.Distance - Radius;
-        LastSurfaceDistance = hit.Distance;
+        float groundedTravel = SuspensionDistance - _smoothedCompression;
+        LastTravel = groundedTravel;
         LastRoll = _rollAngle;
         HasVisual = true;
-        UpdateVisual(wheelTransform, chassisRotation, anchor, down, LastTravel, up, steerRotation, LastRoll);
+        UpdateVisual(wheelTransform, chassisRotation, anchor, down, groundedTravel, up, steerRotation, LastRoll);
     }
 
     private void UpdateVisual(

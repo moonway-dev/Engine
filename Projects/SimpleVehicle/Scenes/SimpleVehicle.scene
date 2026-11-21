@@ -87,7 +87,7 @@
           "properties": {
             "Center": [
               0,
-              -0.25,
+              -1,
               0
             ],
             "ColliderScale": [
@@ -104,7 +104,7 @@
             ],
             "Size": [
               24,
-              0.5,
+              2,
               24
             ]
           }
@@ -187,14 +187,26 @@
           "properties": {
             "Script": "CarController",
             "Enabled": true,
+            "AirPitchAuthority": 2.6,
+            "AirRollAuthority": 2.6,
+            "AirStabilization": 2.5,
             "AllWheelDrive": false,
-            "BrakeTorque": 3000,
+            "BrakeTorque": 5200,
+            "Downforce": 2.2,
+            "DragCoefficient": 0.65,
+            "EngineBrakingFraction": 0.05,
+            "FrontBrakeBias": 0.62,
+            "HandbrakeFrontBrakeFraction": 0.12,
             "HandbrakeKey": "Space",
-            "MaxSpeedKmh": 130,
-            "MaxSteerDegrees": 20.104,
-            "MotorTorque": 1400,
-            "ReverseTorque": 900,
-            "SteeringRate": 2.5
+            "HandbrakeRearGrip": 0.28,
+            "HandbrakeTorque": 6800,
+            "HighSpeedSteerDegrees": 9,
+            "MaxSpeedKmh": 190,
+            "MaxSteerDegrees": 38,
+            "MotorTorque": 1800,
+            "ReverseTorque": 1200,
+            "SteerFadeSpeedKmh": 170,
+            "SteeringRate": 6.5
           }
         },
         {
@@ -291,22 +303,24 @@
           "type": "WheelCollider",
           "enabled": true,
           "properties": {
+            "AntiRollStiffness": 6000,
             "BrakeTorque": 0,
-            "DampingRatio": 0.85,
+            "DampingRatio": 0.72,
             "ForwardGrip": 1,
-            "Frequency": 1.8,
+            "Frequency": 1.3,
+            "FrictionCoefficient": 1.05,
             "LateralGrip": 1,
             "LocalAnchor": [
               -1.05,
               0,
               -1.3
             ],
-            "MaxLateralAcceleration": 12,
-            "MaxSuspensionForce": 12000,
+            "MaxLateralAcceleration": 20,
+            "MaxSuspensionForce": 14000,
             "MotorTorque": 0,
             "Radius": 0.6,
             "SteerAngle": 0,
-            "SuspensionDistance": 0.3
+            "SuspensionDistance": 0.45
           }
         }
       ],
@@ -374,22 +388,24 @@
           "type": "WheelCollider",
           "enabled": true,
           "properties": {
+            "AntiRollStiffness": 6000,
             "BrakeTorque": 0,
-            "DampingRatio": 0.85,
+            "DampingRatio": 0.72,
             "ForwardGrip": 1,
-            "Frequency": 1.8,
+            "Frequency": 1.3,
+            "FrictionCoefficient": 1.05,
             "LateralGrip": 1,
             "LocalAnchor": [
               1.05,
               0,
               -1.3
             ],
-            "MaxLateralAcceleration": 12,
-            "MaxSuspensionForce": 12000,
+            "MaxLateralAcceleration": 20,
+            "MaxSuspensionForce": 14000,
             "MotorTorque": 0,
             "Radius": 0.6,
             "SteerAngle": 0,
-            "SuspensionDistance": 0.3
+            "SuspensionDistance": 0.45
           }
         }
       ],
@@ -457,22 +473,24 @@
           "type": "WheelCollider",
           "enabled": true,
           "properties": {
+            "AntiRollStiffness": 6000,
             "BrakeTorque": 0,
-            "DampingRatio": 0.85,
+            "DampingRatio": 0.72,
             "ForwardGrip": 1,
-            "Frequency": 1.8,
+            "Frequency": 1.3,
+            "FrictionCoefficient": 1.05,
             "LateralGrip": 1,
             "LocalAnchor": [
               -1.05,
               0,
               1.3
             ],
-            "MaxLateralAcceleration": 12,
-            "MaxSuspensionForce": 12000,
+            "MaxLateralAcceleration": 20,
+            "MaxSuspensionForce": 14000,
             "MotorTorque": 0,
             "Radius": 0.6,
             "SteerAngle": 0,
-            "SuspensionDistance": 0.3
+            "SuspensionDistance": 0.45
           }
         }
       ],
@@ -540,22 +558,24 @@
           "type": "WheelCollider",
           "enabled": true,
           "properties": {
+            "AntiRollStiffness": 6000,
             "BrakeTorque": 0,
-            "DampingRatio": 0.85,
+            "DampingRatio": 0.72,
             "ForwardGrip": 1,
-            "Frequency": 1.8,
+            "Frequency": 1.3,
+            "FrictionCoefficient": 1.05,
             "LateralGrip": 1,
             "LocalAnchor": [
               1.05,
               0,
               1.3
             ],
-            "MaxLateralAcceleration": 12,
-            "MaxSuspensionForce": 12000,
+            "MaxLateralAcceleration": 20,
+            "MaxSuspensionForce": 14000,
             "MotorTorque": 0,
             "Radius": 0.6,
             "SteerAngle": 0,
-            "SuspensionDistance": 0.3
+            "SuspensionDistance": 0.45
           }
         }
       ],
@@ -1047,7 +1067,9 @@
           "properties": {
             "Script": "ChaseCamera",
             "Enabled": true,
+            "FollowDamping": 9,
             "LookAhead": 0.4,
+            "LookDamping": 6.5,
             "LookOffset": [
               0,
               2,

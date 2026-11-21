@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Engine.Mathematics;
 using Engine.Rendering;
+using Engine.Editor.Build;
 
 namespace Engine.Editor;
 
@@ -29,6 +30,7 @@ public sealed class ProjectSettings
     public bool RayTracingAdaptiveQuality = true;
     public string LastScene = string.Empty;
     public bool VSync = true;
+    public EngineBuildProfile Build = new();
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {

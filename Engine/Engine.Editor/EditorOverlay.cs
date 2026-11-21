@@ -80,13 +80,16 @@ public sealed class EditorOverlay : IDisposable
         IRHI? rhi = null,
         PlayModeController? playMode = null,
         Func<string, IntPtr>? iconResolver = null,
-        Func<Engine.Editor.Models.AssetEntry, AssetPreview>? previewResolver = null)
+        Func<Engine.Editor.Models.AssetEntry, AssetPreview>? previewResolver = null,
+        Action<string>? openProjectHandler = null,
+        string? engineRoot = null)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _playMode = playMode;
         _gizmo = new TransformGizmo(context, renderer);
-        _toolbar = new ToolbarPanel(context, playMode, iconResolver);
+        _toolbar = new ToolbarPanel(context, playMode, iconResolver, openProjectHandler);
+        _toolbar.ConfigureBuild(projectSettings, projectSettingsPath, engineRoot);
         _hierarchy = new HierarchyPanel(context);
         _inspector = new InspectorPanel(context);
         _projectBrowser = new ProjectBrowserPanel(context, iconResolver, previewResolver);
@@ -435,7 +438,7 @@ public sealed class EditorOverlay : IDisposable
     private void RegisterDefaultHotkeys()
     {
         _hotkeys.Register(new EditorHotkeyBinding("scene.new", "New Scene", new EditorHotkey(KeyCode.N, KeyModifiers.Control), () => _context.Document.New()));
-        _hotkeys.Register(new EditorHotkeyBinding("scene.open", "Open Scene", new EditorHotkey(KeyCode.O, KeyModifiers.Control), _toolbar.RequestOpen));
+        _hotkeys.Register(new EditorHotkeyBinding("scene.open", "Open Project", new EditorHotkey(KeyCode.O, KeyModifiers.Control), _toolbar.RequestOpen));
         _hotkeys.Register(new EditorHotkeyBinding("scene.save", "Save Scene", new EditorHotkey(KeyCode.S, KeyModifiers.Control), Save));
         _hotkeys.Register(new EditorHotkeyBinding("scene.saveAs", "Save Scene As", new EditorHotkey(KeyCode.S, KeyModifiers.Control | KeyModifiers.Shift), _toolbar.RequestSaveAs));
         _hotkeys.Register(new EditorHotkeyBinding("edit.undo", "Undo", new EditorHotkey(KeyCode.Z, KeyModifiers.Control), () => _context.Undo())

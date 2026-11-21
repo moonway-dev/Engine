@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Engine.Core\Engine.Core.csproj" />
+    <ProjectReference Include="..\Engine.Platform\Engine.Platform.csproj" />
+    <ProjectReference Include="..\Engine.RHI\Engine.RHI.csproj" />
+    <ProjectReference Include="..\Engine.Rendering\Engine.Rendering.csproj" />
+    <ProjectReference Include="..\Engine.Assets\Engine.Assets.csproj" />
+    <ProjectReference Include="..\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\Engine.ScriptingRuntime\Engine.ScriptingRuntime.csproj" />
+    <ProjectReference Include="..\Engine.Physics\Engine.Physics.csproj" />
+    <ProjectReference Include="..\Engine.Shaders\Engine.Shaders.csproj" />
+    <ProjectReference Include="..\..\SDK\Engine.Mathematics\Engine.Mathematics.csproj" />
+    <ProjectReference Include="..\..\Backends\Engine.Backends.Null\Engine.Backends.Null.csproj" />
+    <ProjectReference Include="..\..\Backends\Engine.Backends.Vulkan\Engine.Backends.Vulkan.csproj" />
+  </ItemGroup>
+</Project>

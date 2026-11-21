@@ -53,7 +53,9 @@ public sealed class ScriptCompiler
 
     private static IReadOnlyList<MetadataReference>? _referenceCache;
 
-    public ScriptCompilationResult Compile(string scriptsRoot)
+    public ScriptCompilationResult Compile(string scriptsRoot) => Compile(scriptsRoot, assemblyOutput: null);
+
+    public ScriptCompilationResult Compile(string scriptsRoot, Stream? assemblyOutput)
     {
         if (!Directory.Exists(scriptsRoot))
             return new ScriptCompilationResult
@@ -118,6 +120,12 @@ public sealed class ScriptCompiler
         }
 
         peStream.Position = 0;
+        if (assemblyOutput is not null)
+        {
+            peStream.CopyTo(assemblyOutput);
+            assemblyOutput.Position = 0;
+            peStream.Position = 0;
+        }
         ScriptLoadContext loadContext = new();
         Assembly assembly;
         try

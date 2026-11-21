@@ -38,11 +38,12 @@ public static class ObjModelLoader
             partStart = indices.Count;
         }
         int lineNumber = 0;
-        foreach (string rawLine in File.ReadLines(path))
+        string contents = Core.VirtualFileSystem.ReadAllText(path);
+        foreach (ReadOnlySpan<char> lineRaw in contents.AsSpan().EnumerateLines())
         {
             if ((lineNumber++ & 4095) == 0)
                 cancellationToken.ThrowIfCancellationRequested();
-            ReadOnlySpan<char> line = rawLine;
+            ReadOnlySpan<char> line = lineRaw;
             ReadOnlySpan<char> kind = NextToken(ref line);
             if (kind.SequenceEqual("v"))
             {

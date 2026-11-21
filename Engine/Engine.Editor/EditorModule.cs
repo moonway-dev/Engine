@@ -16,7 +16,7 @@ public sealed class EditorModule : IUpdatableModule
     private readonly RhiModule _rhiModule;
     private readonly RendererModule _renderer;
     private readonly string _shaderDirectory;
-    private readonly string? _assetsDirectory;
+    private string? _assetsDirectory;
     private readonly string? _layoutPath;
     private readonly Scene.SceneHost _sceneHost = new();
     private SceneHostAdapter? _sceneHostAdapter;
@@ -55,6 +55,12 @@ public sealed class EditorModule : IUpdatableModule
 
     public PlayModeController? PlayMode { get; private set; }
 
+    public string EngineRoot { get; set; } = string.Empty;
+
+    public event Action<string>? ProjectOpenRequested;
+
+    public void RequestProjectOpen(string projectFilePath) => ProjectOpenRequested?.Invoke(projectFilePath);
+
     public EditorModule(
         RhiModule rhiModule,
         RendererModule renderer,
@@ -72,11 +78,44 @@ public sealed class EditorModule : IUpdatableModule
     public void AttachScene(Scene.Scene scene, string? scenePath = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
+        Scene.Scene? previous = _sceneHost.ActiveScene;
+        bool switching = previous is not null && !ReferenceEquals(previous, scene);
         _scene = scene;
         _pendingScenePath = scenePath;
-        _sceneHost.ActiveScene = scene;
+        if (switching)
+            _suppressActiveSceneChanged = true;
+        try
+        {
+            _sceneHost.ActiveScene = scene;
+        }
+        finally
+        {
+            _suppressActiveSceneChanged = false;
+        }
         if (_overlay is null)
             CreateOverlay();
+        if (switching)
+        {
+            _renderer.AttachScene(scene);
+            if (scenePath is not null)
+            {
+                try
+                {
+                    Engine.Editor.ProjectSettings.WriteLastScene(ResolveAssetsPath(), scenePath);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+    }
+
+    private bool _suppressActiveSceneChanged;
+
+    public void SetAssetsRoot(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        _assetsDirectory = Path.GetFullPath(path);
     }
 
     public void Initialize(IEngineContext context)
@@ -178,7 +217,9 @@ public sealed class EditorModule : IUpdatableModule
             _rhiModule.Instance,
             PlayMode,
             name => _backend.GetIconTexture(name),
-            entry => _previews?.Request(entry) ?? default);
+            entry => _previews?.Request(entry) ?? default,
+            path => RequestProjectOpen(path),
+            EngineRoot);
         _overlay.VSyncChanged += OnVSyncChanged;
     }
 
@@ -242,6 +283,8 @@ public sealed class EditorModule : IUpdatableModule
 
     private void OnActiveSceneChanged(object? sender, SceneChangedEventArgs args)
     {
+        if (_suppressActiveSceneChanged)
+            return;
         _scene = args.Current;
         _renderer.AttachScene(args.Current);
         string? openedScene = _overlay?.Context.Document.Path;

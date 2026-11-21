@@ -15,7 +15,11 @@ public static class FbxModelLoader
     {
         cancellationToken.ThrowIfCancellationRequested();
         using AssimpContext context = new();
-        AssimpScene scene = context.ImportFile(path, PostProcessSteps.Triangulate | PostProcessSteps.SortByPrimitiveType);
+        using Stream sourceStream = Engine.Core.VirtualFileSystem.OpenRead(path);
+        AssimpScene scene = context.ImportFileFromStream(
+            sourceStream,
+            PostProcessSteps.Triangulate | PostProcessSteps.SortByPrimitiveType,
+            Path.GetExtension(path).TrimStart('.'));
         if (scene is null || scene.MeshCount == 0 || scene.RootNode is null)
             throw new InvalidDataException($"FBX file '{path}' contains no meshes.");
 

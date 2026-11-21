@@ -1,5 +1,6 @@
 namespace Engine.Scripting;
 
+using System.Reflection;
 using System.Text.Json;
 using BepuPhysics;
 using Engine.Mathematics;
@@ -14,7 +15,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
 
     private const double ReloadDebounceSeconds = 0.4;
 
-    private readonly string _scriptsRoot;
+    private string _scriptsRoot;
     private readonly List<SceneModel> _scenes = [];
     private readonly List<SceneModel> _playingScenes = [];
     private readonly List<(ScriptComponent Component, ScriptBehaviour Behaviour)> _activeInstances = [];
@@ -48,6 +49,8 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     public bool AlwaysPlay { get; set; }
 
     public string? AssetsRoot { get; set; }
+
+    public bool PrecompiledScripts { get; set; }
 
     public bool IsPaused => _paused;
 
@@ -183,7 +186,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
 
     public void Recompile()
     {
-        ScriptCompilationResult result = new ScriptCompiler().Compile(_scriptsRoot);
+        ScriptCompilationResult result = PrecompiledScripts ? LoadPrecompiledScripts() : new ScriptCompiler().Compile(_scriptsRoot);
         _lastCompileTime = DateTime.Now;
         _lastErrors = result.Errors;
         _lastCompileSuccessful = result.Success;
@@ -217,6 +220,80 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
             RetireLoadContext(previous);
         _log?.Information($"Scripts compiled: {result.Scripts.Count} script(s)");
         ScriptsReloaded?.Invoke();
+    }
+
+    private ScriptCompilationResult LoadPrecompiledScripts()
+    {
+        List<ScriptTypeRegistration> registrations = [];
+        List<string> errors = [];
+        HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
+        foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly.IsDynamic)
+                continue;
+            Type[] types;
+            try
+            {
+                types = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException exception)
+            {
+                types = exception.Types.Where(type => type is not null).Cast<Type>().ToArray();
+            }
+            catch (Exception exception) when (exception is IOException or BadImageFormatException)
+            {
+                continue;
+            }
+            foreach (Type behaviourType in types)
+            {
+                if (!behaviourType.IsClass || behaviourType.IsAbstract || behaviourType.IsGenericTypeDefinition
+                    || !typeof(ScriptBehaviour).IsAssignableFrom(behaviourType)
+                    || !behaviourType.IsPublic || behaviourType.Name.Contains('<'))
+                    continue;
+                if (!keys.Add(behaviourType.Name))
+                    continue;
+                Type? componentType = types.FirstOrDefault(type =>
+                    type.IsClass && !type.IsAbstract
+                    && typeof(ScriptComponent).IsAssignableFrom(type)
+                    && type.Name.Equals(behaviourType.Name + "Component", StringComparison.Ordinal));
+                if (componentType is null)
+                {
+                    errors.Add($"Precompiled script '{behaviourType.Name}' has no matching component type '{behaviourType.Name}Component'.");
+                    continue;
+                }
+                registrations.Add(new ScriptTypeRegistration(
+                    behaviourType.Name,
+                    componentType.Name,
+                    componentType,
+                    behaviourType,
+                    () => (Component)Activator.CreateInstance(componentType)!));
+            }
+        }
+        return new ScriptCompilationResult
+        {
+            Success = errors.Count == 0,
+            Errors = errors,
+            Scripts = registrations,
+        };
+    }
+
+    public void SetScriptsRoot(string scriptsRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scriptsRoot);
+        string full = Path.GetFullPath(scriptsRoot);
+        if (full.Equals(_scriptsRoot, StringComparison.OrdinalIgnoreCase))
+            return;
+        if (_watcher is not null)
+        {
+            _watcher.EnableRaisingEvents = false;
+            _watcher.Dispose();
+            _watcher = null;
+        }
+        _scriptsRoot = full;
+        foreach (SceneModel scene in _playingScenes.ToArray())
+            EndPlay(scene);
+        Recompile();
+        StartWatcher();
     }
 
     private void RetireLoadContext(ScriptCompilationResult previous)
@@ -546,7 +623,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
 
     private void StartWatcher()
     {
-        if (!Directory.Exists(_scriptsRoot))
+        if (PrecompiledScripts || !Directory.Exists(_scriptsRoot))
             return;
         try
         {

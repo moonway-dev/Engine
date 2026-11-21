@@ -56,12 +56,25 @@ internal static class Program
                 projectRoot);
             editor.ScriptRuntime = scripting;
         editor.Behaviours = behaviours;
+            editor.EngineRoot = ResolveEngineRoot();
             builder.AddModule(editor);
             module.SetEditor(editor);
         }
         Application application = builder.Build();
         application.Run();
         return application.Context.ExitCode;
+    }
+
+    internal static string ResolveEngineRoot()
+    {
+        string? current = Directory.GetCurrentDirectory();
+        for (int i = 0; i < 6 && current is not null; i++)
+        {
+            if (File.Exists(Path.Combine(current, "Engine.sln")))
+                return current;
+            current = Path.GetDirectoryName(current);
+        }
+        return Directory.GetCurrentDirectory();
     }
 
     internal static string ResolveProjectRoot()
@@ -237,6 +250,7 @@ internal sealed class Basic3DModule(
     {
         _editor = editor;
         editor.Physics = physics;
+        editor.ProjectOpenRequested += OnProjectOpenRequested;
         editor.SceneHost.ActiveSceneChanged += (_, args) =>
         {
             if (args.Current is not null)
@@ -248,6 +262,41 @@ internal sealed class Basic3DModule(
                 scripting.AttachScene(args.Current);
             }
         };
+    }
+
+    private void OnProjectOpenRequested(string projectFilePath)
+    {
+        if (_editor is null)
+            return;
+        try
+        {
+            OpenProject(projectFilePath);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException or System.Text.Json.JsonException)
+        {
+            if (_editor.Context is { } context)
+                context.Error = $"Failed to open project: {exception.Message}";
+        }
+    }
+
+    private void OpenProject(string projectFilePath)
+    {
+        EditorModule editor = _editor!;
+        editor.PlayMode?.ExitPlay();
+        string projectRoot = Path.GetDirectoryName(Path.GetFullPath(projectFilePath))!;
+        _assets = new AssetDatabase(rhiModule.Instance!.Device, projectRoot);
+        editor.SetAssetsRoot(projectRoot);
+        editor.MaterialStore = _assets.Materials;
+        editor.ModelAssets = _assets;
+        scripting.SetScriptsRoot(Path.Combine(projectRoot, "Scripts"));
+        scripting.AssetsRoot = projectRoot;
+        string? scenePath = FindLastOpenedScene(projectRoot) ?? FindFirstScene(projectRoot);
+        Scene scene = scenePath is not null ? Scene.Load(scenePath) : new Scene("Untitled");
+        if (scenePath is not null)
+            WriteLastOpenedScene(projectRoot, scenePath);
+        _scene = scene;
+        _cameraObject = scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
+        editor.AttachScene(scene, scenePath);
     }
 
     public void Initialize(IEngineContext context)
@@ -278,29 +327,14 @@ internal sealed class Basic3DModule(
         Vertex[] cubeScaled = [.. cubeVertices.Select(static v => new Vertex { Position = v.Position * 1.4f, Normal = v.Normal, UV = v.UV, Tangent = v.Tangent })];
         _meshes["cube"] = new Mesh(device, cubeScaled, cubeIndices, "Cube");
         _physicsMeshes["cube"] = ToPhysicsMeshData(cubeScaled, cubeIndices);
-        (Vertex[] sphereVertices, uint[] sphereIndices) = MeshPrimitives.Sphere(1f, 32, 20);
-        _meshes["sphere"] = new Mesh(device, sphereVertices, sphereIndices, "Sphere");
-        _physicsMeshes["sphere"] = ToPhysicsMeshData(sphereVertices, sphereIndices);
-        (Vertex[] capsuleVertices, uint[] capsuleIndices) = MeshPrimitives.Capsule(0.35f, 1.8f);
-        _meshes["capsule"] = new Mesh(device, capsuleVertices, capsuleIndices, "Capsule");
-        _physicsMeshes["capsule"] = ToPhysicsMeshData(capsuleVertices, capsuleIndices);
-        (Vertex[] cylinderVertices, uint[] cylinderIndices) = MeshPrimitives.Cylinder(0.5f, 1f);
-        _meshes["cylinder"] = new Mesh(device, cylinderVertices, cylinderIndices, "Cylinder");
-        _physicsMeshes["cylinder"] = ToPhysicsMeshData(cylinderVertices, cylinderIndices);
-        (Vertex[] carBodyVertices, uint[] carBodyIndices) = MeshPrimitives.Box(1.9f, 1.1f, 6.2f);
-        _meshes["car_body"] = new Mesh(device, carBodyVertices, carBodyIndices, "CarBody");
-        _physicsMeshes["car_body"] = ToPhysicsMeshData(carBodyVertices, carBodyIndices);
-        (Vertex[] carCabinVertices, uint[] carCabinIndices) = MeshPrimitives.Box(1.7f, 0.9f, 3.4f);
-        _meshes["car_cabin"] = new Mesh(device, carCabinVertices, carCabinIndices, "CarCabin");
-        _physicsMeshes["car_cabin"] = ToPhysicsMeshData(carCabinVertices, carCabinIndices);
-        (Vertex[] wheelVertices, uint[] wheelIndices) = MeshPrimitives.Cylinder(0.6f, 0.44f);
-        _meshes["wheel_cylinder"] = new Mesh(device, wheelVertices, wheelIndices, "WheelCylinder");
-        _physicsMeshes["wheel_cylinder"] = ToPhysicsMeshData(wheelVertices, wheelIndices);
-        (Vertex[] unitBoxVertices, uint[] unitBoxIndices) = MeshPrimitives.Box(1f, 1f, 1f);
-        _meshes["unit_box"] = new Mesh(device, unitBoxVertices, unitBoxIndices, "UnitBox");
-        (Vertex[] rampVertices, uint[] rampIndices) = MeshPrimitives.Wedge(8f, 1.8f, 14f);
-        _meshes["ramp_wedge"] = new Mesh(device, rampVertices, rampIndices, "RampWedge");
-        _physicsMeshes["ramp_wedge"] = ToPhysicsMeshData(rampVertices, rampIndices);
+        foreach (string key in PrimitiveMeshRegistry.Keys)
+        {
+            if (key == "ground")
+                continue;
+            (Vertex[] primitiveVertices, uint[] primitiveIndices) = PrimitiveMeshRegistry.TryGet(key, out (Vertex[], uint[]) primitive) ? primitive : default;
+            _meshes[key] = new Mesh(device, primitiveVertices, primitiveIndices, key);
+            _physicsMeshes[key] = ToPhysicsMeshData(primitiveVertices, primitiveIndices);
+        }
 
         string? scenePath = options.ScenePath;
         if (scenePath is null || !File.Exists(scenePath))
@@ -342,7 +376,7 @@ internal sealed class Basic3DModule(
         physics.AttachScene(_scene);
         behaviours.AttachScene(_scene);
         scripting.AttachScene(_scene);
-        _editor?.AttachScene(_scene);
+        _editor?.AttachScene(_scene, scenePath);
     }
 
     private string ResolveAssetsDirectory() => projectRoot;

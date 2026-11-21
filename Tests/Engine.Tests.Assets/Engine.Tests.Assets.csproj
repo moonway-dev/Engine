@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Engine\Engine.Assets\Engine.Assets.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Scene\Engine.Scene.csproj" />
+    <ProjectReference Include="..\..\Engine\Engine.Editor\Engine.Editor.csproj" />
     <ProjectReference Include="..\..\Backends\Engine.Backends.Null\Engine.Backends.Null.csproj" />
   </ItemGroup>
   <ItemGroup>

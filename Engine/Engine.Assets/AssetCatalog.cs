@@ -27,7 +27,7 @@ public sealed class AssetCatalog
             throw new FileNotFoundException("Asset does not exist.", fullPath);
         if (!_ids.TryGetValue(fullPath, out string? id))
         {
-            id = ReadOrCreateId(fullPath);
+            id = ReadOrCreateId(fullPath, allowCreate: true);
             if (_paths.TryGetValue(id, out string? existing) && !existing.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Duplicate asset GUID '{id}' at '{fullPath}' and '{existing}'.");
             _ids[fullPath] = id;
@@ -78,14 +78,19 @@ public sealed class AssetCatalog
         _diagnostics.Clear();
         Dictionary<string, string> paths = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, string> ids = new(StringComparer.OrdinalIgnoreCase);
-        EnumerationOptions options = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true };
-        foreach (string path in Directory.EnumerateFiles(RootDirectory, "*", options).Order(StringComparer.OrdinalIgnoreCase))
+        bool mounted = Engine.Core.VirtualFileSystem.IsMounted;
+        IEnumerable<string> files = mounted
+            ? Engine.Core.VirtualFileSystem.EnumerateFiles().Order(StringComparer.OrdinalIgnoreCase)
+            : DiskFiles();
+        foreach (string path in files)
         {
             if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (IsInExcludedDirectory(path))
+                continue;
             try
             {
-                string id = ReadOrCreateId(path);
+                string id = ReadOrCreateId(path, allowCreate: !mounted);
                 if (paths.TryGetValue(id, out string? duplicate))
                 {
                     Report($"Duplicate asset GUID '{id}' at '{duplicate}' and '{path}'.");
@@ -96,6 +101,8 @@ public sealed class AssetCatalog
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
             {
+                if (mounted && exception is FileNotFoundException)
+                    continue;
                 Report($"Asset metadata '{path}': {exception.Message}");
                 if (_ids.TryGetValue(path, out string? oldId) && !paths.ContainsKey(oldId))
                 {
@@ -110,6 +117,33 @@ public sealed class AssetCatalog
             _paths.Add(pair.Key, pair.Value);
         foreach (var pair in ids)
             _ids.Add(pair.Key, pair.Value);
+    }
+
+    private IEnumerable<string> DiskFiles()
+    {
+        EnumerationOptions options = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true };
+        foreach (string path in Directory.EnumerateFiles(RootDirectory, "*", options).Order(StringComparer.OrdinalIgnoreCase))
+            yield return path;
+    }
+
+    private bool IsInExcludedDirectory(string path)
+    {
+        string relative;
+        try
+        {
+            relative = Path.GetRelativePath(RootDirectory, path);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+        string directory = Path.GetDirectoryName(relative) ?? string.Empty;
+        foreach (string segment in directory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment.Equals("Builds", StringComparison.OrdinalIgnoreCase) || segment.StartsWith('.'))
+                return true;
+        }
+        return false;
     }
 
     internal string Contain(string path)
@@ -127,9 +161,17 @@ public sealed class AssetCatalog
         return fullPath;
     }
 
-    private static string ReadOrCreateId(string path)
+    private static string ReadOrCreateId(string path, bool allowCreate)
     {
         string metadataPath = path + ".meta";
+        if (Engine.Core.VirtualFileSystem.IsMounted && Engine.Core.VirtualFileSystem.Exists(metadataPath))
+        {
+            string text = Engine.Core.VirtualFileSystem.ReadAllText(metadataPath);
+            using JsonDocument document = JsonDocument.Parse(text);
+            if (!document.RootElement.TryGetProperty("Guid", out JsonElement value) && !document.RootElement.TryGetProperty("guid", out value))
+                throw new InvalidDataException("Metadata has no GUID.");
+            return ParseId(value.GetString() ?? string.Empty);
+        }
         if (File.Exists(metadataPath))
         {
             if ((File.GetAttributes(metadataPath) & FileAttributes.ReparsePoint) != 0)
@@ -139,6 +181,8 @@ public sealed class AssetCatalog
                 throw new InvalidDataException("Metadata has no GUID.");
             return ParseId(value.GetString() ?? string.Empty);
         }
+        if (!allowCreate)
+            throw new FileNotFoundException("Asset metadata not found.", metadataPath);
         string id = Guid.NewGuid().ToString("N");
         using FileStream stream = new(metadataPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         JsonSerializer.Serialize(stream, new { Version = 1, Guid = id });

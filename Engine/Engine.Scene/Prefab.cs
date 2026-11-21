@@ -52,7 +52,7 @@ public sealed class PrefabAsset
     public static PrefabAsset Load(string path, string? assetKey = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        return FromJson(File.ReadAllText(path), assetKey ?? path);
+        return FromJson(Engine.Core.VirtualFileSystem.ReadAllText(path), assetKey ?? path);
     }
 
     public string ToJson() => _snapshot.ToJson();

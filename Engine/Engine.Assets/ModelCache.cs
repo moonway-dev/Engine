@@ -13,9 +13,11 @@ public static class ModelCache
     public static ModelData Load(string source, string directory, out bool cacheHit, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FileInfo info = new(source);
-        long length = info.Length;
-        long stamp = info.LastWriteTimeUtc.Ticks;
+        (long Length, long LastWriteTicks)? info = Core.VirtualFileSystem.TryGetStamp(source);
+        if (info is null)
+            throw new FileNotFoundException("Model source not found.", source);
+        long length = info.Value.Length;
+        long stamp = info.Value.LastWriteTicks;
         string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(source))));
         string path = Path.Combine(directory, key + ".model");
         byte[]? sourceHash = null;
@@ -78,8 +80,8 @@ public static class ModelCache
         }
         sourceHash ??= HashSource(source, cancellationToken);
         ModelData model = ModelImporter.LoadModel(source, cancellationToken);
-        info.Refresh();
-        if (info.Length == length && info.LastWriteTimeUtc.Ticks == stamp)
+        info = Core.VirtualFileSystem.TryGetStamp(source);
+        if (info is not null && info.Value.Length == length && info.Value.LastWriteTicks == stamp)
         {
             string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
@@ -126,7 +128,7 @@ public static class ModelCache
 
     private static byte[] HashSource(string path, CancellationToken token)
     {
-        using FileStream stream = File.OpenRead(path);
+        using Stream stream = Core.VirtualFileSystem.OpenRead(path);
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         byte[] buffer = new byte[1024 * 1024];
         int count;

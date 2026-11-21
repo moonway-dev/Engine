@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName Condition="'$(GameAssemblyName)' != ''">$(GameAssemblyName)</AssemblyName>
+    <IlcGenerateCompleteTypeMetadata Condition="'$(PublishAot)' == 'true'">true</IlcGenerateCompleteTypeMetadata>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Engine\Engine.Player\Engine.Player.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GameScriptsRoot)' != ''">
+    <Compile Include="$(GameScriptsRoot)**\*.cs" />
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.Linq" />
+    <Using Include="Engine.Mathematics" />
+    <Using Include="Engine.Platform" />
+    <Using Include="Engine.Scene" />
+    <Using Include="Engine.Scripting" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GameGeneratedRoot)' != ''">
+    <Compile Include="$(GameGeneratedRoot)**\*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GamePackKey)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>EnginePackKey</_Parameter1>
+      <_Parameter2>$(GamePackKey)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

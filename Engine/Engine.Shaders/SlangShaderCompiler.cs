@@ -7,6 +7,8 @@ using Engine.RHI;
 
 namespace Engine.Shaders;
 
+using Engine.Core;
+
 public sealed record ShaderCompilationOptions
 {
     public string Target { get; init; } = "spirv";
@@ -51,7 +53,8 @@ public sealed class SlangShaderCompiler
 
     private readonly ILogger? _log;
     private readonly string _cacheDirectory;
-    private readonly string _slangcPath;
+    private readonly string? _slangcPathOverride;
+    private string? _resolvedSlangcPath;
     private readonly object _identityLock = new();
     private string? _compilerFileState;
     private string? _compilerIdentity;
@@ -60,7 +63,24 @@ public sealed class SlangShaderCompiler
     {
         _log = log;
         _cacheDirectory = Path.GetFullPath(cacheDirectory ?? DefaultCacheDirectory);
-        _slangcPath = Path.GetFullPath(slangcPath ?? LocateSlangCompiler());
+        _slangcPathOverride = slangcPath;
+    }
+
+    private string? ResolveSlangcPath()
+    {
+        if (_slangcPathOverride is not null)
+            return _slangcPathOverride;
+        if (_resolvedSlangcPath is not null)
+            return _resolvedSlangcPath;
+        try
+        {
+            _resolvedSlangcPath = Path.GetFullPath(LocateSlangCompiler());
+        }
+        catch (FileNotFoundException)
+        {
+            _resolvedSlangcPath = null;
+        }
+        return _resolvedSlangcPath;
     }
 
     public static string LocateSlangCompiler()
@@ -112,23 +132,25 @@ public sealed class SlangShaderCompiler
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.EntryPoint);
         string sourceFullPath = Path.GetFullPath(request.SourcePath);
-        if (!File.Exists(sourceFullPath))
+        if (!VirtualFileSystem.Exists(sourceFullPath))
             throw new FileNotFoundException($"Shader source '{request.SourcePath}' not found.", sourceFullPath);
         ValidateOptions(request);
 
         string cachePath = Path.Combine(_cacheDirectory, ComputeCacheKey(request, sourceFullPath) + ".spv");
-        if (File.Exists(cachePath))
+        using (Stream? cachedStream = VirtualFileSystem.TryOpenRead(cachePath))
         {
-            try
+            if (cachedStream is not null)
             {
-                using FileStream cached = new(cachePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using MemoryStream contents = new();
-                cached.CopyTo(contents);
-                return CreateResult(contents.ToArray(), request, fromCache: true);
-            }
-            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or NotSupportedException)
-            {
-                _log?.Debug($"Discarding invalid shader cache: {cachePath} ({exception.Message})");
+                try
+                {
+                    using MemoryStream contents = new();
+                    cachedStream.CopyTo(contents);
+                    return CreateResult(contents.ToArray(), request, fromCache: true);
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or NotSupportedException)
+                {
+                    _log?.Debug($"Discarding invalid shader cache: {cachePath} ({exception.Message})");
+                }
             }
         }
 
@@ -267,12 +289,15 @@ public sealed class SlangShaderCompiler
 
     private byte[] InvokeSlangc(ShaderCompilationRequest request, string sourceFullPath)
     {
+        string slangcPath = ResolveSlangcPath()
+            ?? throw new ShaderCompilationException(
+                "slangc not found and no cached SPIR-V matched. Set ENGINE_SLANGC or place the compiler under Tools/Slang/.", string.Empty);
         string temporaryOutput = Path.Combine(Path.GetTempPath(), $"engine-shader-{Guid.NewGuid():N}.spv");
         try
         {
             ProcessStartInfo startInfo = new()
             {
-                FileName = _slangcPath,
+                FileName = slangcPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -360,9 +385,9 @@ public sealed class SlangShaderCompiler
     private string ComputeCacheKey(ShaderCompilationRequest request, string sourceFullPath)
     {
         StringBuilder key = new();
-        AppendKey(key, "engine-slang-cache-v3");
+        AppendKey(key, "engine-slang-cache-v4");
         AppendKey(key, GetCompilerIdentity());
-        foreach (string argument in BuildArguments(request, sourceFullPath))
+        foreach (string argument in BuildArguments(request, Path.GetFileName(sourceFullPath)))
             AppendKey(key, argument);
         HashSet<string> visited = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         AppendShaderSource(key, sourceFullPath, visited, GetIncludeDirectories(request, sourceFullPath));
@@ -371,14 +396,20 @@ public sealed class SlangShaderCompiler
 
     private string GetCompilerIdentity()
     {
-        if (!File.Exists(_slangcPath))
-            throw new FileNotFoundException("Slang compiler not found.", _slangcPath);
+        string? slangcPath = ResolveSlangcPath();
+        if (slangcPath is null)
+        {
+            string fingerprint = ReadCompilerFingerprint();
+            if (fingerprint.Length > 0)
+                return fingerprint;
+            return "compiler-unavailable";
+        }
         // The driver version alone is not enough: packaged compiler/backend DLLs can change independently.
-        string directory = Path.GetDirectoryName(_slangcPath)!;
+        string directory = Path.GetDirectoryName(slangcPath)!;
         string[] files = Directory.EnumerateFiles(directory)
-            .Where(path => path == _slangcPath || Path.GetFileName(path).StartsWith("slang", StringComparison.OrdinalIgnoreCase)
+            .Where(path => path == slangcPath || Path.GetFileName(path).StartsWith("slang", StringComparison.OrdinalIgnoreCase)
                 && (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || path.Contains(".so", StringComparison.Ordinal) || path.EndsWith(".dylib", StringComparison.Ordinal)))
-            .Append(_slangcPath).Distinct().Order(StringComparer.Ordinal).ToArray();
+            .Append(slangcPath).Distinct().Order(StringComparer.Ordinal).ToArray();
         string state = string.Join('|', files.Select(path => { FileInfo file = new(path); return $"{path}:{file.Length}:{file.LastWriteTimeUtc.Ticks}"; }));
         lock (_identityLock)
         {
@@ -397,6 +428,27 @@ public sealed class SlangShaderCompiler
         }
     }
 
+    private string ReadCompilerFingerprint()
+    {
+        try
+        {
+            string path = Path.Combine(_cacheDirectory, ".compiler-id");
+            return VirtualFileSystem.TryReadAllText(path)?.Trim() ?? string.Empty;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
+
+    public string? TryGetCompilerIdentity()
+    {
+        string? slangcPath = ResolveSlangcPath();
+        if (slangcPath is null)
+            return null;
+        return GetCompilerIdentity();
+    }
+
     private static void AppendKey(StringBuilder key, string value) => key.Append(value.Length).Append(':').Append(value);
 
     private static string[] GetIncludeDirectories(ShaderCompilationRequest request, string sourceFullPath) =>
@@ -407,8 +459,8 @@ public sealed class SlangShaderCompiler
         string fullPath = Path.GetFullPath(path);
         if (!visited.Add(fullPath))
             return;
-        string source = File.ReadAllText(fullPath);
-        AppendKey(key, fullPath);
+        string source = VirtualFileSystem.ReadAllText(fullPath);
+        AppendKey(key, Path.GetFileName(fullPath));
         AppendKey(key, source);
         string directory = Path.GetDirectoryName(fullPath)!;
         IEnumerable<string> dependencies = Regex.Matches(source, @"(?m)^\s*(?:export\s+)?import\s+([A-Za-z_][A-Za-z0-9_\.]*)\s*;")
@@ -417,7 +469,7 @@ public sealed class SlangShaderCompiler
         foreach (string dependency in dependencies)
         {
             string? resolved = new[] { directory }.Concat(includeDirectories)
-                .Select(root => Path.Combine(root, dependency)).FirstOrDefault(File.Exists);
+                .Select(root => Path.Combine(root, dependency)).FirstOrDefault(VirtualFileSystem.Exists);
             if (resolved is not null)
                 AppendShaderSource(key, resolved, visited, includeDirectories);
         }

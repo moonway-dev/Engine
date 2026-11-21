@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Engine.Core;
 using Engine.Rendering;
 using Engine.Scene;
 
@@ -123,7 +124,7 @@ public sealed class MaterialAssetStore
         {
             try
             {
-                string content = File.ReadAllText(Catalog.ResolvePath(key));
+                string content = VirtualFileSystem.ReadAllText(Catalog.ResolvePath(key));
                 if (content == _documents[key].Content)
                     continue;
                 MaterialAsset asset = Deserialize(content);
@@ -160,7 +161,7 @@ public sealed class MaterialAssetStore
     {
         if (_documents.TryGetValue(key, out Document? document))
             return document;
-        string content = File.ReadAllText(Catalog.ResolvePath(key));
+        string content = VirtualFileSystem.ReadAllText(Catalog.ResolvePath(key));
         document = new Document(Deserialize(content), content, ++_revision);
         _documents[key] = document;
         return document;

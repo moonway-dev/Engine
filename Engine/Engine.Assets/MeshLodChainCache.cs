@@ -18,8 +18,8 @@ public static class MeshLodChainCache
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FileInfo info = new(sourcePath);
-        if (!info.Exists)
+        (long sourceLength, long sourceStamp)? stamp = Core.VirtualFileSystem.TryGetStamp(sourcePath);
+        if (stamp is null)
             return null;
         string path = CachePath(sourcePath, partId, options, directory);
         try
@@ -37,7 +37,7 @@ public static class MeshLodChainCache
             int minTriangles = reader.ReadInt32();
             long memoryBudget = reader.ReadInt64();
             long timeBudgetTicks = reader.ReadInt64();
-            if (sourceLength != info.Length || sourceStamp != info.LastWriteTimeUtc.Ticks
+            if (sourceLength != stamp.Value.Item1 || sourceStamp != stamp.Value.Item2
                 || sourceHash.Length != 32 || !CryptographicOperations.FixedTimeEquals(sourceHash, HashSource(sourcePath, cancellationToken))
                 || maxLevels != options.MaxLevels || ratio != options.Ratio || minTriangles != options.MinTriangles
                 || memoryBudget != options.MemoryBudget || timeBudgetTicks != (options.TimeBudget?.Ticks ?? -1))
@@ -92,8 +92,8 @@ public static class MeshLodChainCache
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FileInfo info = new(sourcePath);
-        if (!info.Exists || levels.Count == 0)
+        (long infoLength, long infoStamp)? stamp = Core.VirtualFileSystem.TryGetStamp(sourcePath);
+        if (stamp is null || levels.Count == 0)
             return;
         string path = CachePath(sourcePath, partId, options, directory);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -107,8 +107,8 @@ public static class MeshLodChainCache
                 writer.Write(Magic);
                 writer.Write(Version);
                 writer.Write(Marshal.SizeOf<Vertex>());
-                writer.Write(info.Length);
-                writer.Write(info.LastWriteTimeUtc.Ticks);
+                writer.Write(stamp.Value.Item1);
+                writer.Write(stamp.Value.Item2);
                 writer.Write(sourceHash);
                 writer.Write(options.MaxLevels);
                 writer.Write(options.Ratio);
@@ -127,8 +127,8 @@ public static class MeshLodChainCache
                 stream.Flush(true);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            FileInfo current = new(sourcePath);
-            if (!current.Exists || current.Length != info.Length || current.LastWriteTimeUtc.Ticks != info.LastWriteTimeUtc.Ticks
+            (long currentLength, long currentStamp)? current = Core.VirtualFileSystem.TryGetStamp(sourcePath);
+            if (current is null || current.Value.Item1 != stamp.Value.Item1 || current.Value.Item2 != stamp.Value.Item2
                 || !CryptographicOperations.FixedTimeEquals(sourceHash, HashSource(sourcePath, cancellationToken)))
                 return;
             File.Move(temporary, path, true);
@@ -145,7 +145,7 @@ public static class MeshLodChainCache
 
     private static byte[] HashSource(string sourcePath, CancellationToken cancellationToken)
     {
-        using FileStream stream = new(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using Stream stream = Core.VirtualFileSystem.OpenRead(sourcePath);
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         byte[] buffer = new byte[1024 * 1024];
         int read;

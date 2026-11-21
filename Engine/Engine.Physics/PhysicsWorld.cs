@@ -19,6 +19,8 @@ public enum RigidBodyKind
 
 public readonly record struct PhysicsRayHit(float Distance, Vector3 Normal);
 
+    public readonly record struct PhysicsSweepHit(float Distance, Vector3 Normal, Vector3 Position, bool StartedIntersecting = false);
+
 public sealed class PhysicsWorld : IDisposable
 {
     private const float Epsilon = MathUtil.Epsilon;
@@ -567,6 +569,26 @@ public sealed class PhysicsWorld : IDisposable
         return true;
     }
 
+    public bool SweepSphere(Vector3 origin, Vector3 direction, float maximumDistance, float radius, out PhysicsSweepHit hit, BodyHandle? ignore = null)
+    {
+        hit = default;
+        if (_disposed || maximumDistance <= 0f || radius <= 0f)
+            return false;
+        NVector3 normalized = ToSystem(direction);
+        float length = normalized.Length();
+        if (length < Epsilon)
+            return false;
+        normalized /= length;
+        ClosestSweepHitHandler handler = new(ignore, _settings);
+        var pose = new RigidPose(ToSystem(origin), System.Numerics.Quaternion.Identity);
+        var velocity = new BodyVelocity(normalized, System.Numerics.Vector3.Zero);
+        _simulation.Sweep(new Sphere(radius), in pose, in velocity, maximumDistance, _bufferPool, ref handler);
+        if (!handler.Hit)
+            return false;
+        hit = new PhysicsSweepHit(handler.T, ToEngine(handler.Normal), ToEngine(handler.Position), handler.StartedIntersecting);
+        return true;
+    }
+
     public RigidbodySettings GetBodySettings(BodyHandle handle) => _settings.Bodies[handle].Settings;
 
     public void ConfigureBody(BodyHandle handle, RigidbodySettings settings, bool force = false)
@@ -708,6 +730,38 @@ public sealed class PhysicsWorld : IDisposable
             Normal = normal;
             Hit = true;
             maximumT = t;
+        }
+    }
+
+    private sealed class ClosestSweepHitHandler(BodyHandle? ignore, PhysicsBodySettings settings) : ISweepHitHandler
+    {
+        public bool Hit;
+        public bool StartedIntersecting;
+        public float T = float.MaxValue;
+        public NVector3 Normal;
+        public NVector3 Position;
+
+        public bool AllowTest(CollidableReference collidable) =>
+            settings.AllowsCollision(collidable) && (!ignore.HasValue || !(collidable.Mobility != CollidableMobility.Static && collidable.BodyHandle == ignore.Value));
+
+        public bool AllowTest(CollidableReference collidable, int child) => AllowTest(collidable);
+
+        public void OnHit(ref float maximumT, float t, in NVector3 hitLocation, in NVector3 hitNormal, CollidableReference collidable)
+        {
+            if (t >= T)
+                return;
+            T = t;
+            Normal = hitNormal;
+            Position = hitLocation;
+            Hit = true;
+            maximumT = t;
+        }
+
+        public void OnHitAtZeroT(ref float maximumT, CollidableReference collidable)
+        {
+            Hit = true;
+            StartedIntersecting = true;
+            T = 0f;
         }
     }
 

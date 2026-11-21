@@ -26,11 +26,20 @@ public sealed class ChaseCamera : ScriptBehaviour
     [InspectorRange(0.5f, 8f)]
     [InspectorTooltip("How fast the camera returns behind the car after orbiting.")]
     public float OrbitReturnSpeed = 2.5f;
+    [InspectorRange(2f, 30f)]
+    [InspectorTooltip("How fast the camera position follows the car; higher removes lag but can look jittery.")]
+    public float FollowDamping = 9f;
+    [InspectorRange(2f, 30f)]
+    [InspectorTooltip("How fast the look target settles; smooths out suspension bumps in the view direction.")]
+    public float LookDamping = 6.5f;
 
     private float _baseFov;
     private CameraComponent? _camera;
     private float _orbitYaw;
     private float _orbitPitch;
+    private Vector3 _smoothedLookPoint;
+    private Vector3 _smoothedVelocity;
+    private bool _hasLookPoint;
 
     public override void OnEnable()
     {
@@ -51,6 +60,9 @@ public sealed class ChaseCamera : ScriptBehaviour
         {
             Transform.Position = target.Transform.Position + target.Transform.Rotation.Rotate(Offset);
             Transform.Rotation = toTargetRotation((target.Transform.Position + LookOffset - Transform.Position).Normalized);
+            _smoothedLookPoint = target.Transform.Position + LookOffset;
+            _smoothedVelocity = Vector3.Zero;
+            _hasLookPoint = true;
         }
     }
 
@@ -60,6 +72,11 @@ public sealed class ChaseCamera : ScriptBehaviour
             return;
         (Vector3 targetPosition, Quaternion targetRotation) = ScriptPhysics.GetInterpolatedPose(target);
         Vector3 velocity = ScriptPhysics.HasBody(target) ? ScriptPhysics.GetLinearVelocity(target) : Vector3.Zero;
+        float blend = 1f - MathF.Exp(-LookDamping * ScriptTime.DeltaTime);
+        _smoothedVelocity = Vector3.Lerp(_smoothedVelocity, velocity, blend);
+        Vector3 rawLookPoint = targetPosition + LookOffset + _smoothedVelocity * LookAhead * 0.1f;
+        _smoothedLookPoint = _hasLookPoint ? Vector3.Lerp(_smoothedLookPoint, rawLookPoint, blend) : rawLookPoint;
+        _hasLookPoint = true;
 
         UpdateOrbit();
         float yaw = targetRotation.ToYawPitchRoll().X + _orbitYaw;
@@ -71,10 +88,10 @@ public sealed class ChaseCamera : ScriptBehaviour
             MathF.Sin(pitch) * distance,
             MathF.Cos(yaw) * MathF.Cos(pitch) * distance);
         Vector3 desiredPosition = targetPosition + offset;
-        Transform.Position = desiredPosition;
+        float followBlend = 1f - MathF.Exp(-FollowDamping * ScriptTime.DeltaTime);
+        Transform.Position = Vector3.Lerp(Transform.Position, desiredPosition, followBlend);
 
-        Vector3 lookPoint = targetPosition + LookOffset + velocity * LookAhead * 0.1f;
-        Vector3 toLook = lookPoint - Transform.Position;
+        Vector3 toLook = _smoothedLookPoint - Transform.Position;
         Transform.Rotation = toTargetRotation(toLook);
 
         if (_camera is not null && SpeedFovKick > MathUtil.Epsilon)
