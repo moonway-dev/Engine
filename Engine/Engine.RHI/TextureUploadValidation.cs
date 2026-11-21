@@ -17,7 +17,8 @@ public static class TextureUploadValidation
 
             uint width = Math.Max(1u, texture.Width >> checked((int)subresource.MipLevel));
             uint height = Math.Max(1u, texture.Height >> checked((int)subresource.MipLevel));
-            ulong expectedSize = checked((ulong)width * height * (uint)BytesPerPixel(texture.Format));
+            uint depth = Math.Max(1u, texture.Depth >> checked((int)subresource.MipLevel));
+            ulong expectedSize = checked((ulong)width * height * depth * (uint)BytesPerPixel(texture.Format));
             if ((ulong)subresource.Data.Length != expectedSize)
                 throw new ArgumentException(
                     $"Mip {subresource.MipLevel}, layer {subresource.ArrayLayer} requires {expectedSize} bytes, got {subresource.Data.Length}.",

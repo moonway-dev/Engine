@@ -33,6 +33,7 @@ public static class PlayerApplication
         RhiModule rhiModule = CreateRhiModule(options, PlayerSettingsApplier.ReadVSync(projectRoot));
         RendererModule renderer = new(rhiModule, Path.Combine(projectRoot, "Shaders"));
         renderer.ShaderCacheDirectory = Path.Combine(projectRoot, "Cache", "Shaders");
+        renderer.CloudsCacheDirectory = Path.Combine(projectRoot, "Cache", "Clouds");
         PlayerSettingsApplier.Apply(renderer, projectRoot);
         PhysicsModule physics = new();
         ApplyPhysicsLayerConfig(projectRoot, physics);

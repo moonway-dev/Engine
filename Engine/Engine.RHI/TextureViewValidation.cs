@@ -5,7 +5,7 @@ public static class TextureViewValidation
     public static TextureViewDescription ValidateAndNormalize(ITexture texture, in TextureViewDescription description)
     {
         ArgumentNullException.ThrowIfNull(texture);
-        if (description.Type is < TextureViewType.Texture2D or > TextureViewType.Cube)
+        if (description.Type is < TextureViewType.Texture2D or > TextureViewType.Texture3D)
             throw new ArgumentOutOfRangeException(nameof(description), "Texture view type is not supported.");
         if (description.BaseMipLevel >= texture.MipLevels)
             throw new ArgumentOutOfRangeException(nameof(description), "Base mip level is outside the texture.");
@@ -31,6 +31,8 @@ public static class TextureViewValidation
                 throw new ArgumentException("A 2D texture view must select array layer zero.", nameof(description));
             case TextureViewType.Texture2DArray when texture.Dimension is not (TextureDimension.Texture2DArray or TextureDimension.Cube):
                 throw new ArgumentException("Array views require a 2D array or cube texture.", nameof(description));
+            case TextureViewType.Texture3D when texture.Dimension != TextureDimension.Texture3D:
+                throw new ArgumentException("3D views require a 3D texture.", nameof(description));
             case TextureViewType.Cube when texture.Dimension != TextureDimension.Cube || description.BaseArrayLayer != 0 || layerCount != 6:
                 throw new ArgumentException("Cube views must select all six layers of a cube texture.", nameof(description));
         }

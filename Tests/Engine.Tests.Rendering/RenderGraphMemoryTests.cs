@@ -476,6 +476,7 @@ public class RenderGraphMemoryTests
         public TextureFormat Format { get; } = description.Format;
         public uint Width { get; } = (uint)description.Extent.Width;
         public uint Height { get; } = (uint)description.Extent.Height;
+        public uint Depth { get; } = Math.Max(1u, description.Depth);
         public uint MipLevels { get; } = description.MipLevels;
         public uint ArrayLayers { get; } = description.ArrayLayers;
         public TextureDimension Dimension { get; } = description.Dimension;

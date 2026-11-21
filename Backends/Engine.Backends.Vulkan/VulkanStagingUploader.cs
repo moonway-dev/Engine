@@ -215,6 +215,7 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
 
         uint width = Math.Max(1u, vkTexture.Width >> checked((int)subresource.MipLevel));
         uint height = Math.Max(1u, vkTexture.Height >> checked((int)subresource.MipLevel));
+        uint depth = Math.Max(1u, vkTexture.Depth >> checked((int)subresource.MipLevel));
         BufferImageCopy copy = new()
         {
             BufferOffset = stagingOffset,
@@ -228,7 +229,7 @@ internal unsafe sealed class VulkanStagingUploader : IDisposable
                 LayerCount = 1,
             },
             ImageOffset = new Offset3D(0, 0, 0),
-            ImageExtent = new Extent3D(width, height, 1),
+            ImageExtent = new Extent3D(width, height, depth),
         };
         _vk.CmdCopyBufferToImage(
             _commandBuffer,

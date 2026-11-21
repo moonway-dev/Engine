@@ -167,6 +167,22 @@ public struct SkyConstants
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public struct CloudsConstants
+{
+    public Matrix4x4 InverseViewProjection;
+    public Vector3 CameraPosition;
+    private float Padding0;
+    public Vector3 SunDirection;
+    public float JitterSeed;
+    public Vector2 Extent;
+    public float Coverage;
+    public float Density;
+    public Vector2 WindOffset;
+    public float CloudBottom;
+    public float CloudTop;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public struct RtShadowControl
 {
     public uint Enabled;

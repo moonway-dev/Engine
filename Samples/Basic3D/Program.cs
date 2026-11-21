@@ -30,6 +30,7 @@ internal static class Program
         SceneBehavioursModule behaviours = new();
         Basic3DModule module = new(options, rhiModule, renderer, physics, scripting, behaviours, projectRoot);
         renderer.ShaderCacheDirectory = Path.Combine(projectRoot, "Cache", "Shaders");
+        renderer.CloudsCacheDirectory = Path.Combine(projectRoot, "Cache", "Clouds");
 
         ApplicationBuilder builder = ApplicationBuilder
             .Create()
@@ -657,7 +658,7 @@ internal sealed class Basic3DModule(
                 MathF.Sin(_orbitPitch) * _orbitDistance,
                 MathF.Cos(_orbitYaw) * cosPitch * _orbitDistance + 0.8f);
             cameraTransform.Position = orbitPosition;
-            cameraTransform.LookAt(new Vector3(0f, 0.4f, 0f), Vector3.Up);
+            cameraTransform.LookAt(new Vector3(0f, 55f, 0f), Vector3.Up);
         }
 
         Size2D viewExtent = renderer.ViewTexture is not null ? new Size2D((int)renderer.ViewTexture.Width, (int)renderer.ViewTexture.Height) : _window!.ClientSize;

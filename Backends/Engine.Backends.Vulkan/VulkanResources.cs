@@ -26,6 +26,8 @@ internal interface IVulkanTexture
 
     uint Height { get; }
 
+    uint Depth { get; }
+
     TextureFormat Format { get; }
 
     ImageView GetView(TextureViewType type);
@@ -202,6 +204,8 @@ internal unsafe sealed class VulkanTexture : ITexture, IVulkanTexture
 
     public uint ArrayLayers { get; }
 
+    public uint Depth { get; }
+
     public TextureDimension Dimension { get; }
 
     private ImageView CubeView { get; set; }
@@ -214,6 +218,7 @@ internal unsafe sealed class VulkanTexture : ITexture, IVulkanTexture
         Format = description.Format;
         Width = (uint)description.Extent.Width;
         Height = (uint)description.Extent.Height;
+        Depth = Math.Max(1u, description.Depth);
         MipLevels = description.MipLevels == 0 ? 1 : description.MipLevels;
         ArrayLayers = description.ArrayLayers == 0
             ? (description.Dimension == TextureDimension.Cube ? 6u : 1u)
@@ -223,15 +228,17 @@ internal unsafe sealed class VulkanTexture : ITexture, IVulkanTexture
             throw new ArgumentException("Cube textures must be square and have exactly six array layers.", nameof(description));
         if (Dimension == TextureDimension.Texture2D && ArrayLayers != 1)
             throw new ArgumentException("2D textures must have exactly one array layer.", nameof(description));
-        if (Dimension is < TextureDimension.Texture2D or > TextureDimension.Cube)
+        if (Dimension == TextureDimension.Texture3D && ArrayLayers != 1)
+            throw new ArgumentException("3D textures must have exactly one array layer.", nameof(description));
+        if (Dimension is < TextureDimension.Texture2D or > TextureDimension.Texture3D)
             throw new ArgumentOutOfRangeException(nameof(description), "Texture dimension is not supported.");
 
         ImageCreateInfo createInfo = new()
         {
             SType = StructureType.ImageCreateInfo,
             Flags = Dimension == TextureDimension.Cube ? (ImageCreateFlags)0x10 : 0,
-            ImageType = ImageType.Type2D,
-            Extent = new Extent3D(Width, Height, 1),
+            ImageType = Dimension == TextureDimension.Texture3D ? ImageType.Type3D : ImageType.Type2D,
+            Extent = new Extent3D(Width, Height, Dimension == TextureDimension.Texture3D ? Depth : 1),
             MipLevels = MipLevels,
             ArrayLayers = ArrayLayers,
             Format = VulkanHelpers.ToVulkanFormat(description.Format),
@@ -262,6 +269,7 @@ internal unsafe sealed class VulkanTexture : ITexture, IVulkanTexture
                 TextureDimension.Texture2D => ImageViewType.Type2D,
                 TextureDimension.Texture2DArray => ImageViewType.Type2DArray,
                 TextureDimension.Cube => ImageViewType.TypeCube,
+                TextureDimension.Texture3D => ImageViewType.Type3D,
                 _ => throw new ArgumentOutOfRangeException(nameof(description)),
             },
             Format = VulkanHelpers.ToVulkanFormat(description.Format),
@@ -287,6 +295,7 @@ internal unsafe sealed class VulkanTexture : ITexture, IVulkanTexture
         TextureViewType.Texture2D when Dimension == TextureDimension.Texture2D => View,
         TextureViewType.Texture2DArray when Dimension == TextureDimension.Texture2DArray => View,
         TextureViewType.Cube when Dimension == TextureDimension.Cube => CubeView,
+        TextureViewType.Texture3D when Dimension == TextureDimension.Texture3D => View,
         _ => throw new ArgumentException($"Texture dimension '{Dimension}' cannot provide a '{type}' view.", nameof(type)),
     };
 
@@ -395,6 +404,7 @@ internal unsafe sealed class VulkanTextureView : ITextureView, IVulkanTexture
         Handle = texture.Handle;
         Width = Math.Max(1u, texture.Width >> checked((int)BaseMipLevel));
         Height = Math.Max(1u, texture.Height >> checked((int)BaseMipLevel));
+        Depth = Math.Max(1u, texture.Depth >> checked((int)BaseMipLevel));
         Format = texture.Format;
     }
 
@@ -417,6 +427,8 @@ internal unsafe sealed class VulkanTextureView : ITextureView, IVulkanTexture
     public uint Width { get; }
 
     public uint Height { get; }
+
+    public uint Depth { get; }
 
     public TextureFormat Format { get; }
 
@@ -493,6 +505,8 @@ internal unsafe sealed class VulkanSwapchainImage : ITexture, IVulkanTexture
     public uint Width { get; }
 
     public uint Height { get; }
+
+    public uint Depth => 1u;
 
     public uint MipLevels => 1;
 
@@ -863,7 +877,7 @@ internal unsafe sealed class VulkanCommandBuffer : ICommandBuffer
             {
                 SType = StructureType.RenderingAttachmentInfo,
                 ImageView = depthTexture.View,
-                ImageLayout = VkImageLayout.DepthAttachmentOptimal,
+                ImageLayout = VulkanHelpers.ToVulkanLayout(depthInfo.Layout),
                 LoadOp = (VkAttachmentLoadOp)depthInfo.LoadOp,
                 StoreOp = (VkAttachmentStoreOp)depthInfo.StoreOp,
                 ClearValue = new ClearValue { DepthStencil = new ClearDepthStencilValue(depthInfo.ClearDepth, 0) },

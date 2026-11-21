@@ -1414,6 +1414,7 @@ public sealed class RenderGraph : IDisposable
                         LoadOp = access.Declaration.ClearOnLoad ? AttachmentLoadOp.Clear : AttachmentLoadOp.Load,
                         StoreOp = AttachmentStoreOp.Store,
                         ClearDepth = access.Declaration.ClearDepth,
+                        Layout = ImageLayout.DepthAttachmentOptimal,
                     };
                     areaWidth = Math.Max(areaWidth, resource.CompiledDescription.Extent.Width);
                     areaHeight = Math.Max(areaHeight, resource.CompiledDescription.Extent.Height);
@@ -1424,6 +1425,7 @@ public sealed class RenderGraph : IDisposable
                         Texture = resource.Texture!,
                         LoadOp = AttachmentLoadOp.Load,
                         StoreOp = AttachmentStoreOp.Store,
+                        Layout = ImageLayout.DepthStencilReadOnlyOptimal,
                     };
                     areaWidth = Math.Max(areaWidth, resource.CompiledDescription.Extent.Width);
                     areaHeight = Math.Max(areaHeight, resource.CompiledDescription.Extent.Height);

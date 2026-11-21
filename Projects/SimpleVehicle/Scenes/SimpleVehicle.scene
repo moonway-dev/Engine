@@ -13,6 +13,11 @@
     0.45,
     -0.55
   ],
+  "cloudsEnabled": true,
+  "cloudPreset": "Sunny",
+  "cloudCoverage": 0.169,
+  "cloudDensity": 0.228,
+  "cloudWindSpeed": 0.3,
   "objects": [
     {
       "id": "c3000000-0000-0000-0000-000000000001",

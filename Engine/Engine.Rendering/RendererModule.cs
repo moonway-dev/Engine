@@ -44,6 +44,24 @@ public sealed class RendererModule : IUpdatableModule
     private Vector3 _sunDirection = new(0.35f, 0.45f, -0.55f);
     private Vector3 _sceneSkyCameraPosition;
     private Vector3 _gameSkyCameraPosition;
+    private IShaderProgram? _cloudsProgram;
+    private IGraphicsPipeline? _cloudsPipeline;
+    private ITexture? _cloudShapeTexture;
+    private ITexture? _cloudDetailTexture;
+    private ITexture? _cloudWeatherTexture;
+    private ISampler? _cloudsSampler;
+    private float _cloudWindPhase;
+    private float _cloudJitterSeed;
+    private const int CloudShapeSize = 128;
+    private const int CloudDetailSize = 32;
+    private const int CloudWeatherSize = 256;
+    public string? CloudsCacheDirectory { get; set; }
+    public bool CloudsEnabled { get; set; }
+    public float CloudCoverage { get; set; } = 0.30f;
+    public float CloudDensity { get; set; } = 0.55f;
+    public float CloudWindSpeed { get; set; } = 0.3f;
+    public float CloudBottom { get; set; } = 1.8f;
+    public float CloudTop { get; set; } = 4.6f;
     public Action? ColliderGizmoSource { get; set; }
     private IComputePipeline? _bloomPipeline;
     private IComputePipeline? _temporalPipeline;
@@ -688,6 +706,7 @@ public sealed class RendererModule : IUpdatableModule
         _activeLights = [];
         SkyColor = scene.SkyColor;
         _skyboxMode = scene.SkyboxMode;
+        _cloudWindPhase = 0f;
         ResetTemporalHistory();
         _scenePreviousModels.Clear();
         _gamePreviousModels.Clear();
@@ -846,6 +865,8 @@ public sealed class RendererModule : IUpdatableModule
         GameDrawnObjects = 0;
         ShadowDrawnObjects = 0;
         long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        _cloudWindPhase += frameTime.DeltaTime * CloudWindSpeed;
+        _cloudJitterSeed = frameTime.FrameIndex % 1024 * 0.618034f;
         SyncScene();
         UpdateLights();
         ColliderGizmoSource?.Invoke();
@@ -1282,6 +1303,15 @@ public sealed class RendererModule : IUpdatableModule
         _graph.WritesColor(gizmoPass, sceneColor, clear: false);
         _graph.ReadsDepth(gizmoPass, _mainDepth!);
 
+        Func<bool> sceneCloudsVisible = () => (_forwardPass!.ShouldExecute?.Invoke() ?? true)
+            && CloudsEnabled
+            && _cloudShapeTexture is not null;
+        RenderGraphPass sceneCloudsPass = _graph.AddGraphicsPassBefore(temporalPass ?? _tonemapPass, "VolumetricClouds",
+            (commandBuffer, _) => ExecuteCloudsPass(commandBuffer, sceneExtent, gameView: false));
+        sceneCloudsPass.ShouldExecute = sceneCloudsVisible;
+        _graph.WritesColor(sceneCloudsPass, _hdrTarget!, clear: false);
+        _graph.ReadsDepth(sceneCloudsPass, _mainDepth!);
+
         if (_editorMode)
         {
             RenderGraphPass gameShadowPass = _graph.AddGraphicsPass("GameShadows", (commandBuffer, _) => ExecuteShadowPass(commandBuffer, _currentGameShadowData));
@@ -1391,6 +1421,12 @@ public sealed class RendererModule : IUpdatableModule
             gameSkyPass.ShouldExecute = gameSkyVisible;
             _graph.WritesColor(gameSkyPass, _gameHdrTarget!, clear: false);
             _graph.ReadsDepth(gameSkyPass, _gameDepth!);
+
+            RenderGraphPass gameCloudsPass = _graph.AddGraphicsPassBefore(gameTemporalPass ?? _gameTonemapPass, "GameVolumetricClouds",
+                (commandBuffer, _) => ExecuteCloudsPass(commandBuffer, _gameRenderExtent.Width > 8 ? _gameRenderExtent : sceneExtent, gameView: true));
+            gameCloudsPass.ShouldExecute = () => gameSkyVisible() && CloudsEnabled && _cloudShapeTexture is not null;
+            _graph.WritesColor(gameCloudsPass, _gameHdrTarget!, clear: false);
+            _graph.ReadsDepth(gameCloudsPass, _gameDepth!);
 
             _gameForwardPass.ShouldExecute = () => GameViewVisible && _gameCameraPresent;
             if (gameTemporalPass is not null)
@@ -2251,6 +2287,116 @@ public sealed class RendererModule : IUpdatableModule
         commandBuffer.Draw(_debugLinesVertexCount);
     }
 
+    private void CreateCloudResources()
+    {
+        if (_rhi!.Backend != GraphicsBackend.Vulkan)
+            return;
+        byte[] shape;
+        byte[] detail;
+        byte[] weather;
+        byte[]? cached = TryLoadCloudNoiseCache();
+        if (cached is not null)
+        {
+            shape = cached[..(CloudShapeSize * CloudShapeSize * CloudShapeSize * 4)];
+            int detailOffset = shape.Length;
+            detail = cached[detailOffset..(detailOffset + CloudDetailSize * CloudDetailSize * CloudDetailSize * 4)];
+            int weatherOffset = detailOffset + detail.Length;
+            weather = cached[weatherOffset..];
+        }
+        else
+        {
+            _log?.Information("Generating volumetric cloud noise textures…");
+            VolumetricCloudNoise.NoiseData noise = VolumetricCloudNoise.Generate(CloudShapeSize, CloudDetailSize, CloudWeatherSize);
+            shape = noise.Shape;
+            detail = noise.Detail;
+            weather = noise.Weather;
+            TrySaveCloudNoiseCache(shape, detail, weather);
+        }
+
+        _cloudShapeTexture = CreateCloudTexture3D(CloudShapeSize, shape, "CloudShapeNoise");
+        _cloudDetailTexture = CreateCloudTexture3D(CloudDetailSize, detail, "CloudDetailNoise");
+        _cloudWeatherTexture = _device!.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(CloudWeatherSize, CloudWeatherSize),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Usage = TextureUsage.Sampled | TextureUsage.TransferDestination,
+        });
+        _device.UploadTextureSubresources(_cloudWeatherTexture,
+        [
+            new TextureSubresourceData { MipLevel = 0, ArrayLayer = 0, Data = weather },
+        ]);
+    }
+
+    private ITexture CreateCloudTexture3D(int size, byte[] data, string name)
+    {
+        ITexture texture = _device!.CreateTexture(new TextureDescription
+        {
+            Extent = new Size2D(size, size),
+            Format = TextureFormat.R8G8B8A8UNorm,
+            Usage = TextureUsage.Sampled | TextureUsage.TransferDestination,
+            Dimension = TextureDimension.Texture3D,
+            Depth = (uint)size,
+        });
+        _device.UploadTextureSubresources(texture,
+        [
+            new TextureSubresourceData { MipLevel = 0, ArrayLayer = 0, Data = data },
+        ]);
+        return texture;
+    }
+
+    private byte[]? TryLoadCloudNoiseCache()
+    {
+        if (string.IsNullOrEmpty(CloudsCacheDirectory))
+            return null;
+        try
+        {
+            string path = Path.Combine(CloudsCacheDirectory, "clouds_noise.bin");
+            if (!File.Exists(path))
+                return null;
+            byte[] bytes = File.ReadAllBytes(path);
+            int expected = 16 + (CloudShapeSize * CloudShapeSize * CloudShapeSize * 4)
+                + (CloudDetailSize * CloudDetailSize * CloudDetailSize * 4)
+                + (CloudWeatherSize * CloudWeatherSize * 4);
+            if (bytes.Length != expected
+                || bytes[0] != (byte)'E' || bytes[1] != (byte)'C' || bytes[2] != (byte)'L' || bytes[3] != (byte)'D'
+                || BitConverter.ToInt32(bytes, 4) != 10
+                || BitConverter.ToInt32(bytes, 8) != CloudShapeSize
+                || BitConverter.ToInt32(bytes, 12) != CloudDetailSize)
+                return null;
+            return bytes[16..];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private void TrySaveCloudNoiseCache(byte[] shape, byte[] detail, byte[] weather)
+    {
+        if (string.IsNullOrEmpty(CloudsCacheDirectory))
+            return;
+        try
+        {
+            Directory.CreateDirectory(CloudsCacheDirectory);
+            string path = Path.Combine(CloudsCacheDirectory, "clouds_noise.bin");
+            using BinaryWriter writer = new(File.Create(path));
+            writer.Write((byte)'E');
+            writer.Write((byte)'C');
+            writer.Write((byte)'L');
+            writer.Write((byte)'D');
+            writer.Write(10);
+            writer.Write(CloudShapeSize);
+            writer.Write(CloudDetailSize);
+            writer.Write(CloudWeatherSize);
+            writer.Write(shape);
+            writer.Write(detail);
+            writer.Write(weather);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
     private void ExecuteSkyPass(ICommandBuffer commandBuffer, Size2D extent, bool gameView)
     {
         if (_skyPipeline is null || _skyboxMode != SkyboxMode.Procedural)
@@ -2268,6 +2414,39 @@ public sealed class RendererModule : IUpdatableModule
         commandBuffer.BindGraphicsPipeline(_skyPipeline);
         commandBuffer.SetViewport(new Viewport(0f, 0f, extent.Width, extent.Height, 0f, 1f));
         commandBuffer.SetScissor(new Rect(0, 0, (int)extent.Width, (int)extent.Height));
+        commandBuffer.PushConstants(StructuredBytes(constants), ShaderStages.Fragment);
+        commandBuffer.Draw(3);
+    }
+
+    private void ExecuteCloudsPass(ICommandBuffer commandBuffer, Size2D extent, bool gameView)
+    {
+        if (_cloudsPipeline is null || _cloudShapeTexture is null || _cloudDetailTexture is null || _cloudWeatherTexture is null || !CloudsEnabled)
+            return;
+        Matrix4x4 viewProjection = gameView ? _gameCurrentViewProjection : _sceneCurrentViewProjection;
+        CloudsConstants constants = new()
+        {
+            InverseViewProjection = viewProjection.Invert(),
+            CameraPosition = gameView ? _gameSkyCameraPosition : _sceneSkyCameraPosition,
+            SunDirection = _sunDirection,
+            Extent = new Vector2(extent.Width, extent.Height),
+            JitterSeed = _cloudJitterSeed,
+            Coverage = CloudCoverage,
+            Density = CloudDensity,
+            WindOffset = new Vector2(_cloudWindPhase, _cloudWindPhase * 0.6f),
+            CloudBottom = CloudBottom,
+            CloudTop = CloudTop,
+        };
+        IDescriptorSet set = _cloudsProgram!.CreateDescriptorSet(0);
+        set.WriteTexture(0, _cloudShapeTexture);
+        set.WriteTexture(1, _cloudDetailTexture);
+        set.WriteTexture(2, _cloudWeatherTexture);
+        set.WriteSampler(3, _cloudsSampler!);
+        set.WriteTexture(4, _graph!.GetTexture(gameView ? _gameDepth! : _mainDepth!));
+        _frameSets[_activeFrameSlot].Add(set);
+        commandBuffer.BindGraphicsPipeline(_cloudsPipeline);
+        commandBuffer.SetViewport(new Viewport(0f, 0f, extent.Width, extent.Height, 0f, 1f));
+        commandBuffer.SetScissor(new Rect(0, 0, (int)extent.Width, (int)extent.Height));
+        commandBuffer.BindDescriptorSet(set, 0);
         commandBuffer.PushConstants(StructuredBytes(constants), ShaderStages.Fragment);
         commandBuffer.Draw(3);
     }
@@ -2728,6 +2907,9 @@ public sealed class RendererModule : IUpdatableModule
         ShaderProgramDescription skyProgram = _compiler.CompileProgram(
             Path.Combine(_shaderDirectory, "Sky.slang"),
             [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
+        ShaderProgramDescription cloudsProgram = _compiler.CompileProgram(
+            Path.Combine(_shaderDirectory, "Clouds.slang"),
+            [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
         ShaderProgramDescription bloomProgram = _temporalEnabled
             ? _compiler.CompileProgram(
                 Path.Combine(_shaderDirectory, "Bloom.slang"),
@@ -2848,6 +3030,33 @@ public sealed class RendererModule : IUpdatableModule
             ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
             DepthAttachmentFormat = TextureFormat.D32Float,
         });
+        if (cloudsProgram.Reflection.PushConstants.Count > 0
+            && cloudsProgram.Reflection.PushConstants[0].Size != (uint)Marshal.SizeOf<CloudsConstants>())
+        {
+            throw new InvalidOperationException(
+                $"Clouds push constant ABI mismatch: shader reports {cloudsProgram.Reflection.PushConstants[0].Size} bytes, host uses {Marshal.SizeOf<CloudsConstants>()} bytes.");
+        }
+        _cloudsProgram = _device.CreateShaderProgram(cloudsProgram);
+        _cloudsPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            Name = "VolumetricClouds",
+            ShaderProgram = _cloudsProgram,
+            VertexLayouts = [],
+            CullMode = CullMode.None,
+            DepthTest = true,
+            DepthWrite = false,
+            DepthCompare = CompareOp.LessOrEqual,
+            BlendMode = BlendMode.Alpha,
+            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
+            DepthAttachmentFormat = TextureFormat.D32Float,
+        });
+        _cloudsSampler = _device.CreateSampler(new SamplerDescription
+        {
+            MagFilter = FilterMode.Linear,
+            MinFilter = FilterMode.Linear,
+            AddressMode = AddressMode.Repeat,
+        });
+        CreateCloudResources();
         ShaderProgramDescription debugLinesProgram = _compiler!.CompileProgram(
             Path.Combine(_shaderDirectory, "DebugLines.slang"),
             [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
@@ -2908,6 +3117,15 @@ public sealed class RendererModule : IUpdatableModule
         CameraComponent? sceneCamera = null;
         List<Light> sceneLights = [];
         _skyboxMode = _attachedScene.SkyboxMode;
+        CloudsEnabled = _attachedScene.CloudsEnabled;
+        CloudCoverage = _attachedScene.CloudCoverage;
+        CloudDensity = _attachedScene.CloudDensity;
+        CloudWindSpeed = _attachedScene.CloudWindSpeed;
+        if (CloudPresets.TryGet(_attachedScene.CloudPreset, out CloudPresets.Settings preset))
+        {
+            CloudBottom = preset.Bottom;
+            CloudTop = preset.Top;
+        }
         bool sunFound = false;
         foreach (GameObject gameObject in _attachedScene.EnumerateHierarchy())
         {
@@ -3487,6 +3705,7 @@ public sealed class RendererModule : IUpdatableModule
         _pbrPipeline?.Dispose();
         _tonemapPipeline?.Dispose();
         _skyPipeline?.Dispose();
+        _cloudsPipeline?.Dispose();
         _debugLinesPipeline?.Dispose();
         _bloomPipeline?.Dispose();
         _temporalPipeline?.Dispose();
@@ -3498,7 +3717,16 @@ public sealed class RendererModule : IUpdatableModule
         _pbrProgram?.Dispose();
         _tonemapProgram?.Dispose();
         _skyProgram?.Dispose();
+        _cloudsProgram?.Dispose();
         _debugLinesProgram?.Dispose();
+        _cloudShapeTexture?.Dispose();
+        _cloudShapeTexture = null;
+        _cloudDetailTexture?.Dispose();
+        _cloudDetailTexture = null;
+        _cloudWeatherTexture?.Dispose();
+        _cloudWeatherTexture = null;
+        _cloudsSampler?.Dispose();
+        _cloudsSampler = null;
         _bloomProgram?.Dispose();
         _temporalProgram?.Dispose();
         _rtGiTemporalProgram?.Dispose();

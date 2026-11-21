@@ -96,6 +96,7 @@ public readonly record struct DepthAttachmentInfo
     public AttachmentLoadOp LoadOp { get; init; }
     public AttachmentStoreOp StoreOp { get; init; }
     public float ClearDepth { get; init; }
+    public ImageLayout Layout { get; init; }
 }
 
 public readonly record struct RenderPassInfo

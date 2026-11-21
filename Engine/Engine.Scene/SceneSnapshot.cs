@@ -42,6 +42,11 @@ public sealed class SceneSnapshot
         snapshot._document.SkyColor = scene.SkyColor;
         snapshot._document.SkyboxMode = scene.SkyboxMode.ToString();
         snapshot._document.SunDirection = [scene.SunDirection.X, scene.SunDirection.Y, scene.SunDirection.Z];
+        snapshot._document.CloudsEnabled = scene.CloudsEnabled;
+        snapshot._document.CloudPreset = scene.CloudPreset;
+        snapshot._document.CloudCoverage = scene.CloudCoverage;
+        snapshot._document.CloudDensity = scene.CloudDensity;
+        snapshot._document.CloudWindSpeed = scene.CloudWindSpeed;
         return snapshot;
     }
 
@@ -137,6 +142,16 @@ public sealed class SceneSnapshot
             scene.SkyboxMode = skyboxMode;
         if (_document.SunDirection is { Length: 3 } sunDirection)
             scene.SunDirection = new Vector3(sunDirection[0], sunDirection[1], sunDirection[2]);
+        if (_document.CloudsEnabled is { } cloudsEnabled)
+            scene.CloudsEnabled = cloudsEnabled;
+        if (!string.IsNullOrEmpty(_document.CloudPreset))
+            scene.CloudPreset = _document.CloudPreset;
+        if (_document.CloudCoverage is { } cloudCoverage)
+            scene.CloudCoverage = cloudCoverage;
+        if (_document.CloudDensity is { } cloudDensity)
+            scene.CloudDensity = cloudDensity;
+        if (_document.CloudWindSpeed is { } cloudWindSpeed)
+            scene.CloudWindSpeed = cloudWindSpeed;
         SceneSnapshotRestoreResult result = RestoreInto(scene, idPolicy);
         scene.Version = SceneSerializer.CurrentVersion;
         return result;
@@ -753,6 +768,11 @@ internal sealed class SceneSnapshotDocument
     public Vector4? SkyColor { get; set; }
     public string? SkyboxMode { get; set; }
     public float[]? SunDirection { get; set; }
+    public bool? CloudsEnabled { get; set; }
+    public string? CloudPreset { get; set; }
+    public float? CloudCoverage { get; set; }
+    public float? CloudDensity { get; set; }
+    public float? CloudWindSpeed { get; set; }
     public Guid? RootId { get; set; }
     public PrefabSnapshotMetadata? Prefab { get; set; }
     public List<SceneObjectSnapshot> Objects { get; set; } = [];

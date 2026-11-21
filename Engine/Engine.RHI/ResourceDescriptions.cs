@@ -17,6 +17,7 @@ public readonly record struct TextureDescription
     public uint MipLevels { get; init; }
     public uint ArrayLayers { get; init; }
     public TextureDimension Dimension { get; init; }
+    public uint Depth { get; init; }
 }
 
 public readonly record struct TextureViewDescription

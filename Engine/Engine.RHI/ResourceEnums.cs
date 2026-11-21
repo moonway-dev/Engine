@@ -43,6 +43,7 @@ public enum TextureDimension
     Texture2D,
     Texture2DArray,
     Cube,
+    Texture3D,
 }
 
 public enum TextureViewType
@@ -50,6 +51,7 @@ public enum TextureViewType
     Texture2D,
     Texture2DArray,
     Cube,
+    Texture3D,
 }
 
 [Flags]

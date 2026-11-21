@@ -876,6 +876,32 @@ public sealed class SceneSettingsPanel : EditorPanel
                     }
                 }
             }
+
+            ImGui.Separator();
+            bool cloudsEnabled = scene.CloudsEnabled;
+            if (ImGui.Checkbox("Clouds", ref cloudsEnabled))
+                scene.CloudsEnabled = cloudsEnabled;
+            if (scene.CloudsEnabled)
+            {
+                int presetIndex = Array.IndexOf(CloudPresets.Names, scene.CloudPreset);
+                if (ImGui.Combo("Preset", ref presetIndex, CloudPresets.Names, CloudPresets.Names.Length)
+                    && presetIndex >= 0 && presetIndex < CloudPresets.Names.Length)
+                {
+                    scene.CloudPreset = CloudPresets.Names[presetIndex];
+                    CloudPresets.Settings preset = CloudPresets.Get(scene.CloudPreset);
+                    scene.CloudCoverage = preset.Coverage;
+                    scene.CloudDensity = preset.Density;
+                }
+                System.Numerics.Vector3 cloudVector = new(scene.CloudCoverage, scene.CloudDensity, scene.CloudWindSpeed);
+                if (ImGui.SliderFloat("Coverage", ref cloudVector.X, 0f, 1f)
+                    | ImGui.SliderFloat("Density", ref cloudVector.Y, 0.1f, 2f)
+                    | ImGui.SliderFloat("Wind speed", ref cloudVector.Z, 0f, 2f))
+                {
+                    scene.CloudCoverage = cloudVector.X;
+                    scene.CloudDensity = cloudVector.Y;
+                    scene.CloudWindSpeed = cloudVector.Z;
+                }
+            }
         }
         ImGui.End();
     }

@@ -26,6 +26,24 @@ public sealed class Scene
     [InspectorTooltip("Direction toward the sun used by the procedural sky when the scene has no directional light.")]
     public Vector3 SunDirection { get; set; } = new(0.35f, 0.45f, -0.55f);
 
+    [InspectorTooltip("Enables volumetric clouds in the procedural sky.")]
+    public bool CloudsEnabled { get; set; }
+
+    [InspectorTooltip("Cloud preset: Sunny, Partly cloudy, Overcast or Stormy.")]
+    public string CloudPreset { get; set; } = CloudPresets.Names[0];
+
+    [InspectorTooltip("How much of the sky the clouds cover.")]
+    [InspectorRange(0f, 1f)]
+    public float CloudCoverage { get; set; } = 0.3f;
+
+    [InspectorTooltip("How thick and opaque the clouds are.")]
+    [InspectorRange(0.1f, 2f)]
+    public float CloudDensity { get; set; } = 0.55f;
+
+    [InspectorTooltip("How fast the clouds drift with the wind.")]
+    [InspectorRange(0f, 2f)]
+    public float CloudWindSpeed { get; set; } = 0.3f;
+
     public int SourceVersion { get; internal set; } = SceneSerializer.CurrentVersion;
 
     public int Version { get; set; } = SceneSerializer.CurrentVersion;

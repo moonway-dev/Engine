@@ -23,6 +23,8 @@ public interface ITexture : IDisposable
 
     uint Height { get; }
 
+    uint Depth { get; }
+
     uint MipLevels { get; }
 
     uint ArrayLayers { get; }

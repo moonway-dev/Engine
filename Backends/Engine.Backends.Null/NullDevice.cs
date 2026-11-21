@@ -125,6 +125,7 @@ public sealed class NullTexture : ITexture
         Format = description.Format;
         Width = (uint)description.Extent.Width;
         Height = (uint)description.Extent.Height;
+        Depth = Math.Max(1u, description.Depth);
         MipLevels = description.MipLevels == 0 ? 1 : description.MipLevels;
         ArrayLayers = description.ArrayLayers == 0 ? (description.Dimension == TextureDimension.Cube ? 6u : 1u) : description.ArrayLayers;
         Dimension = description.Dimension;
@@ -132,7 +133,9 @@ public sealed class NullTexture : ITexture
             throw new ArgumentException("Cube textures must be square and have exactly six array layers.", nameof(description));
         if (Dimension == TextureDimension.Texture2D && ArrayLayers != 1)
             throw new ArgumentException("2D textures must have exactly one array layer.", nameof(description));
-        if (Dimension is < TextureDimension.Texture2D or > TextureDimension.Cube)
+        if (Dimension == TextureDimension.Texture3D && ArrayLayers != 1)
+            throw new ArgumentException("3D textures must have exactly one array layer.", nameof(description));
+        if (Dimension is < TextureDimension.Texture2D or > TextureDimension.Texture3D)
             throw new ArgumentOutOfRangeException(nameof(description), "Texture dimension is not supported.");
     }
 
@@ -141,6 +144,8 @@ public sealed class NullTexture : ITexture
     public uint Width { get; }
 
     public uint Height { get; }
+
+    public uint Depth { get; }
 
     public uint MipLevels { get; }
 

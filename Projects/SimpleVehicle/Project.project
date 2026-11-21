@@ -56,9 +56,9 @@
     ],
     "StartupScene": "Scenes/SimpleVehicle.scene",
     "Platform": "win-x64",
-    "Mode": "Aot",
+    "Mode": "Managed",
     "Configuration": "Release",
     "OutputDirectory": "Builds",
-    "PackKey": "C410A434C8A58F4222FC19B6C56AF08DE1D3D92BE90CD528680E9D060976FF69"
+    "PackKey": "381962BE6C7A6D94F68B2C9FD65AA1A47A2C91ED988E915A4EA366FDE1B0688A"
   }
 }
