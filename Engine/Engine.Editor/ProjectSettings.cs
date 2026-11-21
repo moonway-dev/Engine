@@ -11,6 +11,7 @@ public sealed class ProjectSettings
     public float Exposure = 1f;
     public float LodPixelBudget = 320f;
     public CascadedShadowSettings Shadows = new();
+    public float ShadowIntensity = 1f;
     public float ShadowConstantBias = 1.25f;
     public float ShadowSlopeBias = 1.75f;
     public GlobalIlluminationMode GiMode = GlobalIlluminationMode.ScreenSpace;
@@ -152,6 +153,7 @@ public sealed class ProjectSettings
         renderer.Exposure = Exposure;
         renderer.LodPixelBudget = LodPixelBudget;
         renderer.ShadowSettings = Shadows;
+        renderer.ShadowIntensity = ShadowIntensity;
         renderer.ShadowConstantBias = ShadowConstantBias;
         renderer.ShadowSlopeBias = ShadowSlopeBias;
         renderer.GiMode = GiMode;
@@ -180,6 +182,7 @@ public sealed class ProjectSettings
             Exposure = renderer.Exposure,
             LodPixelBudget = renderer.LodPixelBudget,
             Shadows = renderer.ShadowSettings,
+            ShadowIntensity = renderer.ShadowIntensity,
             ShadowConstantBias = renderer.ShadowConstantBias,
             ShadowSlopeBias = renderer.ShadowSlopeBias,
             GiMode = renderer.GiMode,

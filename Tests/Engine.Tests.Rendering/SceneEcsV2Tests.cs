@@ -94,6 +94,32 @@ public class SceneSchemaV2Tests
     }
 
     [Fact]
+    public void SkyboxSettings_RoundTripAndDefaultToSolidColor()
+    {
+        SceneModel scene = new("Skybox");
+        scene.SkyboxMode = SkyboxMode.Procedural;
+        scene.SunDirection = new Vector3(0f, 1f, 0f);
+
+        string json = scene.ToJson();
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("Procedural", document.RootElement.GetProperty("skyboxMode").GetString());
+        Assert.Equal(
+            [0f, 1f, 0f],
+            document.RootElement.GetProperty("sunDirection").EnumerateArray().Select(value => value.GetSingle()).ToArray());
+
+        SceneModel restored = SceneModel.FromJson(json);
+        Assert.Equal(SkyboxMode.Procedural, restored.SkyboxMode);
+        Assert.Equal(0f, restored.SunDirection.X);
+        Assert.Equal(1f, restored.SunDirection.Y);
+        Assert.Equal(0f, restored.SunDirection.Z);
+
+        SceneModel withoutSkyboxFields = SceneModel.FromJson("""{"version":2,"name":"Legacy"}""");
+        Assert.Equal(SkyboxMode.SolidColor, withoutSkyboxFields.SkyboxMode);
+        SceneModel defaults = new("Defaults");
+        Assert.Equal(SkyboxMode.SolidColor, defaults.SkyboxMode);
+    }
+
+    [Fact]
     public void MigrationV1ToV2_PreservesAssetsAndGeneratesStableComponentIds()
     {
         Guid objectId = Guid.NewGuid();

@@ -36,7 +36,7 @@ public sealed record CascadedShadowSettings
         ValidateRange(SplitLambda, 0f, 1f, nameof(SplitLambda));
         ValidateRange(BlendFraction, 0f, 0.25f, nameof(BlendFraction));
         ValidateRange(FadeFraction, 0f, 0.5f, nameof(FadeFraction));
-        ValidateRange(Strength, 0f, 1f, nameof(Strength));
+        ValidateRange(Strength, 0f, 3f, nameof(Strength));
         ValidateRange(ReceiverBias, 0f, 8f, nameof(ReceiverBias));
         ValidateRange(NormalBias, 0f, 8f, nameof(NormalBias));
         ValidateRange(AngularRadius, 0f, 0.1f, nameof(AngularRadius));

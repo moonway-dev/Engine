@@ -163,7 +163,7 @@ float sampleShadowMap(float3 worldPosition, float3 geometryNormal)
     }
     float fadeWidth = max(0.001, shadow.cameraForwardAndDistance.w * shadow.filterParameters.y);
     float fade = saturate((shadow.cameraForwardAndDistance.w - depth) / fadeWidth);
-    return lerp(1.0, visibility, shadow.lightDirectionAndStrength.w * fade);
+    return saturate(1.0 - (1.0 - visibility) * shadow.lightDirectionAndStrength.w * fade);
 }
 
 struct FragmentOutput
@@ -218,7 +218,7 @@ FragmentOutput psMain(FragmentInput input)
     if (rtShadowControl.enabled != 0u && shadow.lightIndex >= 0)
     {
         float rtVisibility = rtShadowVisibility.Load(int3(rtPixel, 0)).r;
-        shadowVisibility = lerp(1.0, rtVisibility, shadow.lightDirectionAndStrength.w);
+        shadowVisibility = saturate(1.0 - (1.0 - rtVisibility) * shadow.lightDirectionAndStrength.w);
     }
     if (rtShadowControl.pointLightEnabled != 0u)
         pointShadowVisibility = rtShadowVisibility.Load(int3(rtPixel, 0)).g;
@@ -254,6 +254,12 @@ FragmentOutput psMain(FragmentInput input)
 #endif
 
     float3 color = indirect + emissive + direct;
+    float shadowAmount = shadow.lightDirectionAndStrength.w;
+    if (shadow.lightIndex >= 0 && shadowAmount > 1.0)
+    {
+        float ambientShadowFactor = saturate(1.0 - (shadowAmount - 1.0) * (1.0 - shadowVisibility) * 0.6);
+        color = indirect * ambientShadowFactor + emissive + direct;
+    }
     if (shadow.debugCascades != 0u && shadowViewDepth(input.worldPosition) < shadow.cameraForwardAndDistance.w)
     {
         uint cascade = shadowCascade(shadowViewDepth(input.worldPosition));

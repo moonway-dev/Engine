@@ -615,6 +615,13 @@ public sealed class ProjectSettingsPanel : EditorPanel
         }
         if (mode == ShadowMode.Off)
             return;
+        float shadowIntensity = _settings.ShadowIntensity;
+        if (ImGui.SliderFloat("Shadow intensity", ref shadowIntensity, 0f, 3f))
+        {
+            _settings.ShadowIntensity = shadowIntensity;
+            _renderer.ShadowIntensity = shadowIntensity;
+            _dirty = true;
+        }
         if (mode == ShadowMode.RayTraced)
         {
             DrawRtQualityCombo("RT shadow quality", RayTracingQualityEffect.Shadows);
@@ -805,6 +812,9 @@ public sealed class SceneSettingsPanel : EditorPanel
     private readonly EditorContext _context;
     private readonly RendererModule _renderer;
     private System.Numerics.Vector4 _skyColor;
+    private System.Numerics.Vector3 _sunDirection;
+    private string? _sunLightName;
+    private bool _sunLightFound;
 
     public override string Title => "Scene Settings";
 
@@ -830,14 +840,67 @@ public sealed class SceneSettingsPanel : EditorPanel
         }
         IsOpen = open;
         Scene.Scene scene = _context.Document.Scene;
+        SyncFromScene(scene);
+
+        string[] skyboxModes = ["Solid color", "Procedural"];
+        int modeIndex = scene.SkyboxMode == SkyboxMode.Procedural ? 1 : 0;
+        if (ImGui.Combo("Skybox", ref modeIndex, skyboxModes, skyboxModes.Length))
+            scene.SkyboxMode = modeIndex == 1 ? SkyboxMode.Procedural : SkyboxMode.SolidColor;
+
+        if (scene.SkyboxMode == SkyboxMode.SolidColor)
+        {
+            if (ImGui.ColorEdit4("Sky color", ref _skyColor))
+            {
+                scene.SkyColor = new Vector4(_skyColor.X, _skyColor.Y, _skyColor.Z, _skyColor.W);
+                _renderer.SkyColor = scene.SkyColor;
+            }
+        }
+        else
+        {
+            if (_sunLightFound)
+            {
+                ImGui.TextDisabled($"Sun follows directional light \"{_sunLightName}\".");
+                ImGui.TextDisabled("Rotate it to move the sun: high - day, at the horizon - morning or evening, below - night.");
+            }
+            else
+            {
+                ImGui.TextDisabled("No directional light in the scene; using a manual sun direction.");
+                if (ImGui.DragFloat3("Sun direction", ref _sunDirection, 0.005f, -1f, 1f))
+                {
+                    Vector3 direction = new(_sunDirection.X, _sunDirection.Y, _sunDirection.Z);
+                    if (direction.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon)
+                    {
+                        direction = direction.Normalized;
+                        scene.SunDirection = direction;
+                        _sunDirection = new System.Numerics.Vector3(direction.X, direction.Y, direction.Z);
+                    }
+                }
+            }
+        }
+        ImGui.End();
+    }
+
+    private void SyncFromScene(Scene.Scene scene)
+    {
         Vector4 sceneSky = scene.SkyColor;
         if (!sceneSky.Equals(new Vector4(_skyColor.X, _skyColor.Y, _skyColor.Z, _skyColor.W)))
             _skyColor = new System.Numerics.Vector4(sceneSky.X, sceneSky.Y, sceneSky.Z, sceneSky.W);
-        if (ImGui.ColorEdit4("Sky color", ref _skyColor))
+        Vector3 sceneSun = scene.SunDirection;
+        if (!sceneSun.Equals(new Vector3(_sunDirection.X, _sunDirection.Y, _sunDirection.Z)))
+            _sunDirection = new System.Numerics.Vector3(sceneSun.X, sceneSun.Y, sceneSun.Z);
+        _sunLightFound = false;
+        _sunLightName = null;
+        foreach (GameObject gameObject in scene.EnumerateHierarchy())
         {
-            scene.SkyColor = new Vector4(_skyColor.X, _skyColor.Y, _skyColor.Z, _skyColor.W);
-            _renderer.SkyColor = scene.SkyColor;
+            if (!gameObject.IsActiveInHierarchy)
+                continue;
+            LightComponent? light = gameObject.GetComponent<LightComponent>();
+            if (light is { Kind: LightKind.Directional })
+            {
+                _sunLightFound = true;
+                _sunLightName = gameObject.Name;
+                break;
+            }
         }
-        ImGui.End();
     }
 }

@@ -38,6 +38,12 @@ public sealed class RendererModule : IUpdatableModule
     private IBuffer? _debugLinesBuffer;
     private ulong _debugLinesBufferCapacity;
     private uint _debugLinesVertexCount;
+    private IShaderProgram? _skyProgram;
+    private IGraphicsPipeline? _skyPipeline;
+    private SkyboxMode _skyboxMode = SkyboxMode.SolidColor;
+    private Vector3 _sunDirection = new(0.35f, 0.45f, -0.55f);
+    private Vector3 _sceneSkyCameraPosition;
+    private Vector3 _gameSkyCameraPosition;
     public Action? ColliderGizmoSource { get; set; }
     private IComputePipeline? _bloomPipeline;
     private IComputePipeline? _temporalPipeline;
@@ -296,6 +302,8 @@ public sealed class RendererModule : IUpdatableModule
         get => _shadowSettings.Strength;
         set => ShadowSettings = _shadowSettings with { Strength = value };
     }
+
+    public float ShadowIntensity { get; set; } = 1f;
 
     public int ShadowMapSize
     {
@@ -679,6 +687,7 @@ public sealed class RendererModule : IUpdatableModule
         _lights.Clear();
         _activeLights = [];
         SkyColor = scene.SkyColor;
+        _skyboxMode = scene.SkyboxMode;
         ResetTemporalHistory();
         _scenePreviousModels.Clear();
         _gamePreviousModels.Clear();
@@ -987,8 +996,10 @@ public sealed class RendererModule : IUpdatableModule
             PreviousViewProjection = _gamePreviousViewProjection,
             CameraPosition = Camera.Position,
             Jitter = _gameJitter,
-            PreviousJitter = _gamePreviousJitter,
+            PreviousJitter = _gameJitter,
         };
+        _sceneSkyCameraPosition = sceneCamera.Position;
+        _gameSkyCameraPosition = Camera.Position;
         ShadowCasterBounds[] casterBounds = _sceneItems.Values.Where(item => item.RenderingMode.CastsShadows()).Select(item => CascadedShadows.TransformBounds(item.Mesh.BoundsMin, item.Mesh.BoundsMax, item.ModelMatrix)).ToArray();
         _currentShadowData = BuildShadowData(sceneCamera, casterBounds);
         _currentGameShadowData = BuildShadowData(Camera, casterBounds);
@@ -1256,6 +1267,15 @@ public sealed class RendererModule : IUpdatableModule
         _graph.ReadsShader(_tonemapPass, sceneColor, PipelineStages.FragmentShader);
         _graph.ReadsShader(_tonemapPass, sceneBloom, PipelineStages.FragmentShader);
 
+        Func<bool> sceneSkyVisible = () => (_forwardPass!.ShouldExecute?.Invoke() ?? true)
+            && _skyPipeline is not null
+            && _skyboxMode == SkyboxMode.Procedural;
+        RenderGraphPass sceneSkyPass = _graph.AddGraphicsPassBefore(temporalPass ?? _tonemapPass, "ProceduralSky",
+            (commandBuffer, _) => ExecuteSkyPass(commandBuffer, sceneExtent, gameView: false));
+        sceneSkyPass.ShouldExecute = sceneSkyVisible;
+        _graph.WritesColor(sceneSkyPass, _hdrTarget!, clear: false);
+        _graph.ReadsDepth(sceneSkyPass, _mainDepth!);
+
         RenderGraphPass gizmoPass = _graph.AddGraphicsPassBefore(_tonemapPass, "ColliderGizmos",
             (commandBuffer, _) => ExecuteColliderGizmoPass(commandBuffer, sceneExtent));
         gizmoPass.ShouldExecute = () => DebugDraw.HasLines;
@@ -1362,6 +1382,15 @@ public sealed class RendererModule : IUpdatableModule
             _graph.WritesColor(_gameTonemapPass, _gameTarget!, clear: true, Vector4.Zero);
             _graph.ReadsShader(_gameTonemapPass, gameColor, PipelineStages.FragmentShader);
             _graph.ReadsShader(_gameTonemapPass, gameBloom, PipelineStages.FragmentShader);
+
+            Func<bool> gameSkyVisible = () => (_gameForwardPass!.ShouldExecute?.Invoke() ?? true)
+                && _skyPipeline is not null
+                && _skyboxMode == SkyboxMode.Procedural;
+            RenderGraphPass gameSkyPass = _graph.AddGraphicsPassBefore(gameTemporalPass ?? _gameTonemapPass, "GameProceduralSky",
+                (commandBuffer, _) => ExecuteSkyPass(commandBuffer, _gameRenderExtent.Width > 8 ? _gameRenderExtent : sceneExtent, gameView: true));
+            gameSkyPass.ShouldExecute = gameSkyVisible;
+            _graph.WritesColor(gameSkyPass, _gameHdrTarget!, clear: false);
+            _graph.ReadsDepth(gameSkyPass, _gameDepth!);
 
             _gameForwardPass.ShouldExecute = () => GameViewVisible && _gameCameraPresent;
             if (gameTemporalPass is not null)
@@ -2222,6 +2251,27 @@ public sealed class RendererModule : IUpdatableModule
         commandBuffer.Draw(_debugLinesVertexCount);
     }
 
+    private void ExecuteSkyPass(ICommandBuffer commandBuffer, Size2D extent, bool gameView)
+    {
+        if (_skyPipeline is null || _skyboxMode != SkyboxMode.Procedural)
+            return;
+        Matrix4x4 viewProjection = gameView ? _gameCurrentViewProjection : _sceneCurrentViewProjection;
+        Matrix4x4 inverseViewProjection = viewProjection.Invert();
+        SkyConstants constants = new()
+        {
+            InverseViewProjection = inverseViewProjection,
+            CameraPosition = gameView ? _gameSkyCameraPosition : _sceneSkyCameraPosition,
+            SunDirection = _sunDirection,
+            Extent = new Vector2(extent.Width, extent.Height),
+            SunDiscIntensity = 1f,
+        };
+        commandBuffer.BindGraphicsPipeline(_skyPipeline);
+        commandBuffer.SetViewport(new Viewport(0f, 0f, extent.Width, extent.Height, 0f, 1f));
+        commandBuffer.SetScissor(new Rect(0, 0, (int)extent.Width, (int)extent.Height));
+        commandBuffer.PushConstants(StructuredBytes(constants), ShaderStages.Fragment);
+        commandBuffer.Draw(3);
+    }
+
     private void ExecuteTonemapPass(ICommandBuffer commandBuffer, Size2D extent) =>
         ExecuteTonemapPass(commandBuffer, extent, _historyWrite!, _bloomTarget!);
 
@@ -2675,6 +2725,9 @@ public sealed class RendererModule : IUpdatableModule
         ShaderProgramDescription tonemapProgram = _compiler.CompileProgram(
             Path.Combine(_shaderDirectory, "Tonemap.slang"),
             [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
+        ShaderProgramDescription skyProgram = _compiler.CompileProgram(
+            Path.Combine(_shaderDirectory, "Sky.slang"),
+            [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
         ShaderProgramDescription bloomProgram = _temporalEnabled
             ? _compiler.CompileProgram(
                 Path.Combine(_shaderDirectory, "Bloom.slang"),
@@ -2776,6 +2829,25 @@ public sealed class RendererModule : IUpdatableModule
             DepthWrite = false,
             ColorAttachmentFormats = [TextureFormat.B8G8R8A8Srgb],
         });
+        if (skyProgram.Reflection.PushConstants.Count > 0
+            && skyProgram.Reflection.PushConstants[0].Size != (uint)Marshal.SizeOf<SkyConstants>())
+        {
+            throw new InvalidOperationException(
+                $"Sky push constant ABI mismatch: shader reports {skyProgram.Reflection.PushConstants[0].Size} bytes, host uses {Marshal.SizeOf<SkyConstants>()} bytes.");
+        }
+        _skyProgram = _device.CreateShaderProgram(skyProgram);
+        _skyPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            Name = "ProceduralSky",
+            ShaderProgram = _skyProgram,
+            VertexLayouts = [],
+            CullMode = CullMode.None,
+            DepthTest = true,
+            DepthWrite = false,
+            DepthCompare = CompareOp.LessOrEqual,
+            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
+            DepthAttachmentFormat = TextureFormat.D32Float,
+        });
         ShaderProgramDescription debugLinesProgram = _compiler!.CompileProgram(
             Path.Combine(_shaderDirectory, "DebugLines.slang"),
             [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")]);
@@ -2835,6 +2907,8 @@ public sealed class RendererModule : IUpdatableModule
         HashSet<MeshRendererComponent> activeComponents = [];
         CameraComponent? sceneCamera = null;
         List<Light> sceneLights = [];
+        _skyboxMode = _attachedScene.SkyboxMode;
+        bool sunFound = false;
         foreach (GameObject gameObject in _attachedScene.EnumerateHierarchy())
         {
             if (!gameObject.IsActiveInHierarchy)
@@ -2845,6 +2919,11 @@ public sealed class RendererModule : IUpdatableModule
             LightComponent? light = gameObject.GetComponent<LightComponent>();
             if (light is not null)
             {
+                if (light.Kind == LightKind.Directional && !sunFound)
+                {
+                    _sunDirection = -gameObject.Transform.Forward;
+                    sunFound = true;
+                }
                 sceneLights.Add(light.Kind == LightKind.Directional
                     ? Light.Directional(gameObject.Transform.Forward, light.Color, light.Intensity)
                     : Light.Point(gameObject.Transform.Position, light.Color, light.Intensity, light.Range));
@@ -2852,6 +2931,13 @@ public sealed class RendererModule : IUpdatableModule
             MeshRendererComponent? meshRenderer = gameObject.GetComponent<MeshRendererComponent>();
             if (meshRenderer is { Enabled: true } && meshRenderer.RenderingMode != MeshRenderingMode.Off)
                 activeComponents.Add(meshRenderer);
+        }
+        if (!sunFound)
+        {
+            Vector3 fallback = _attachedScene.SunDirection;
+            _sunDirection = fallback.LengthSquared > MathUtil.Epsilon * MathUtil.Epsilon
+                ? fallback.Normalized
+                : new Vector3(0.35f, 0.45f, -0.55f);
         }
         if (sceneCamera is not null)
         {
@@ -3240,11 +3326,14 @@ public sealed class RendererModule : IUpdatableModule
     {
         int lightIndex = LightSelection.FindShadowLightIndex(_activeLights);
         Light? light = lightIndex >= 0 ? _activeLights[lightIndex] : null;
+        CascadedShadowSettings settings = EffectiveShadowMode == ShadowMode.Off
+            ? _shadowSettings with { Strength = 0f }
+            : _shadowSettings with { Strength = Math.Clamp(_shadowSettings.Strength * ShadowIntensity, 0f, 3f) };
         return CascadedShadows.Build(
             camera,
             light,
             lightIndex,
-            EffectiveShadowMode == ShadowMode.Off ? _shadowSettings with { Strength = 0f } : _shadowSettings,
+            settings,
             casterBounds);
     }
 
@@ -3397,6 +3486,8 @@ public sealed class RendererModule : IUpdatableModule
         _shadowPipeline?.Dispose();
         _pbrPipeline?.Dispose();
         _tonemapPipeline?.Dispose();
+        _skyPipeline?.Dispose();
+        _debugLinesPipeline?.Dispose();
         _bloomPipeline?.Dispose();
         _temporalPipeline?.Dispose();
         _rtGiTemporalPipeline?.Dispose();
@@ -3406,6 +3497,8 @@ public sealed class RendererModule : IUpdatableModule
         _shadowProgram?.Dispose();
         _pbrProgram?.Dispose();
         _tonemapProgram?.Dispose();
+        _skyProgram?.Dispose();
+        _debugLinesProgram?.Dispose();
         _bloomProgram?.Dispose();
         _temporalProgram?.Dispose();
         _rtGiTemporalProgram?.Dispose();

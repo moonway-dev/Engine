@@ -7,6 +7,12 @@
     0.89637303,
     1
   ],
+  "skyboxMode": "Procedural",
+  "sunDirection": [
+    0.35,
+    0.45,
+    -0.55
+  ],
   "objects": [
     {
       "id": "c3000000-0000-0000-0000-000000000001",
@@ -37,9 +43,9 @@
           "enabled": true,
           "properties": {
             "AlbedoColor": [
-              0.3,
-              0.36,
-              0.32
+              0.31088084,
+              0.31088084,
+              0.31088084
             ],
             "AlbedoTexture": null,
             "AmbientOcclusionTexture": null,
@@ -1075,6 +1081,9 @@
           "properties": {
             "Script": "ChaseCamera",
             "Enabled": true,
+            "CollisionMargin": 0.25,
+            "CollisionRadius": 0.35,
+            "CollisionRecovery": 5,
             "FollowTrail": 0,
             "LookOffset": [
               0,
@@ -1134,9 +1143,24 @@
               1,
               1
             ],
-            "Intensity": 1,
+            "Intensity": 2.519,
             "Kind": "Directional",
             "Range": 20
+          }
+        },
+        {
+          "id": "c3000000-0000-0000-0000-000000000031",
+          "type": "SunCycle",
+          "enabled": true,
+          "properties": {
+            "Script": "SunCycle",
+            "Enabled": true,
+            "AzimuthDegrees": 25,
+            "DayIntensity": 2.5,
+            "DayLengthSeconds": 65.185,
+            "NightIntensity": 0.08,
+            "Paused": false,
+            "StartTimeOfDay": 0.1
           }
         }
       ],

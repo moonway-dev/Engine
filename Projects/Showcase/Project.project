@@ -15,6 +15,7 @@
     "Quality": 3,
     "DebugCascades": false
   },
+  "ShadowIntensity": 1,
   "ShadowConstantBias": 1.25,
   "ShadowSlopeBias": 1.75,
   "GiMode": 2,
@@ -33,7 +34,7 @@
   "RayTracingReflectionQuality": 1,
   "RayTracingGiQuality": 1,
   "RayTracingAdaptiveQuality": true,
-  "LastScene": "Scenes/PhysicsPlayground.scene",
+  "LastScene": "../../../../AppData/Local/Temp/sky_test.scene",
   "VSync": true,
   "PhysicsLayers": [
     "Default"

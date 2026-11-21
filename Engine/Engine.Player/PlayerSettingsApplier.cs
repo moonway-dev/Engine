@@ -23,6 +23,7 @@ internal static class PlayerSettingsApplier
 
         renderer.Exposure = GetFloat(root, "Exposure", renderer.Exposure);
         renderer.LodPixelBudget = GetFloat(root, "LodPixelBudget", renderer.LodPixelBudget);
+        renderer.ShadowIntensity = GetFloat(root, "ShadowIntensity", renderer.ShadowIntensity);
         renderer.ShadowConstantBias = GetFloat(root, "ShadowConstantBias", renderer.ShadowConstantBias);
         renderer.ShadowSlopeBias = GetFloat(root, "ShadowSlopeBias", renderer.ShadowSlopeBias);
         if (TryGetInt(root, "GiMode", out int giMode))

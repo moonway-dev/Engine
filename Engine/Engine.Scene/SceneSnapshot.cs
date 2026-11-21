@@ -40,6 +40,8 @@ public sealed class SceneSnapshot
             null,
             scene.ComponentRegistry);
         snapshot._document.SkyColor = scene.SkyColor;
+        snapshot._document.SkyboxMode = scene.SkyboxMode.ToString();
+        snapshot._document.SunDirection = [scene.SunDirection.X, scene.SunDirection.Y, scene.SunDirection.Z];
         return snapshot;
     }
 
@@ -130,6 +132,11 @@ public sealed class SceneSnapshot
         Scene scene = new(_document.Name, componentRegistry);
         if (_document.SkyColor is { } skyColor)
             scene.SkyColor = skyColor;
+        if (!string.IsNullOrEmpty(_document.SkyboxMode)
+            && Enum.TryParse(_document.SkyboxMode, ignoreCase: true, out SkyboxMode skyboxMode))
+            scene.SkyboxMode = skyboxMode;
+        if (_document.SunDirection is { Length: 3 } sunDirection)
+            scene.SunDirection = new Vector3(sunDirection[0], sunDirection[1], sunDirection[2]);
         SceneSnapshotRestoreResult result = RestoreInto(scene, idPolicy);
         scene.Version = SceneSerializer.CurrentVersion;
         return result;
@@ -744,6 +751,8 @@ internal sealed class SceneSnapshotDocument
     public int Version { get; set; } = SceneSerializer.CurrentVersion;
     public string Name { get; set; } = "Scene";
     public Vector4? SkyColor { get; set; }
+    public string? SkyboxMode { get; set; }
+    public float[]? SunDirection { get; set; }
     public Guid? RootId { get; set; }
     public PrefabSnapshotMetadata? Prefab { get; set; }
     public List<SceneObjectSnapshot> Objects { get; set; } = [];

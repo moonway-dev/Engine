@@ -154,6 +154,19 @@ public struct TonemapConstants
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public struct SkyConstants
+{
+    public Matrix4x4 InverseViewProjection;
+    public Vector3 CameraPosition;
+    private float Padding0;
+    public Vector3 SunDirection;
+    private float Padding1;
+    public Vector2 Extent;
+    public float SunDiscIntensity;
+    private float Padding2;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public struct RtShadowControl
 {
     public uint Enabled;

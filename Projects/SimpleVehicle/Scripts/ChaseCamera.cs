@@ -31,6 +31,15 @@ public sealed class ChaseCamera : ScriptBehaviour
     [InspectorRange(0f, 1f)]
     [InspectorTooltip("Fraction of the camera position that trails the car per second; 0 keeps the camera rigidly bolted to the car.")]
     public float FollowTrail = 0f;
+    [InspectorRange(0.1f, 1f)]
+    [InspectorTooltip("Radius of the clearance sphere kept between the camera and geometry.")]
+    public float CollisionRadius = 0.35f;
+    [InspectorRange(0f, 1f)]
+    [InspectorTooltip("Extra distance kept between the camera and whatever it collides with.")]
+    public float CollisionMargin = 0.25f;
+    [InspectorRange(1f, 20f)]
+    [InspectorTooltip("How fast the camera pulls back out after a collision, per second.")]
+    public float CollisionRecovery = 5f;
 
     private float _baseFov;
     private CameraComponent? _camera;
@@ -41,6 +50,8 @@ public sealed class ChaseCamera : ScriptBehaviour
     private bool _hasSmoothedYaw;
     private Vector3 _trailingPosition;
     private bool _hasTrailingPosition;
+    private float _collisionDistance;
+    private bool _hasCollisionDistance;
 
     public override void OnEnable()
     {
@@ -102,14 +113,11 @@ public sealed class ChaseCamera : ScriptBehaviour
             float blend = 1f - MathF.Exp(-FollowTrail * 12f * ScriptTime.DeltaTime);
             _trailingPosition = Vector3.Lerp(_trailingPosition, desiredPosition, blend);
             float trailGap = Vector3.Distance(_trailingPosition, desiredPosition);
-            Transform.Position = trailGap > 0.01f
+            desiredPosition = trailGap > 0.01f
                 ? _trailingPosition + (desiredPosition - _trailingPosition).Normalized * MathF.Min(trailGap, 1.5f)
                 : desiredPosition;
         }
-        else
-        {
-            Transform.Position = desiredPosition;
-        }
+        Transform.Position = ResolveCollision(target, targetPosition, desiredPosition);
 
         Vector3 lookPoint = targetPosition + LookOffset;
         Vector3 toLook = lookPoint - Transform.Position;
@@ -121,6 +129,31 @@ public sealed class ChaseCamera : ScriptBehaviour
             float kick = MathUtil.Clamp(speedKmh / MathF.Max(SpeedFovKmh, 1f), 0f, 1f);
             _camera.FieldOfViewY = MathUtil.Clamp(_baseFov + kick * SpeedFovKick * MathUtil.DegToRad, 0.3f, 2.4f);
         }
+    }
+
+    private Vector3 ResolveCollision(GameObject target, Vector3 targetPosition, Vector3 desiredPosition)
+    {
+        Vector3 anchor = targetPosition + LookOffset;
+        Vector3 toCamera = desiredPosition - anchor;
+        float distance = toCamera.Length;
+        if (distance < MathUtil.Epsilon)
+            return desiredPosition;
+        Vector3 direction = toCamera / distance;
+        float minimum = CollisionRadius + CollisionMargin;
+        float targetDistance = distance;
+        if (distance > minimum && ScriptPhysics.RayCast(anchor, direction, distance, target) is { } hit)
+            targetDistance = MathUtil.Clamp(hit.Distance - CollisionRadius - CollisionMargin, minimum, distance);
+        if (!_hasCollisionDistance || targetDistance < _collisionDistance)
+        {
+            _collisionDistance = targetDistance;
+            _hasCollisionDistance = true;
+        }
+        else
+        {
+            float blend = 1f - MathF.Exp(-CollisionRecovery * ScriptTime.DeltaTime);
+            _collisionDistance += (targetDistance - _collisionDistance) * blend;
+        }
+        return anchor + direction * _collisionDistance;
     }
 
     private void UpdateOrbit()

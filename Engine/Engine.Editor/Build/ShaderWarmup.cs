@@ -47,6 +47,7 @@ public static class ShaderWarmup
         Compile("Shadow.slang", vsPs);
         Compile("Tonemap.slang", vsPs);
         Compile("DebugLines.slang", vsPs);
+        Compile("Sky.slang", vsPs);
         Compile("Bloom.slang", cs);
         Compile("IBLBake.slang", cs);
         Compile("TemporalResolve.slang", cs);

@@ -1,5 +1,5 @@
 {
-  "Exposure": 1.087,
+  "Exposure": 1.108,
   "LodPixelBudget": 320,
   "Shadows": {
     "Resolution": 2048,
@@ -15,12 +15,13 @@
     "Quality": 3,
     "DebugCascades": false
   },
+  "ShadowIntensity": 1,
   "ShadowConstantBias": 1.25,
   "ShadowSlopeBias": 1.75,
-  "GiMode": 0,
+  "GiMode": 2,
   "ScreenSpaceGiIntensity": 0.608,
   "ScreenSpaceGiRadius": 1.117,
-  "RayTracingEnabled": false,
+  "RayTracingEnabled": true,
   "RayTracingReflectionsEnabled": true,
   "RayTracingReflectionStrength": 1,
   "RayTracingSamples": 8,
@@ -28,7 +29,7 @@
   "RayTracingRayBias": 0.0015,
   "RayTracingMaxDistance": 1000,
   "RayTracingReflectionRoughnessLimit": 0.542,
-  "ShadowMode": 0,
+  "ShadowMode": 2,
   "RayTracingShadowQuality": 3,
   "RayTracingReflectionQuality": 3,
   "RayTracingGiQuality": 3,
@@ -55,9 +56,9 @@
     ],
     "StartupScene": "Scenes/SimpleVehicle.scene",
     "Platform": "win-x64",
-    "Mode": "Managed",
+    "Mode": "Aot",
     "Configuration": "Release",
     "OutputDirectory": "Builds",
-    "PackKey": "5D611534094CD9F54485DA45D53050CBC3C5335288D89F3CA3E15600B3458072"
+    "PackKey": "C410A434C8A58F4222FC19B6C56AF08DE1D3D92BE90CD528680E9D060976FF69"
   }
 }

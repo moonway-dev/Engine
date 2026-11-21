@@ -2,6 +2,12 @@ namespace Engine.Scene;
 
 using Engine.Mathematics;
 
+public enum SkyboxMode
+{
+    SolidColor,
+    Procedural,
+}
+
 public sealed class Scene
 {
     private readonly Dictionary<Guid, GameObject> _objectsById = [];
@@ -13,6 +19,12 @@ public sealed class Scene
     public string Name { get; set; } = "Scene";
 
     public Vector4 SkyColor { get; set; } = new(0.35f, 0.55f, 0.85f, 1f);
+
+    [InspectorTooltip("SolidColor fills the background with SkyColor; Procedural renders a physically based sky driven by the sun direction.")]
+    public SkyboxMode SkyboxMode { get; set; } = SkyboxMode.SolidColor;
+
+    [InspectorTooltip("Direction toward the sun used by the procedural sky when the scene has no directional light.")]
+    public Vector3 SunDirection { get; set; } = new(0.35f, 0.45f, -0.55f);
 
     public int SourceVersion { get; internal set; } = SceneSerializer.CurrentVersion;
 
