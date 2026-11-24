@@ -3,7 +3,7 @@ using Engine.Scene;
 
 namespace Engine.Physics;
 
-public sealed class CapsuleColliderComponent : ColliderComponent
+public sealed class CapsuleCollider : Collider
 {
     [InspectorTooltip("Capsule radius in world units before object scale.")]
     [InspectorRange(0.01f, 100f)]

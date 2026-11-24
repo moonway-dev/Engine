@@ -18,7 +18,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     private string _scriptsRoot;
     private readonly List<SceneModel> _scenes = [];
     private readonly List<SceneModel> _playingScenes = [];
-    private readonly List<(ScriptComponent Component, ScriptBehaviour Behaviour)> _activeInstances = [];
+    private readonly List<(Script Component, ScriptBehaviour Behaviour)> _activeInstances = [];
     private readonly HashSet<ScriptBehaviour> _started = [];
     private readonly List<ScriptJoint> _joints = [];
     private readonly List<GameObject> _pendingDestroy = [];
@@ -115,7 +115,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         if (!_scenes.Contains(scene))
             _scenes.Add(scene);
         RegisterInto(scene.ComponentRegistry);
-        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        foreach (Script component in scene.AllComponents.OfType<Script>().ToArray())
         {
             if (string.IsNullOrWhiteSpace(component.Script))
                 continue;
@@ -140,7 +140,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         if (!_scenes.Contains(scene))
             _scenes.Add(scene);
         RegisterInto(scene.ComponentRegistry);
-        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        foreach (Script component in scene.AllComponents.OfType<Script>().ToArray())
         {
             if (string.IsNullOrWhiteSpace(component.Script))
                 continue;
@@ -158,7 +158,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     {
         if (!_playingScenes.Remove(scene))
             return;
-        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        foreach (Script component in scene.AllComponents.OfType<Script>().ToArray())
         {
             if (component.Instance is ScriptBehaviour behaviour)
             {
@@ -254,7 +254,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
                     continue;
                 Type? componentType = types.FirstOrDefault(type =>
                     type.IsClass && !type.IsAbstract
-                    && typeof(ScriptComponent).IsAssignableFrom(type)
+                    && typeof(Script).IsAssignableFrom(type)
                     && type.Name.Equals(behaviourType.Name + "Component", StringComparison.Ordinal));
                 if (componentType is null)
                 {
@@ -324,7 +324,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
     private void SwapSceneInstances(SceneModel scene)
     {
         bool playing = _playingScenes.Contains(scene);
-        foreach (ScriptComponent component in scene.AllComponents.OfType<ScriptComponent>().ToArray())
+        foreach (Script component in scene.AllComponents.OfType<Script>().ToArray())
         {
             if (string.IsNullOrWhiteSpace(component.Script))
                 continue;
@@ -357,13 +357,23 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptPhysics.Waker = gameObject => WithBodyVoid(gameObject, (world, handle) => world.SetBodyAwake(handle, true));
         ScriptPhysics.Sleeper = gameObject => WithBodyVoid(gameObject, (world, handle) => world.SetBodyAwake(handle, false));
         ScriptPhysics.SleepingChecker = gameObject => WithBody(gameObject, (world, handle) => !world.IsBodyAwake(handle), false);
-        ScriptPhysics.BodyChecker = gameObject => _physics is not null && _physics.TryGetBodyHandle(gameObject, out _);
+        ScriptPhysics.BodyChecker = gameObject => _physics is not null && _physics.TryGetBodyHandle(gameObject, out _, synchronize: false);
         ScriptPhysics.GroundedChecker = (gameObject, distance) =>
         {
             Engine.Scene.ScriptRayHit? hit = RayCastInternal(gameObject.Transform.Position, Vector3.Down, distance, gameObject);
             return hit is not null;
         };
         ScriptPhysics.RayCaster = (origin, direction, maximumDistance, ignore) => RayCastInternal(origin, direction, maximumDistance, ignore);
+        ScriptPhysics.SphereCaster = (origin, direction, maximumDistance, radius, ignore) =>
+        {
+            if (_physics is null)
+                return null;
+            _physics.Synchronize();
+            BodyHandle? ignored = ignore is not null && _physics.TryGetBodyHandle(ignore, out BodyHandle handle) ? handle : null;
+            return _physics.World.SweepSphere(origin, direction, maximumDistance, radius, out Engine.Physics.PhysicsSweepHit hit, ignored)
+                ? new Engine.Scene.ScriptRayHit(hit.Position, hit.Normal, hit.Distance)
+                : null;
+        };
         ScriptPhysics.InterpolatedPoseGetter = gameObject =>
             _physics is not null && _physics.TryGetRenderPose(gameObject, out Vector3 position, out Quaternion rotation)
                 ? (position, rotation)
@@ -497,7 +507,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
 
     private T WithBody<T>(GameObject gameObject, Func<Engine.Physics.PhysicsWorld, BodyHandle, T> action, T fallback)
     {
-        if (_physics is null || !_physics.TryGetBodyHandle(gameObject, out BodyHandle handle))
+        if (_physics is null || !_physics.TryGetBodyHandle(gameObject, out BodyHandle handle, synchronize: false))
             return fallback;
         try
         {
@@ -527,7 +537,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
             ? []
             : [.. compilation.Scripts.Select(script => new ScriptDescription(script.Key, script.DisplayName, script.ComponentType))];
 
-    private object? CreateInstance(ScriptComponent component)
+    private object? CreateInstance(Script component)
     {
         if (_current is not { Success: true } compilation)
             return null;
@@ -539,7 +549,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         return behaviour;
     }
 
-    private void ReleaseInstance(ScriptComponent component, object instance)
+    private void ReleaseInstance(Script component, object instance)
     {
         if (instance is not ScriptBehaviour behaviour)
             return;
@@ -585,7 +595,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptTime.TotalTime = frameTime.TotalTime;
         for (int index = 0; index < _activeInstances.Count; index++)
         {
-            (ScriptComponent component, ScriptBehaviour behaviour) = _activeInstances[index];
+            (Script component, ScriptBehaviour behaviour) = _activeInstances[index];
             if (!behaviour.IsActive)
                 continue;
             if (_started.Add(behaviour))
@@ -597,11 +607,17 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
 
     private void RunFixedTick(in FrameTime frameTime)
     {
+        ScriptTime.DeltaTime = frameTime.FixedDeltaTime;
+        ScriptTime.FixedDeltaTime = frameTime.FixedDeltaTime;
+        ScriptTime.UnscaledDeltaTime = frameTime.FixedDeltaTime;
+        ScriptTime.TotalTime = frameTime.TotalTime;
         for (int index = 0; index < _activeInstances.Count; index++)
         {
-            (ScriptComponent component, ScriptBehaviour behaviour) = _activeInstances[index];
+            (Script component, ScriptBehaviour behaviour) = _activeInstances[index];
             if (!behaviour.IsActive)
                 continue;
+            if (_started.Add(behaviour))
+                SafeRun(component, behaviour, behaviour.OnStart);
             SafeRun(component, behaviour, behaviour.OnFixedUpdate);
         }
         ProcessDestroyed();
@@ -668,7 +684,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         }
     }
 
-    private void SafeRun(ScriptComponent component, ScriptBehaviour behaviour, Action action)
+    private void SafeRun(Script component, ScriptBehaviour behaviour, Action action)
     {
         try
         {
@@ -707,6 +723,7 @@ public sealed class ScriptingModule : IUpdatableModule, IFixedUpdateModule, IDis
         ScriptPhysics.BodyChecker = null;
         ScriptPhysics.GroundedChecker = null;
         ScriptPhysics.RayCaster = null;
+        ScriptPhysics.SphereCaster = null;
         ScriptPhysics.InterpolatedPoseGetter = null;
         ScriptPhysics.BallJointCreator = null;
         ScriptPhysics.HingeJointCreator = null;

@@ -79,7 +79,7 @@ public static class FbxModelLoader
                 {
                     Position = transformedPosition,
                     Normal = transformedNormal,
-                    UV = hasUv ? new EngineVector2(uv.X, uv.Y) : EngineVector2.Zero,
+                    UV = hasUv ? new EngineVector2(uv.X, 1f - uv.Y) : EngineVector2.Zero,
                 });
             }
             foreach (Face face in mesh.Faces)

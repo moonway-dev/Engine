@@ -14,6 +14,11 @@ public interface IUpdatableModule : IEngineModule
     void Update(in FrameTime frameTime);
 }
 
+public interface IFramePreparationModule : IEngineModule
+{
+    void PrepareFrame(in FrameTime frameTime);
+}
+
 public interface IFixedUpdateModule : IEngineModule
 {
     void FixedUpdate(in FrameTime frameTime);

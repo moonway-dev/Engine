@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Reflection;
 using Engine.Assets;
 using Engine.Editor.Documents;
@@ -15,7 +17,7 @@ internal static class MaterialInspector
     public static void Draw(EditorContext context, MaterialDocument document)
     {
         ImGui.TextUnformatted(document.Title);
-        ImGui.TextDisabled("PBR Lit / Opaque");
+        ImGui.TextDisabled(document.Effective.Transparent ? "PBR Lit / Transparent" : "PBR Lit / Opaque");
         if (document.HasExternalConflict)
         {
             ImGui.TextWrapped("Material changed on disk. Your unsaved edits are preserved.");
@@ -128,9 +130,14 @@ internal static class MaterialInspector
         }
         else if (current is float scalar)
         {
-            float max = property.Name is "Metallic" or "Roughness" or "AoStrength" ? 1f : 100000f;
+            float max = property.Name is "Metallic" or "Roughness" or "AoStrength" or "Opacity" ? 1f : 100000f;
             if (ImGui.DragFloat("##Value", ref scalar, 0.01f, 0f, max))
                 return scalar;
+        }
+        else if (current is bool flag)
+        {
+            if (ImGui.Checkbox("##Value", ref flag))
+                return flag;
         }
         else if (current is TextureChannel channel)
         {

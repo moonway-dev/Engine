@@ -7,7 +7,7 @@ namespace Engine.Assets;
 
 public static class ModelCache
 {
-    private const int Version = 4;
+    private const int Version = 5;
     private const int Magic = 0x454D444C;
 
     public static ModelData Load(string source, string directory, out bool cacheHit, CancellationToken cancellationToken = default)

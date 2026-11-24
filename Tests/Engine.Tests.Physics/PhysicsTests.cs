@@ -390,7 +390,7 @@ public sealed class WheelSuspensionProbeTests
 
     private static SuspensionProbeState Probe(PhysicsWorld world, Vector3 anchor, out float travel, out Vector3 normal)
     {
-        return WheelColliderComponent.ProbeSupport(world, null, anchor, Vector3.Up, Suspension, Radius, out travel, out normal, out _);
+        return WheelCollider.ProbeSupport(world, null, anchor, Vector3.Up, Suspension, Radius, out travel, out normal, out _);
     }
 
     [Fact]

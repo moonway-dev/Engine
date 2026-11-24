@@ -5,7 +5,7 @@ using Engine.Scene;
 
 public abstract class ScriptBehaviour
 {
-    public ScriptComponent Component { get; internal set; } = null!;
+    public Script Component { get; internal set; } = null!;
 
     public GameObject Owner => Component.Owner;
 

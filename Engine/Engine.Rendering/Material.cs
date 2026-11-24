@@ -161,6 +161,8 @@ public sealed class Material : IDisposable
     public float Metallic { get; set; }
     public float Roughness { get; set; } = 0.5f;
     public float EmissiveIntensity { get; set; }
+    public float Opacity { get; set; } = 1f;
+    public bool Transparent { get; set; }
     public Vector3 EmissionColor { get; set; } = Vector3.One;
     public bool LegacyEmission { get; set; } = true;
     public Vector2 UvOffset { get; set; }
@@ -245,6 +247,8 @@ public sealed class Material : IDisposable
             NormalScale = NormalScale,
             AoStrength = AoStrength,
             EmissiveIntensity = EmissiveIntensity,
+            Opacity = Opacity,
+            Transparent = Transparent ? 1u : 0u,
             EmissionColor = EmissionColor,
             UvOffset = UvOffset,
             MetallicChannel = (uint)MetallicChannel,

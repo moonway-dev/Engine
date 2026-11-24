@@ -24,7 +24,7 @@ public sealed record PhysicsColliderSpec(
     float Length = 0f,
     int Layer = -1);
 
-public abstract class ColliderComponent : Component
+public abstract class Collider : Component
 {
     public override bool AllowMultiplePerObject => true;
 

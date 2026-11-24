@@ -54,7 +54,7 @@ public class SceneSchemaV2Tests
         GameObject parent = scene.CreateObject("Parent");
         GameObject child = scene.CreateObject("Child", parent);
         parent.Active = false;
-        CameraComponent camera = child.AddComponent<CameraComponent>();
+        Engine.Scene.Camera camera = child.AddComponent<Engine.Scene.Camera>();
         camera.Enabled = false;
         ReferenceComponent reference = parent.AddComponent<ReferenceComponent>();
         reference.Enabled = false;
@@ -73,7 +73,7 @@ public class SceneSchemaV2Tests
         GameObject restoredParent = restored.FindById(parent.Id)!;
         GameObject restoredChild = restored.FindById(child.Id)!;
         ReferenceComponent restoredReference = restoredParent.GetComponent<ReferenceComponent>()!;
-        CameraComponent restoredCamera = restoredChild.GetComponent<CameraComponent>()!;
+        Engine.Scene.Camera restoredCamera = restoredChild.GetComponent<Engine.Scene.Camera>()!;
 
         Assert.Equal(parent.Id, restoredParent.Id);
         Assert.Equal(child.Id, restoredChild.Id);
@@ -154,8 +154,8 @@ public class SceneSchemaV2Tests
 
         SceneModel first = SceneModel.FromJson(v1);
         SceneModel second = SceneModel.FromJson(v1);
-        CameraComponent firstCamera = first.FindById(objectId)!.GetComponent<CameraComponent>()!;
-        CameraComponent secondCamera = second.FindById(objectId)!.GetComponent<CameraComponent>()!;
+        Engine.Scene.Camera firstCamera = first.FindById(objectId)!.GetComponent<Engine.Scene.Camera>()!;
+        Engine.Scene.Camera secondCamera = second.FindById(objectId)!.GetComponent<Engine.Scene.Camera>()!;
 
         Assert.Equal(1, first.SourceVersion);
         Assert.Equal(2, first.Version);
@@ -265,7 +265,7 @@ public class SceneSchemaV2Tests
         SceneModel scene = new("Source", registry);
         GameObject root = scene.CreateObject("Root");
         GameObject child = scene.CreateObject("Child", root);
-        CameraComponent camera = child.AddComponent<CameraComponent>();
+        Engine.Scene.Camera camera = child.AddComponent<Engine.Scene.Camera>();
         ReferenceComponent links = root.AddComponent<ReferenceComponent>();
         links.Entity = new EntityReference(child.Id);
         links.Component = new ComponentReference(camera.Id);
@@ -285,7 +285,7 @@ public class SceneSchemaV2Tests
         GameObject generatedRoot = Assert.Single(generated.RootObjects);
         GameObject generatedChild = Assert.Single(generatedRoot.Children);
         ReferenceComponent generatedLinks = generatedRoot.GetComponent<ReferenceComponent>()!;
-        CameraComponent generatedCamera = generatedChild.GetComponent<CameraComponent>()!;
+        Engine.Scene.Camera generatedCamera = generatedChild.GetComponent<Engine.Scene.Camera>()!;
         Assert.NotEqual(root.Id, generatedRoot.Id);
         Assert.NotEqual(child.Id, generatedChild.Id);
         Assert.NotEqual(links.Id, generatedLinks.Id);
@@ -307,7 +307,7 @@ public class SceneSchemaV2Tests
         GameObject root = scene.CreateObject("Root");
         GameObject child = scene.CreateObject("Child", root);
         ReferenceComponent links = root.AddComponent<ReferenceComponent>();
-        CameraComponent camera = child.AddComponent<CameraComponent>();
+        Engine.Scene.Camera camera = child.AddComponent<Engine.Scene.Camera>();
         links.Entity = new EntityReference(child.Id);
         links.Component = new ComponentReference(camera.Id);
         int before = scene.AllObjects.Count;
@@ -320,7 +320,7 @@ public class SceneSchemaV2Tests
         Assert.NotEqual(root.Id, duplicate.Id);
         Assert.NotEqual(child.Id, duplicateChild.Id);
         Assert.Equal(duplicateChild.Id, duplicateLinks.Entity.Id);
-        Assert.Equal(duplicateChild.GetComponent<CameraComponent>()!.Id, duplicateLinks.Component.Id);
+        Assert.Equal(duplicateChild.GetComponent<Engine.Scene.Camera>()!.Id, duplicateLinks.Component.Id);
         Assert.All(scene.AllObjects, gameObject => Assert.Same(gameObject, scene.FindById(gameObject.Id)));
         Assert.All(scene.AllComponents, component => Assert.Same(component, scene.FindComponentById(component.Id)));
         Assert.Equal(scene.AllObjects.Count, scene.AllObjects.Select(gameObject => gameObject.Id).Distinct().Count());
@@ -481,7 +481,7 @@ public class PrefabV2Tests
         SceneModel source = new("Source", registry);
         GameObject sourceRoot = source.CreateObject("Root");
         GameObject sourceChild = source.CreateObject("Child", sourceRoot);
-        CameraComponent sourceCamera = sourceChild.AddComponent<CameraComponent>();
+        Engine.Scene.Camera sourceCamera = sourceChild.AddComponent<Engine.Scene.Camera>();
         PrefabLinkComponent sourceLinks = sourceRoot.AddComponent<PrefabLinkComponent>();
         sourceLinks.Value = 2f;
         sourceLinks.TargetObject = new EntityReference(sourceChild.Id);
@@ -492,7 +492,7 @@ public class PrefabV2Tests
         GameObject instanceRoot = asset.Instantiate(target);
         GameObject instanceChild = Assert.Single(instanceRoot.Children);
         PrefabLinkComponent instanceLinks = instanceRoot.GetComponent<PrefabLinkComponent>()!;
-        CameraComponent instanceCamera = instanceChild.GetComponent<CameraComponent>()!;
+        Engine.Scene.Camera instanceCamera = instanceChild.GetComponent<Engine.Scene.Camera>()!;
 
         Assert.NotEqual(sourceRoot.Id, instanceRoot.Id);
         Assert.NotEqual(sourceChild.Id, instanceChild.Id);
@@ -632,7 +632,7 @@ public class PrefabV2Tests
         GameObject root = asset.Instantiate(target);
         Assert.NotEqual(sourceId, root.Id);
         Assert.Equal("LegacyRoot", root.Name);
-        Assert.Equal(1.1f, root.GetComponent<CameraComponent>()!.FieldOfViewY, 5);
+        Assert.Equal(1.1f, root.GetComponent<Engine.Scene.Camera>()!.FieldOfViewY, 5);
         Assert.Null(target.FindById(sourceId));
         Assert.Equal(sourceId, root.PrefabInstance!.SourceRootId);
     }

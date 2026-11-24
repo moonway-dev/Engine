@@ -1,0 +1,18 @@
+{
+  "Version": 1,
+  "Shader": "PBR Lit",
+  "Parent": null,
+  "Overrides": {
+    "AlbedoColor": {
+      "X": 1,
+      "Y": 1,
+      "Z": 1
+    },
+    "Metallic": 0,
+    "Roughness": 0.5,
+    "EmissiveIntensity": 1,
+    "AlbedoTexture": "guid:6943bae631a3482b879998083a28f18a",
+    "EmissionTexture": "guid:dd8bcc18a22e46cba3f1f26cc3fe0463",
+    "NormalTexture": "guid:71eb47a686054de89a4eb8d02e016068"
+  }
+}

@@ -3,7 +3,7 @@ using Engine.Mathematics;
 namespace Engine.Scene;
 
 [InspectorTooltip("Perspective camera used by the Game view and rendering.")]
-public sealed class CameraComponent : Component
+public sealed class Camera : Component
 {
     [InspectorTooltip("Vertical field of view in radians. Smaller values zoom in, larger values show more of the scene.")]
     [InspectorRange(0.17f, 2.1f)]
@@ -25,7 +25,7 @@ public enum LightKind
 }
 
 [InspectorTooltip("Scene light. Directional lights light the whole scene, point lights light around their position.")]
-public sealed class LightComponent : Component
+public sealed class Light : Component
 {
     [InspectorTooltip("Directional acts like the sun, Point emits light in all directions from the object position.")]
     public LightKind Kind { get; set; } = LightKind.Directional;

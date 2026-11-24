@@ -5,7 +5,7 @@ using Engine.RHI;
 namespace Engine.Rendering;
 
 [InspectorTooltip("Renders a mesh from the project assets with a PBR material.")]
-public sealed class MeshRendererComponent : Component
+public sealed class MeshRenderer : Component
 {
     [InspectorGroup("Rendering")]
     [InspectorTooltip("Full renders in cameras and casts shadows. Off disables rendering. Shadows Only hides the mesh from cameras but keeps shadows and reflections. Render Only renders without casting shadows.")]

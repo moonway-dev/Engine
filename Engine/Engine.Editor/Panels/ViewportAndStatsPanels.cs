@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using Engine.Editor.DragDrop;
 using Engine.Mathematics;
 using Engine.Scene;
@@ -541,6 +543,9 @@ public sealed class ProjectSettingsPanel : EditorPanel
             ImGui.TextDisabled("Ray tracing is unavailable on this device.");
             return;
         }
+        ImGui.TextDisabled("Vulkan RT supported by the driver.");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Driver support does not imply dedicated RT cores. RTX branding is not required.");
         if (ImGui.Checkbox("Ray Tracing", ref _settings.RayTracingEnabled))
         {
             _renderer.RayTracingEnabled = _settings.RayTracingEnabled;
@@ -920,7 +925,7 @@ public sealed class SceneSettingsPanel : EditorPanel
         {
             if (!gameObject.IsActiveInHierarchy)
                 continue;
-            LightComponent? light = gameObject.GetComponent<LightComponent>();
+            Engine.Scene.Light? light = gameObject.GetComponent<Engine.Scene.Light>();
             if (light is { Kind: LightKind.Directional })
             {
                 _sunLightFound = true;

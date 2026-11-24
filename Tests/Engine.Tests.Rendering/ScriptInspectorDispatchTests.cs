@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Reflection;
 using Engine.Editor;
 using Engine.Editor.Documents;
@@ -68,13 +70,13 @@ public sealed class ScriptInspectorDispatchTests
         try
         {
             Scene.Scene scene = new("Rigidbody inspector");
-            RigidBodyComponent body = scene.CreateObject("Body").AddComponent<RigidBodyComponent>();
+            Rigidbody body = scene.CreateObject("Body").AddComponent<Rigidbody>();
             using EditorContext context = new(new SceneDocument(new DelegatingSceneHost(scene), scene), root);
             RigidbodyConstraints constraints = RigidbodyConstraints.FreezeRotation | RigidbodyConstraints.FreezePositionY;
 
-            InspectorEditing.SetComponentProperty(context, body.Id, nameof(RigidBodyComponent.Constraints),
-                component => ((RigidBodyComponent)component).Constraints,
-                (component, value) => ((RigidBodyComponent)component).Constraints = value,
+            InspectorEditing.SetComponentProperty(context, body.Id, nameof(Rigidbody.Constraints),
+                component => ((Rigidbody)component).Constraints,
+                (component, value) => ((Rigidbody)component).Constraints = value,
                 constraints, false);
 
             Assert.Equal(constraints, body.Constraints);
@@ -92,13 +94,13 @@ public sealed class ScriptInspectorDispatchTests
     [Fact]
     public void RigidbodyInspectorDrawsFromGenericAttributes()
     {
-        PropertyInfo constraints = typeof(RigidBodyComponent).GetProperty(nameof(RigidBodyComponent.Constraints))!;
+        PropertyInfo constraints = typeof(Rigidbody).GetProperty(nameof(Rigidbody.Constraints))!;
         Assert.NotNull(constraints.GetCustomAttribute<InspectorGroupAttribute>());
         Assert.True(typeof(RigidbodyConstraints).GetCustomAttribute<FlagsAttribute>() is not null);
-        MethodInfo sleep = typeof(RigidBodyComponent).GetMethod(nameof(RigidBodyComponent.Sleep))!;
+        MethodInfo sleep = typeof(Rigidbody).GetMethod(nameof(Rigidbody.Sleep))!;
         Assert.NotNull(sleep.GetCustomAttribute<InspectorButtonAttribute>());
-        Assert.NotNull(typeof(RigidBodyComponent).GetProperty(nameof(RigidBodyComponent.IsKinematic))!.GetCustomAttribute<InspectorHiddenAttribute>());
-        PropertyInfo resourceKey = typeof(MeshRendererComponent).GetProperty(nameof(MeshRendererComponent.ResourceKey))!;
+        Assert.NotNull(typeof(Rigidbody).GetProperty(nameof(Rigidbody.IsKinematic))!.GetCustomAttribute<InspectorHiddenAttribute>());
+        PropertyInfo resourceKey = typeof(MeshRenderer).GetProperty(nameof(MeshRenderer.ResourceKey))!;
         InspectorAssetDropAttribute? drop = resourceKey.GetCustomAttribute<InspectorAssetDropAttribute>();
         Assert.NotNull(drop);
         Assert.Equal("Mesh", drop!.Kind);

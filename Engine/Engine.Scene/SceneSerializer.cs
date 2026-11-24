@@ -75,7 +75,7 @@ public static class SceneSerializer
         Component component,
         out Dictionary<string, SceneReferenceKind>? referenceKinds)
     {
-        if (component is ScriptComponent scriptComponent)
+        if (component is Script scriptComponent)
             return CaptureScriptProperties(scriptComponent, out referenceKinds);
         return CaptureComponentProperties(component, out referenceKinds);
     }
@@ -116,7 +116,7 @@ public static class SceneSerializer
     }
 
     private static Dictionary<string, JsonElement>? CaptureScriptProperties(
-        ScriptComponent script,
+        Script script,
         out Dictionary<string, SceneReferenceKind>? referenceKinds)
     {
         Dictionary<string, JsonElement>? properties = CaptureComponentProperties(script, out referenceKinds);
@@ -127,7 +127,7 @@ public static class SceneSerializer
         foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                      .OrderBy(property => property.Name, StringComparer.Ordinal))
         {
-            if (property.Name == nameof(ScriptComponent.Script))
+            if (property.Name == nameof(Script.Script))
                 continue;
             if (IsScriptReferenceMember(property, property.PropertyType)
                 && property.CanRead && property.GetMethod?.IsPublic == true
@@ -151,7 +151,7 @@ public static class SceneSerializer
                 referenceKinds[property.Name] = SceneReferenceKind.Entity;
                 continue;
             }
-            if (!IsSerializableProperty(property) || property.Name == nameof(ScriptComponent.Script))
+            if (!IsSerializableProperty(property) || property.Name == nameof(Script.Script))
                 continue;
             object? value;
             try
@@ -274,7 +274,7 @@ public static class SceneSerializer
     {
         if (properties is null)
             return;
-        if (component is ScriptComponent scriptComponent)
+        if (component is Script scriptComponent)
         {
             ApplyScriptProperties(scriptComponent, properties);
             return;
@@ -282,15 +282,15 @@ public static class SceneSerializer
         ApplyComponentProperties(component, properties);
     }
 
-    private static void ApplyScriptProperties(ScriptComponent script, Dictionary<string, JsonElement> properties)
+    private static void ApplyScriptProperties(Script script, Dictionary<string, JsonElement> properties)
     {
-        if (properties.TryGetValue(nameof(ScriptComponent.Script), out JsonElement scriptElement))
+        if (properties.TryGetValue(nameof(Script.Script), out JsonElement scriptElement))
             ApplyPropertyValue(
                 script,
-                typeof(ScriptComponent).GetProperty(nameof(ScriptComponent.Script))!,
+                typeof(Script).GetProperty(nameof(Script.Script))!,
                 scriptElement);
         Dictionary<string, JsonElement> remainder = properties
-            .Where(pair => pair.Key != nameof(ScriptComponent.Script))
+            .Where(pair => pair.Key != nameof(Script.Script))
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         if (remainder.Count == 0)
             return;

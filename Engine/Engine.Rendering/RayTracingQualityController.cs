@@ -1,3 +1,4 @@
+using Engine.Mathematics;
 using Engine.RHI;
 
 namespace Engine.Rendering;
@@ -34,6 +35,10 @@ public readonly record struct RayTracingQualityProfile(float ResolutionScale, ui
     ];
 
     public static RayTracingQualityProfile FromStage(int stage) => Profiles[Math.Clamp(stage, 0, Profiles.Length - 1)];
+
+    public Size2D LogicalExtent(Size2D allocatedExtent) => new(
+        Math.Clamp((int)MathF.Ceiling(allocatedExtent.Width * ResolutionScale), 1, Math.Max(allocatedExtent.Width, 1)),
+        Math.Clamp((int)MathF.Ceiling(allocatedExtent.Height * ResolutionScale), 1, Math.Max(allocatedExtent.Height, 1)));
 }
 
 public sealed class RayTracingQualityController

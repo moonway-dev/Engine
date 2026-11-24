@@ -58,6 +58,40 @@ public class ApplicationTests
     }
 
     [Fact]
+    public void PrepareFrame_RunsBeforeEveryUpdateRegardlessOfRegistrationOrder()
+    {
+        List<string> events = [];
+        Application application = ApplicationBuilder.Create()
+            .AddLoggerSink(new MemoryLogSink())
+            .AddModule(new FrameUpdateProbe(events))
+            .AddModule(new FramePreparationProbe(events))
+            .Build();
+        application.Run();
+        Assert.Equal(new[] { "prepare", "update" }, events);
+    }
+
+    private sealed class FramePreparationProbe(List<string> events) : IFramePreparationModule
+    {
+        public string Name => "Preparation";
+        public void Initialize(IEngineContext context) { }
+        public void PrepareFrame(in FrameTime frameTime) => events.Add("prepare");
+        public void Shutdown() { }
+    }
+
+    private sealed class FrameUpdateProbe(List<string> events) : IUpdatableModule
+    {
+        private IEngineContext? _context;
+        public string Name => "FrameUpdate";
+        public void Initialize(IEngineContext context) => _context = context;
+        public void Update(in FrameTime frameTime)
+        {
+            events.Add("update");
+            _context!.RequestExit();
+        }
+        public void Shutdown() { }
+    }
+
+    [Fact]
     public void Run_ModuleFailure_ExitsWithCodeOne()
     {
         Application application = ApplicationBuilder.Create()

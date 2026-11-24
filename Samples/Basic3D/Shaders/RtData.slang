@@ -32,6 +32,8 @@ struct RayTracingSurfaceData
     uint textureOffset;
     uint padding;
     MaterialData material;
+    float2 padding1;
+    float2 padding2;
 };
 
 #ifndef RT_MATERIAL_TEXTURE_COUNT

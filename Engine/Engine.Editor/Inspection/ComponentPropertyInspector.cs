@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Reflection;
 using Engine.Editor.DragDrop;
 using Engine.Editor.Models;
@@ -218,7 +220,7 @@ public static class ComponentPropertyInspector
     public static bool IsSupportedType(Type type) => IsSupported(type);
 
     private static object ScriptTarget(Component component) =>
-        component is ScriptComponent script
+        component is Script script
             ? script.Instance ?? throw new InvalidOperationException("The script is not loaded.")
             : component;
 

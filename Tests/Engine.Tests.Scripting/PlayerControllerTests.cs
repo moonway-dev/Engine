@@ -46,8 +46,8 @@ public sealed class PlayerControllerTests : IDisposable
         player.Transform.Rotation = Quaternion.FromYawPitchRoll((parentYaw + yaw) * MathUtil.DegToRad, 0f, 0f);
         GameObject cameraObject = scene.CreateObject("Camera", player);
         cameraObject.Transform.LocalRotation = Quaternion.FromYawPitchRoll(0f, pitch * MathUtil.DegToRad, 0f);
-        cameraObject.AddComponent<CameraComponent>();
-        ScriptComponent component = (ScriptComponent)player.AddComponent("PlayerController");
+        cameraObject.AddComponent<Engine.Scene.Camera>();
+        Script component = (Script)player.AddComponent("PlayerController");
         component.Instance!.GetType().GetField("LockCursor")!.SetValue(component.Instance, false);
         component.Instance!.GetType().GetField("AirControl")!.SetValue(component.Instance, 1f);
         Vector3 actual = Vector3.Zero;
@@ -79,8 +79,8 @@ public sealed class PlayerControllerTests : IDisposable
         scripting.AttachScene(scene);
         GameObject player = scene.CreateObject("Player");
         GameObject cameraObject = scene.CreateObject("Camera", player);
-        cameraObject.AddComponent<CameraComponent>();
-        ScriptComponent component = (ScriptComponent)player.AddComponent("PlayerController");
+        cameraObject.AddComponent<Engine.Scene.Camera>();
+        Script component = (Script)player.AddComponent("PlayerController");
         component.Instance!.GetType().GetField("LockCursor")!.SetValue(component.Instance, false);
         scripting.BeginPlay(scene);
         scripting.Update(new FrameTime(1f / 60f, 1f / 60f, 0f, 1f / 60f, 0));
@@ -108,8 +108,8 @@ public sealed class PlayerControllerTests : IDisposable
         Assert.True(scripting.LastCompileSuccessful, string.Join(Environment.NewLine, scripting.LastErrors));
         SceneModel scene = new("Script inspector");
         scripting.AttachScene(scene);
-        ScriptComponent script = (ScriptComponent)scene.CreateObject("Player").AddComponent("PlayerController");
-        Assert.NotEqual(typeof(ScriptComponent), script.GetType());
+        Script script = (Script)scene.CreateObject("Player").AddComponent("PlayerController");
+        Assert.NotEqual(typeof(Script), script.GetType());
         Type inspectorType = typeof(Engine.Editor.Inspection.ComponentPropertyInspector).Assembly.GetType("Engine.Editor.Inspection.ScriptComponentInspector")!;
         inspectorType.GetMethod("Register", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, null);
         IReadOnlyList<MemberInfo> members = (IReadOnlyList<MemberInfo>)inspectorType

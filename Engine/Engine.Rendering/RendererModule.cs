@@ -18,9 +18,11 @@ public sealed class RendererModule : IUpdatableModule
     private readonly List<Light> _lights = [];
     private IReadOnlyList<Light> _activeLights = [];
     private readonly List<Material> _materials = [];
-    private readonly Dictionary<MeshRendererComponent, RenderItem> _sceneItems = [];
-    private readonly Dictionary<MeshRendererComponent, Material> _sceneMaterials = [];
-    private readonly Dictionary<MeshRendererComponent, SceneMaterialState> _sceneMaterialStates = [];
+    private readonly Dictionary<MeshRenderer, RenderItem> _sceneItems = [];
+    private readonly Dictionary<MeshRenderer, Material> _sceneMaterials = [];
+    private readonly Dictionary<MeshRenderer, SceneMaterialState> _sceneMaterialStates = [];
+    private readonly Dictionary<AssetReference, ResolvedMaterial?> _frameMaterialResolutions = [];
+    private readonly Dictionary<(AssetReference, MaterialTextureSlot), long> _frameTextureRevisions = [];
     private bool _materialIdle;
     private List<IDescriptorSet>[] _frameSets = [];
     private IEngineContext? _context;
@@ -32,6 +34,7 @@ public sealed class RendererModule : IUpdatableModule
     private FrameUniformRing? _uniformRing;
     private IGraphicsPipeline? _shadowPipeline;
     private IGraphicsPipeline? _pbrPipeline;
+    private IGraphicsPipeline? _pbrTransparentPipeline;
     private IGraphicsPipeline? _tonemapPipeline;
     private IShaderProgram? _debugLinesProgram;
     private IGraphicsPipeline? _debugLinesPipeline;
@@ -174,6 +177,7 @@ public sealed class RendererModule : IUpdatableModule
     private IShaderProgram? _pbrRtProgram;
     private IGraphicsPipeline? _rtPrepassPipeline;
     private IGraphicsPipeline? _pbrRtPipeline;
+    private IGraphicsPipeline? _pbrRtTransparentPipeline;
     private IRayTracingPipeline? _rtShadowPipeline;
     private ShaderBindingTable? _rtShadowSbt;
     private ShaderStages _rtPrepassPushStages = ShaderStages.Vertex;
@@ -783,7 +787,7 @@ public sealed class RendererModule : IUpdatableModule
     {
         _context = context;
         _log = context.Logging.CreateLogger(LogCategory);
-        ComponentRegistry.RegisterGlobal(() => new MeshRendererComponent());
+        ComponentRegistry.RegisterGlobal(() => new MeshRenderer());
         _rhi = _rhiModule.Instance ?? throw new InvalidOperationException("RHI module must be initialized before Renderer.");
         _rhiModule.RenderFrames = false;
         _device = _rhi.Device;
@@ -827,7 +831,7 @@ public sealed class RendererModule : IUpdatableModule
             Usage = TextureUsage.Sampled | TextureUsage.TransferDestination,
         });
         _device.UploadTextureData(_bloomFallbackTexture, BlackHalfPixel());
-        _temporalEnabled = _device.Features.SupportsCompute;
+        _temporalEnabled = _device.Features.SupportsCompute && Environment.GetEnvironmentVariable("ENGINE_NOTAA") != "1";
         CompilePipelines();
         _iblResources = ImageBasedLightingResources.Create(
             _device,
@@ -1252,7 +1256,8 @@ public sealed class RendererModule : IUpdatableModule
 
                 RenderGraphResource giInput = giViaRt ? _rtGiFiltered! : _giTarget!;
                 _giTemporalPass = _graph.AddComputePass("GiTemporalResolve", (commandBuffer, graph) =>
-                    ExecuteTemporalPass(commandBuffer, graph, giInput, _motionTarget!, _mainDepth!, _sceneGiHistoryRead!, _sceneGiHistoryWrite!, _sceneGiHistory, ScreenSpaceGIHistoryWeight, denoiseGi: giViaRt));
+                    ExecuteTemporalPass(commandBuffer, graph, giInput, _motionTarget!, _mainDepth!, _sceneGiHistoryRead!, _sceneGiHistoryWrite!, _sceneGiHistory, ScreenSpaceGIHistoryWeight, denoiseGi: giViaRt,
+                        logicalSourceExtent: giViaRt ? RayTracingLogicalExtent(false, RayTracingQualityEffect.Gi) : null));
                 if (giViaRt)
                     AddRtGiFilterChain(gameView: false, _giTarget!, _rtGiFilterScratch!, _rtGiFiltered!, _giTemporalPass);
                 _graph.ReadsShader(_giTemporalPass, giInput, PipelineStages.ComputeShader);
@@ -1378,7 +1383,8 @@ public sealed class RendererModule : IUpdatableModule
 
                     RenderGraphResource giInput = giViaRt ? _gameRtGiFiltered! : _gameGiTarget!;
                     _gameGiTemporalPass = _graph.AddComputePass("GameGiTemporalResolve", (commandBuffer, graph) =>
-                        ExecuteTemporalPass(commandBuffer, graph, giInput, _gameMotionTarget!, _gameDepth!, _gameGiHistoryRead!, _gameGiHistoryWrite!, _gameGiHistory, ScreenSpaceGIHistoryWeight, denoiseGi: giViaRt));
+                        ExecuteTemporalPass(commandBuffer, graph, giInput, _gameMotionTarget!, _gameDepth!, _gameGiHistoryRead!, _gameGiHistoryWrite!, _gameGiHistory, ScreenSpaceGIHistoryWeight, denoiseGi: giViaRt,
+                            logicalSourceExtent: giViaRt ? RayTracingLogicalExtent(true, RayTracingQualityEffect.Gi) : null));
                     if (giViaRt)
                         AddRtGiFilterChain(gameView: true, _gameGiTarget!, _gameRtGiFilterScratch!, _gameRtGiFiltered!, _gameGiTemporalPass);
                     _graph.ReadsShader(_gameGiTemporalPass, giInput, PipelineStages.ComputeShader);
@@ -1489,7 +1495,7 @@ public sealed class RendererModule : IUpdatableModule
             commandBuffer.SetScissor(tile);
             foreach (RenderItem renderItem in _sceneItems.Values)
             {
-                if (!renderItem.RenderingMode.CastsShadows())
+                if (!renderItem.RenderingMode.CastsShadows() || IsTransparentMaterial(renderItem.Material))
                     continue;
                 Matrix4x4 matrix = shadow.LightViewProjections[cascade] * renderItem.ModelMatrix;
                 if (!FrustumCulling.IsVisible(renderItem.Mesh.BoundsMin, renderItem.Mesh.BoundsMax, matrix))
@@ -1541,6 +1547,8 @@ public sealed class RendererModule : IUpdatableModule
 
         Dictionary<RenderItem, Matrix4x4> previousModels = gameView ? _gamePreviousModels : _scenePreviousModels;
         IReadOnlyList<RayTracingDrawItem> preparedDrawItems = gameView ? _gamePreparedDrawItems : _scenePreparedDrawItems;
+        List<(RayTracingDrawItem Draw, float Distance)> transparentItems = [];
+        Vector3 sortOrigin = gameView ? _gameSkyCameraPosition : _sceneSkyCameraPosition;
         foreach (RayTracingDrawItem preparedDraw in preparedDrawItems)
         {
             RenderItem renderItem = preparedDraw.Item;
@@ -1558,6 +1566,11 @@ public sealed class RendererModule : IUpdatableModule
                 GameDrawnTriangleCount += drawMesh.TriangleCount;
                 GameLodLevel = Math.Max(GameLodLevel, FindLodLevel(renderItem.Mesh, drawMesh));
             }
+            if (IsTransparentMaterial(renderItem.Material))
+            {
+                transparentItems.Add((preparedDraw, Vector3.Distance(sortOrigin, renderItem.ModelMatrix.Translation)));
+                continue;
+            }
             if (renderItem.Material.ParamsDirty)
             {
                 _device!.UploadBufferData(renderItem.Material.ParamsBuffer, StructuredBytes(renderItem.Material.ToData()));
@@ -1571,7 +1584,31 @@ public sealed class RendererModule : IUpdatableModule
             drawMesh.Draw(commandBuffer);
             (gameView ? _gameDrawnItems : _sceneDrawnItems).Add(renderItem);
         }
+        if (transparentItems.Count > 0)
+        {
+            transparentItems.Sort((a, b) => b.Distance.CompareTo(a.Distance));
+            commandBuffer.BindGraphicsPipeline(rtActive ? _pbrRtTransparentPipeline! : _pbrTransparentPipeline!);
+            foreach ((RayTracingDrawItem preparedDraw, _) in transparentItems)
+            {
+                RenderItem renderItem = preparedDraw.Item;
+                if (renderItem.Material.ParamsDirty)
+                {
+                    _device!.UploadBufferData(renderItem.Material.ParamsBuffer, StructuredBytes(renderItem.Material.ToData()));
+                    renderItem.Material.ParamsDirty = false;
+                }
+                commandBuffer.BindDescriptorSet((rtActive ? renderItem.Material.RtSet : renderItem.Material.Set)!, 1);
+                Matrix4x4 model = renderItem.ModelMatrix;
+                Matrix4x4 previousModel = previousModels.TryGetValue(renderItem, out Matrix4x4 previous) ? previous : model;
+                ModelConstants constants = ModelConstants.FromModel(model, previousModel);
+                commandBuffer.PushConstants(StructuredBytes(constants), _pbrPushStages);
+                preparedDraw.Mesh.Draw(commandBuffer);
+                (gameView ? _gameDrawnItems : _sceneDrawnItems).Add(renderItem);
+            }
+        }
     }
+
+    private static bool IsTransparentMaterial(Material material) =>
+        material is not null && (material.Transparent || material.Opacity < 0.999f);
 
     private void PrepareRayTracingView(
         RayTracingScene? scene,
@@ -1692,13 +1729,14 @@ public sealed class RendererModule : IUpdatableModule
         RenderGraphResource reflectionHistoryRead = (gameView ? _gameReflectionHistoryRead : _sceneReflectionHistoryRead)!;
         RenderGraphResource reflectionHistoryWrite = (gameView ? _gameReflectionHistoryWrite : _sceneReflectionHistoryWrite)!;
         RenderGraphPass reflectionTemporal = _graph!.AddComputePassBefore(insertBefore, $"Rt{prefix}ReflectionTemporal", (commandBuffer, graph) =>
-            ExecuteTemporalPass(commandBuffer, graph, filteredReflection, motion, depth, reflectionHistoryRead, reflectionHistoryWrite, gameView ? _gameReflectionHistory : _sceneReflectionHistory, 0.85f));
+            ExecuteTemporalPass(commandBuffer, graph, filteredReflection, motion, depth, reflectionHistoryRead, reflectionHistoryWrite, gameView ? _gameReflectionHistory : _sceneReflectionHistory, 0.85f,
+                logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections)));
         _graph.ReadsShader(reflectionTemporal, filteredReflection, PipelineStages.ComputeShader);
         _graph.ReadsShader(reflectionTemporal, motion, PipelineStages.ComputeShader);
         _graph.ReadsShader(reflectionTemporal, depth, PipelineStages.ComputeShader);
         _graph.ReadsShader(reflectionTemporal, reflectionHistoryRead, PipelineStages.ComputeShader);
         _graph.WritesStorage(reflectionTemporal, reflectionHistoryWrite, PipelineStages.ComputeShader);
-        reflectionTemporal.ShouldExecute = visible;
+        reflectionTemporal.ShouldExecute = reflectionTraceReady;
 
         if (gameView)
             _rtGameCompositePass = _graph.AddComputePassBefore(insertBefore, "RtGameComposite", (commandBuffer, graph) =>
@@ -1729,7 +1767,9 @@ public sealed class RendererModule : IUpdatableModule
         IBuffer instances = frame.Instances ?? throw new InvalidOperationException("Ray tracing instance buffer was not prepared.");
         IBuffer scratch = frame.Scratch ?? throw new InvalidOperationException("Ray tracing scratch buffer was not prepared.");
         IAccelerationStructure topLevel = frame.TopLevel ?? throw new InvalidOperationException("Ray tracing TLAS was not prepared.");
-        RenderGraphMemoryState instanceState = new(PipelineStages.Transfer, ResourceAccess.TransferWrite);
+        RenderGraphMemoryState instanceState = frame.InstancesHostWritten
+            ? new(PipelineStages.Host, ResourceAccess.HostWrite)
+            : new(PipelineStages.Transfer, ResourceAccess.TransferWrite);
         RenderGraphMemoryState scratchState = new(PipelineStages.AccelerationStructureBuild,
             ResourceAccess.AccelerationStructureRead | ResourceAccess.AccelerationStructureWrite);
         RenderGraphMemoryState topLevelState = new(PipelineStages.AccelerationStructureBuild, ResourceAccess.AccelerationStructureWrite);
@@ -1926,9 +1966,11 @@ public sealed class RendererModule : IUpdatableModule
             RenderGraphResource filterInput = input;
             RenderGraphResource filterOutput = iteration == 0 ? scratch : destination;
             uint stepWidth = 1u << (int)iteration;
+            bool useValidity = iteration == 0;
             RenderGraphPass filter = _graph!.AddComputePassBefore(insertBefore, $"Rt{prefix}GiFilter.{iteration}", (commandBuffer, graph) =>
-                ExecuteRtFilterPass(commandBuffer, graph, filterInput, filterOutput, depth, normalRoughness, motion, giValidity, mode: 2u, stepWidth, validityEnabled: true,
-                    logicalSourceExtent: iteration == 0 ? RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Gi) : null));
+                ExecuteRtFilterPass(commandBuffer, graph, filterInput, filterOutput, depth, normalRoughness, motion, giValidity, mode: 2u, stepWidth, validityEnabled: useValidity,
+                    logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Gi),
+                    logicalDestinationExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Gi)));
             _graph.ReadsSampled(filter, filterInput);
             _graph.ReadsSampled(filter, depth);
             _graph.ReadsSampled(filter, normalRoughness);
@@ -1949,7 +1991,8 @@ public sealed class RendererModule : IUpdatableModule
             (gameView ? _gameRtNormalRoughness : _rtNormalRoughness)!,
             (gameView ? _gameMotionTarget : _motionTarget) ?? (gameView ? _gameRtNormalRoughness : _rtNormalRoughness)!,
             (gameView ? _gameRtReflectionValidity : _rtReflectionValidity)!, mode: 1u, stepWidth: 1u, validityEnabled: true,
-            logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections));
+            logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections),
+            logicalDestinationExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections));
     }
 
     private void ExecuteRtFilterPass(
@@ -1965,7 +2008,8 @@ public sealed class RendererModule : IUpdatableModule
         uint stepWidth,
         bool validityEnabled,
         bool useSceneDepth = false,
-        Size2D? logicalSourceExtent = null)
+        Size2D? logicalSourceExtent = null,
+        Size2D? logicalDestinationExtent = null)
     {
         IDescriptorSet set = _rtFilterProgram!.CreateDescriptorSet(0);
         set.WriteTexture(0, graph.GetTexture(source));
@@ -1979,7 +2023,7 @@ public sealed class RendererModule : IUpdatableModule
         _frameSets[_activeFrameSlot].Add(set);
         commandBuffer.BindComputePipeline(_rtFilterPipeline!);
         commandBuffer.BindDescriptorSet(set, 0);
-        Size2D extent = destination.Description.Extent;
+        Size2D extent = logicalDestinationExtent ?? destination.Description.Extent;
         Size2D sourceExtent = logicalSourceExtent ?? source.Description.Extent;
         RtFilterConstants constants = new()
         {
@@ -2081,7 +2125,11 @@ public sealed class RendererModule : IUpdatableModule
             RayTracingQualityEffect.Reflections => (gameView ? _gameRtRawReflection : _rtRawReflection)!.Description.Extent,
             _ => (gameView ? _gameGiTarget : _giTarget)!.Description.Extent,
         };
-        return full;
+        if (effect == RayTracingQualityEffect.Shadows)
+            return full;
+        (_, RayTracingQualityProfile profile, _) = GetRayTracingQuality(
+            gameView ? RayTracingQualityCamera.Game : RayTracingQualityCamera.Scene, effect);
+        return profile.LogicalExtent(full);
     }
 
     private void WriteRtShadowControl(FrameAllocation allocation, bool canTrace, ShadowData shadow, Size2D extent)
@@ -2111,7 +2159,7 @@ public sealed class RendererModule : IUpdatableModule
                 : renderItem.SceneLodState;
             Mesh drawMesh = SelectLodMesh(renderItem, lodState, camera, extent);
             RayTracingDrawItem draw = new(renderItem, drawMesh);
-            if (_lastRtMasterEnabled)
+            if (_lastRtMasterEnabled && !IsTransparentMaterial(renderItem.Material))
                 rtItems.Add(draw);
             if (!renderItem.RenderingMode.RendersCamera())
                 continue;
@@ -2154,7 +2202,8 @@ public sealed class RendererModule : IUpdatableModule
         RenderGraphResource historyWrite,
         TemporalHistory history,
         float historyWeight = 0.9f,
-        bool denoiseGi = false)
+        bool denoiseGi = false,
+        Size2D? logicalSourceExtent = null)
     {
         IDescriptorSet set = (denoiseGi ? _rtGiTemporalProgram : _temporalProgram)!.CreateDescriptorSet(0);
         set.WriteTexture(0, graph.GetTexture(color));
@@ -2167,7 +2216,7 @@ public sealed class RendererModule : IUpdatableModule
         commandBuffer.BindComputePipeline((denoiseGi ? _rtGiTemporalPipeline : _temporalPipeline)!);
         commandBuffer.BindDescriptorSet(set, 0);
         Size2D extent = historyWrite.Description.Extent;
-        Size2D sourceExtent = color.Description.Extent;
+        Size2D sourceExtent = logicalSourceExtent ?? color.Description.Extent;
         TemporalConstants constants = new()
         {
             Width = (uint)extent.Width,
@@ -2485,7 +2534,10 @@ public sealed class RendererModule : IUpdatableModule
         if (_sceneViewRendered)
         {
             _sceneHistory.Commit();
-            _sceneReflectionHistory.Commit();
+            if (RayTracingReflectionsEnabled && _sceneRtCanTraceThisFrame)
+                _sceneReflectionHistory.Commit();
+            else
+                _sceneReflectionHistory.Invalidate();
             if (_sceneGiHistoryWrite is not null)
                 _sceneGiHistory.Commit();
             _scenePreviousViewProjection = _sceneCurrentViewProjection;
@@ -2496,7 +2548,10 @@ public sealed class RendererModule : IUpdatableModule
         if (_gameViewRendered)
         {
             _gameHistory.Commit();
-            _gameReflectionHistory.Commit();
+            if (RayTracingReflectionsEnabled && _gameRtCanTraceThisFrame)
+                _gameReflectionHistory.Commit();
+            else
+                _gameReflectionHistory.Invalidate();
             if (_gameGiHistoryWrite is not null)
                 _gameGiHistory.Commit();
             _gamePreviousViewProjection = _gameCurrentViewProjection;
@@ -3000,6 +3055,18 @@ public sealed class RendererModule : IUpdatableModule
             ColorAttachmentFormats = PbrColorFormats(),
             DepthAttachmentFormat = TextureFormat.D32Float,
         });
+        _pbrTransparentPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            Name = "PBRForwardTransparent",
+            ShaderProgram = _pbrProgram,
+            VertexLayouts = [Vertex.Layout],
+            CullMode = CullMode.None,
+            DepthTest = true,
+            DepthWrite = false,
+            BlendMode = BlendMode.Alpha,
+            ColorAttachmentFormats = PbrColorFormats(),
+            DepthAttachmentFormat = TextureFormat.D32Float,
+        });
         _tonemapProgramHasPush = tonemapProgram.Reflection.PushConstants.Count > 0;
         _tonemapPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
@@ -3109,12 +3176,14 @@ public sealed class RendererModule : IUpdatableModule
     private void SyncScene()
     {
         _materialIdle = false;
+        _frameMaterialResolutions.Clear();
+        _frameTextureRevisions.Clear();
         LoadingMeshCount = 0;
         FailedMeshCount = 0;
         if (_attachedScene is null)
             return;
-        HashSet<MeshRendererComponent> activeComponents = [];
-        CameraComponent? sceneCamera = null;
+        HashSet<MeshRenderer> activeComponents = [];
+        Engine.Scene.Camera? sceneCamera = null;
         List<Light> sceneLights = [];
         _skyboxMode = _attachedScene.SkyboxMode;
         CloudsEnabled = _attachedScene.CloudsEnabled;
@@ -3131,10 +3200,10 @@ public sealed class RendererModule : IUpdatableModule
         {
             if (!gameObject.IsActiveInHierarchy)
                 continue;
-            CameraComponent? camera = gameObject.GetComponent<CameraComponent>();
+            Engine.Scene.Camera? camera = gameObject.GetComponent<Engine.Scene.Camera>();
             if (camera is not null && sceneCamera is null)
                 sceneCamera = camera;
-            LightComponent? light = gameObject.GetComponent<LightComponent>();
+            Engine.Scene.Light? light = gameObject.GetComponent<Engine.Scene.Light>();
             if (light is not null)
             {
                 if (light.Kind == LightKind.Directional && !sunFound)
@@ -3146,7 +3215,7 @@ public sealed class RendererModule : IUpdatableModule
                     ? Light.Directional(gameObject.Transform.Forward, light.Color, light.Intensity)
                     : Light.Point(gameObject.Transform.Position, light.Color, light.Intensity, light.Range));
             }
-            MeshRendererComponent? meshRenderer = gameObject.GetComponent<MeshRendererComponent>();
+            MeshRenderer? meshRenderer = gameObject.GetComponent<MeshRenderer>();
             if (meshRenderer is { Enabled: true } && meshRenderer.RenderingMode != MeshRenderingMode.Off)
                 activeComponents.Add(meshRenderer);
         }
@@ -3179,7 +3248,7 @@ public sealed class RendererModule : IUpdatableModule
         }
         _lights.Clear();
         _lights.AddRange(sceneLights);
-        foreach ((MeshRendererComponent component, RenderItem item) in _sceneItems.ToList())
+        foreach ((MeshRenderer component, RenderItem item) in _sceneItems.ToList())
         {
             if (!activeComponents.Contains(component) || component.Mesh is null)
             {
@@ -3195,7 +3264,7 @@ public sealed class RendererModule : IUpdatableModule
                 _sceneMaterialStates.Remove(component);
             }
         }
-        foreach (MeshRendererComponent component in activeComponents)
+        foreach (MeshRenderer component in activeComponents)
         {
             bool created = !_sceneItems.TryGetValue(component, out RenderItem? item);
             if (created)
@@ -3231,9 +3300,14 @@ public sealed class RendererModule : IUpdatableModule
         _materialIdle = true;
     }
 
-    private void SyncMaterial(MeshRendererComponent component, Material material, bool created)
+    private void SyncMaterial(MeshRenderer component, Material material, bool created)
     {
-        ResolvedMaterial? resolved = component.MaterialAsset.IsEmpty ? null : MaterialResolver?.Invoke(component.MaterialAsset);
+        ResolvedMaterial? resolved = null;
+        if (!component.MaterialAsset.IsEmpty && !_frameMaterialResolutions.TryGetValue(component.MaterialAsset, out resolved))
+        {
+            resolved = MaterialResolver?.Invoke(component.MaterialAsset);
+            _frameMaterialResolutions[component.MaterialAsset] = resolved;
+        }
         MaterialProperties properties = component.MaterialAsset.IsEmpty
             ? MaterialProperties.FromComponent(component)
             : resolved?.Properties ?? new MaterialProperties();
@@ -3258,6 +3332,8 @@ public sealed class RendererModule : IUpdatableModule
         material.Metallic = properties.Metallic;
         material.Roughness = properties.Roughness;
         material.EmissiveIntensity = properties.EmissiveIntensity;
+        material.Opacity = properties.Opacity;
+        material.Transparent = properties.Transparent;
         material.EmissionColor = properties.EmissionColor;
         material.LegacyEmission = properties.LegacyEmission;
         material.UvScale = properties.UvScale;
@@ -3275,14 +3351,20 @@ public sealed class RendererModule : IUpdatableModule
 
     private long TextureRevision(AssetReference reference, MaterialTextureSlot slot)
     {
+        if (reference.IsEmpty)
+            return 0;
+        if (_frameTextureRevisions.TryGetValue((reference, slot), out long revision))
+            return revision;
         try
         {
-            return reference.IsEmpty ? 0 : TextureRevisionResolver?.Invoke(reference, slot) ?? 0;
+            revision = TextureRevisionResolver?.Invoke(reference, slot) ?? 0;
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         {
-            return -1;
+            revision = -1;
         }
+        _frameTextureRevisions[(reference, slot)] = revision;
+        return revision;
     }
 
     private void ApplyMaterialTextures(MaterialTextureReferences references, Material material)
@@ -3319,7 +3401,7 @@ public sealed class RendererModule : IUpdatableModule
     private ITexture? ResolveTexture(AssetReference reference, MaterialTextureSlot slot) =>
         reference.IsEmpty || TextureResolver is null ? null : TextureResolver(reference, slot);
 
-    private Mesh? ResolveMesh(MeshRendererComponent component)
+    private Mesh? ResolveMesh(MeshRenderer component)
     {
         if (component.Mesh is not null)
             return component.Mesh;
@@ -3334,7 +3416,7 @@ public sealed class RendererModule : IUpdatableModule
             return component.Mesh;
         }
         if (MeshResolver is null)
-            throw new InvalidOperationException("MeshResolver must be configured to resolve MeshRendererComponent resources.");
+            throw new InvalidOperationException("MeshResolver must be configured to resolve MeshRenderer resources.");
         Mesh mesh = MeshResolver(component.ResourceKey) ?? throw new InvalidOperationException($"Mesh '{component.ResourceKey}' could not be resolved.");
         component.Mesh = mesh;
         return mesh;
@@ -3470,6 +3552,18 @@ public sealed class RendererModule : IUpdatableModule
             CullMode = CullMode.None,
             DepthTest = true,
             DepthWrite = true,
+            ColorAttachmentFormats = pbrColorFormats,
+            DepthAttachmentFormat = TextureFormat.D32Float,
+        });
+        _pbrRtTransparentPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
+        {
+            Name = "PBRForwardRtTransparent",
+            ShaderProgram = _pbrRtProgram,
+            VertexLayouts = [Vertex.Layout],
+            CullMode = CullMode.None,
+            DepthTest = true,
+            DepthWrite = false,
+            BlendMode = BlendMode.Alpha,
             ColorAttachmentFormats = pbrColorFormats,
             DepthAttachmentFormat = TextureFormat.D32Float,
         });
@@ -3659,6 +3753,8 @@ public sealed class RendererModule : IUpdatableModule
         _gameHistory.Dispose();
         _sceneGiHistory.Dispose();
         _gameGiHistory.Dispose();
+        _sceneReflectionHistory.Dispose();
+        _gameReflectionHistory.Dispose();
         _shadowCompareSampler?.Dispose();
         _linearSampler?.Dispose();
         _uniformRing?.Dispose();
@@ -3682,6 +3778,7 @@ public sealed class RendererModule : IUpdatableModule
         _rtCompositePipeline?.Dispose();
         _rtCompositePipeline = null;
         _pbrRtPipeline?.Dispose();
+        _pbrRtTransparentPipeline?.Dispose();
         _pbrRtPipeline = null;
         _rtShadowProgram?.Dispose();
         _rtShadowProgram = null;
@@ -3703,6 +3800,7 @@ public sealed class RendererModule : IUpdatableModule
         _gameRayTracingScene = null;
         _shadowPipeline?.Dispose();
         _pbrPipeline?.Dispose();
+        _pbrTransparentPipeline?.Dispose();
         _tonemapPipeline?.Dispose();
         _skyPipeline?.Dispose();
         _cloudsPipeline?.Dispose();

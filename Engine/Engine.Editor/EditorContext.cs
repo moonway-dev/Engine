@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using Engine.Assets;
 using Engine.Rendering;
 using Engine.Editor.Commands;
@@ -81,7 +83,7 @@ public sealed class EditorContext : IDisposable
 
     public void AssignMaterial(Guid componentId, AssetReference reference)
     {
-        MeshRendererComponent Resolve() => Document.Scene.FindComponentById(componentId) as MeshRendererComponent
+        MeshRenderer Resolve() => Document.Scene.FindComponentById(componentId) as MeshRenderer
             ?? throw new InvalidOperationException("Mesh renderer no longer exists.");
         AssetReference value = reference.IsEmpty ? reference : Materials.GetReference(Materials.ResolvePath(reference));
         Document.Execute(new PropertyCommand<AssetReference>("Assign Material", (componentId, "MaterialAsset"),

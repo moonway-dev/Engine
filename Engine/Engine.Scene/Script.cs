@@ -2,9 +2,13 @@ namespace Engine.Scene;
 
 using System.Text.Json;
 
-public class ScriptComponent : Component
+public abstract class ScriptBase : Component
 {
     public string Script { get; set; } = string.Empty;
+}
+
+public class Script : ScriptBase
+{
 
     public object? Instance { get; internal set; }
 

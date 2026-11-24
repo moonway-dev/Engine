@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Runtime.InteropServices;
 using Engine.Backends.Null;
 using Engine.Core;
@@ -480,7 +482,7 @@ public class ShaderUniformLayoutTests
     [Fact]
     public void MaterialData_MatchesSlangLayout()
     {
-        Assert.Equal(80, Marshal.SizeOf<MaterialData>());
+        Assert.Equal(88, Marshal.SizeOf<MaterialData>());
         Assert.Equal(0, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.AlbedoColor)).ToInt32());
         Assert.Equal(12, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.Metallic)).ToInt32());
         Assert.Equal(16, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.Roughness)).ToInt32());
@@ -494,6 +496,9 @@ public class ShaderUniformLayoutTests
         Assert.Equal(64, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.MetallicChannel)).ToInt32());
         Assert.Equal(68, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.RoughnessChannel)).ToInt32());
         Assert.Equal(72, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.AmbientOcclusionChannel)).ToInt32());
+        Assert.Equal(76, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.Opacity)).ToInt32());
+        Assert.Equal(80, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.Transparent)).ToInt32());
+        Assert.Equal(84, Marshal.OffsetOf<MaterialData>(nameof(MaterialData.Padding0)).ToInt32());
     }
 
     [Fact]

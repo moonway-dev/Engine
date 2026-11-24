@@ -145,7 +145,7 @@ public static class AssetBundler
         builder.AppendLine();
         foreach (string name in classNames)
         {
-            builder.AppendLine($"public sealed class {name}Component : Engine.Scene.ScriptComponent");
+            builder.AppendLine($"public sealed class {name}Component : Engine.Scene.Script");
             builder.AppendLine("{");
             builder.AppendLine($"    public {name}Component()");
             builder.AppendLine("    {");

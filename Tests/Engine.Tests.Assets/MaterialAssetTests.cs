@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Text.Json;
 using Engine.Assets;
 using Engine.Mathematics;
@@ -138,7 +140,7 @@ public sealed class MaterialAssetTests : IDisposable
     [Fact]
     public void LegacyComponent_PreservesExistingValuesAndEmissionMode()
     {
-        MeshRendererComponent component = new()
+        MeshRenderer component = new()
         {
             Metallic = 0.4f,
             Roughness = 0.2f,

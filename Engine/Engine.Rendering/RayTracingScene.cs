@@ -23,6 +23,9 @@ public struct RayTracingSurfaceData
     public uint TextureOffset;
     public uint Padding;
     public MaterialData Material;
+    public Vector2 Padding1;
+    public Vector2 Padding2;
+    public Vector2 Padding3;
 }
 
 public readonly record struct RayTracingDrawItem(RenderItem Item, Mesh Mesh);
@@ -58,13 +61,18 @@ public sealed class RayTracingScene : IDisposable
         public IReadOnlyList<ITexture> Textures { get; internal set; } = [];
         internal bool CanUpdate;
         internal Mesh[] MeshOrder = [];
+        internal Mesh[] ShadingMeshOrder = [];
+        internal Dictionary<Mesh, (uint Vertex, uint Index)> ShadingOffsets = [];
+        internal RayTracingInstance[] InstanceData = [];
+        internal RayTracingSurfaceData[] SurfaceData = [];
+        internal bool InstancesHostWritten;
+        internal bool SurfacesHostWritten;
 
         internal void ReleaseGeometry()
         {
             foreach (Geometry geometry in _geometries)
                 geometry.References--;
             _geometries.Clear();
-            Textures = [];
         }
 
         internal void AddGeometry(Geometry geometry)
@@ -90,6 +98,14 @@ public sealed class RayTracingScene : IDisposable
             Surfaces = null;
             BuildDescription = null;
             CanUpdate = false;
+            MeshOrder = [];
+            ShadingMeshOrder = [];
+            ShadingOffsets.Clear();
+            InstanceData = [];
+            SurfaceData = [];
+            Textures = [];
+            InstancesHostWritten = false;
+            SurfacesHostWritten = false;
         }
     }
 
@@ -138,7 +154,19 @@ public sealed class RayTracingScene : IDisposable
         ArgumentNullException.ThrowIfNull(items);
         FrameResources frame = _frames[slot];
         frame.ReleaseGeometry();
-        RayTracingDrawItem[] validItems = items.Where(draw => draw.Item.RenderingMode.RayTracingMask() != 0 && draw.Mesh.IndexCount >= 3 && IsInvertible(draw.Item.ModelMatrix)).ToArray();
+        List<RayTracingDrawItem> validDraws = [];
+        List<Matrix4x4> models = [];
+        foreach (RayTracingDrawItem draw in items)
+        {
+            if (draw.Item.RenderingMode.RayTracingMask() == 0 || draw.Mesh.IndexCount < 3)
+                continue;
+            Matrix4x4 model = draw.Item.ModelMatrix;
+            if (!IsInvertible(model))
+                continue;
+            validDraws.Add(draw);
+            models.Add(model);
+        }
+        RayTracingDrawItem[] validItems = validDraws.ToArray();
         Mesh[] meshes = validItems.Select(draw => draw.Mesh).Distinct().ToArray();
         bool changed = !_activeMeshes.SequenceEqual(meshes);
         foreach (Mesh mesh in meshes)
@@ -163,15 +191,20 @@ public sealed class RayTracingScene : IDisposable
         for (int index = 0; index < validItems.Length; index++)
         {
             RayTracingDrawItem draw = validItems[index];
-            instances[index] = RayTracingInstance.Create(draw.Item.ModelMatrix, (uint)index, draw.Item.RenderingMode.RayTracingMask(), 0,
+            instances[index] = RayTracingInstance.Create(models[index], (uint)index, draw.Item.RenderingMode.RayTracingMask(), 0,
                 RayTracingInstanceFlags.TriangleFacingCullDisable, _geometry[draw.Mesh].Structure.DeviceAddress);
         }
         bool sameTopology = frame.MeshOrder.SequenceEqual(validItems.Select(draw => draw.Mesh));
         bool instancesReallocated = EnsureBuffer(frame.Instances, Math.Max(64UL, checked((ulong)instances.Length * 64)),
-            BufferUsage.AccelerationStructureBuildInput | BufferUsage.DeviceAddress | BufferUsage.TransferDestination, out IBuffer instanceBuffer);
+            BufferUsage.AccelerationStructureBuildInput | BufferUsage.DeviceAddress | BufferUsage.TransferDestination,
+            out IBuffer instanceBuffer, MemoryUsage.CpuToGpu);
         frame.Instances = instanceBuffer;
-        if (instances.Length > 0)
-            _device.UploadBufferData(instanceBuffer, MemoryMarshal.AsBytes(instances.AsSpan()));
+        ReadOnlySpan<byte> instanceBytes = MemoryMarshal.AsBytes(instances.AsSpan());
+        if (instancesReallocated || !instanceBytes.SequenceEqual(MemoryMarshal.AsBytes(frame.InstanceData.AsSpan())))
+        {
+            frame.InstancesHostWritten = WriteDynamic(instanceBuffer, instanceBytes);
+            frame.InstanceData = instances;
+        }
         AccelerationStructureBuildDescription description = new()
         {
             Type = AccelerationStructureType.TopLevel,
@@ -203,13 +236,20 @@ public sealed class RayTracingScene : IDisposable
         frame.InstanceCount = (uint)instances.Length;
         frame.BuildDescription = description;
         if (prepareMaterials)
-            PrepareShading(frame, validItems, meshes);
+            PrepareShading(frame, validItems, meshes, CollectionsMarshal.AsSpan(models));
         return changed;
     }
 
     public void BuildTopLevel(ICommandBuffer commandBuffer, int slot)
     {
         FrameResources frame = _frames[slot];
+        if (frame.InstancesHostWritten)
+            commandBuffer.MemoryBarrier(PipelineStages.Host, ResourceAccess.HostWrite,
+                PipelineStages.AccelerationStructureBuild, ResourceAccess.AccelerationStructureRead);
+        if (frame.Vertices is not null && frame.Indices is not null && frame.Surfaces is not null)
+            commandBuffer.MemoryBarrier(PipelineStages.Transfer | (frame.SurfacesHostWritten ? PipelineStages.Host : PipelineStages.None),
+                ResourceAccess.TransferWrite | (frame.SurfacesHostWritten ? ResourceAccess.HostWrite : ResourceAccess.None),
+                PipelineStages.RayTracingShader, ResourceAccess.ShaderRead);
         commandBuffer.BuildAccelerationStructure(frame.TopLevel!, frame.BuildDescription!, frame.Scratch!, frame.ScratchOffset, frame.CanUpdate);
         if (frame.CanUpdate)
             TopLevelUpdateCount++;
@@ -270,24 +310,10 @@ public sealed class RayTracingScene : IDisposable
         }
     }
 
-    private void PrepareShading(FrameResources frame, RayTracingDrawItem[] items, Mesh[] meshes)
+    private void PrepareShading(FrameResources frame, RayTracingDrawItem[] items, Mesh[] meshes, ReadOnlySpan<Matrix4x4> models)
     {
-        List<RayTracingVertexData> vertices = [];
-        List<uint> indices = [];
-        Dictionary<Mesh, (uint Vertex, uint Index)> offsets = [];
-        foreach (Mesh mesh in meshes)
-        {
-            Vertex[] sourceVertices = mesh.RayTracingVertices ?? throw new InvalidOperationException("RT geometry source was not retained.");
-            uint[] sourceIndices = mesh.RayTracingIndices ?? throw new InvalidOperationException("RT indices were not retained.");
-            offsets[mesh] = ((uint)vertices.Count, (uint)indices.Count);
-            foreach (Vertex vertex in sourceVertices)
-                vertices.Add(new RayTracingVertexData
-                {
-                    Position = new Vector4(vertex.Position, 1f), Normal = new Vector4(vertex.Normal, 0f),
-                    Tangent = vertex.Tangent, Uv = new Vector4(vertex.UV.X, vertex.UV.Y, 0f, 0f),
-                });
-            indices.AddRange(sourceIndices);
-        }
+        if (frame.Vertices is null || frame.Indices is null || !frame.ShadingMeshOrder.SequenceEqual(meshes))
+            PrepareShadingGeometry(frame, meshes);
         List<ITexture> textures = [];
         RayTracingMaterialTexturePool texturePool = new(_materialTextureCapacity);
         RayTracingSurfaceData[] surfaces = new RayTracingSurfaceData[items.Length];
@@ -306,10 +332,11 @@ public sealed class RayTracingScene : IDisposable
                 textures.Add(materialTextures.AmbientOcclusion);
                 textures.Add(materialTextures.Emission!);
             }
-            (uint vertexOffset, uint indexOffset) = offsets[draw.Mesh];
+            (uint vertexOffset, uint indexOffset) = frame.ShadingOffsets[draw.Mesh];
+            Matrix4x4 model = models[index];
             surfaces[index] = new RayTracingSurfaceData
             {
-                Model = item.ModelMatrix, InverseModel = item.ModelMatrix.Invert(), VertexOffset = vertexOffset,
+                Model = model, InverseModel = model.Invert(), VertexOffset = vertexOffset,
                 IndexOffset = indexOffset, TextureOffset = textureOffset, Material = item.Material.ToData(),
             };
         }
@@ -322,10 +349,62 @@ public sealed class RayTracingScene : IDisposable
         textures.Add(defaults.Normal);
         textures.Add(defaults.AmbientOcclusion);
         textures.Add(defaults.Emission!);
-        frame.Textures = textures;
+        if (frame.Textures.Count != textures.Count || frame.Textures.Where((texture, index) => !ReferenceEquals(texture, textures[index])).Any())
+            frame.Textures = textures.ToArray();
+        ReadOnlySpan<byte> surfaceBytes = MemoryMarshal.AsBytes(surfaces.AsSpan());
+        bool surfacesReallocated = EnsureBuffer(frame.Surfaces, Math.Max(16UL, (ulong)surfaceBytes.Length),
+            BufferUsage.Storage | BufferUsage.TransferDestination, out IBuffer surfaceBuffer, MemoryUsage.CpuToGpu);
+        frame.Surfaces = surfaceBuffer;
+        if (surfacesReallocated || !surfaceBytes.SequenceEqual(MemoryMarshal.AsBytes(frame.SurfaceData.AsSpan())))
+        {
+            frame.SurfacesHostWritten = WriteDynamic(surfaceBuffer, surfaceBytes);
+            frame.SurfaceData = surfaces;
+        }
+    }
+
+    private void PrepareShadingGeometry(FrameResources frame, Mesh[] meshes)
+    {
+        List<RayTracingVertexData> vertices = [];
+        List<uint> indices = [];
+        Dictionary<Mesh, (uint Vertex, uint Index)> offsets = [];
+        foreach (Mesh mesh in meshes)
+        {
+            Vertex[] sourceVertices = mesh.RayTracingVertices ?? throw new InvalidOperationException("RT geometry source was not retained.");
+            uint[] sourceIndices = mesh.RayTracingIndices ?? throw new InvalidOperationException("RT indices were not retained.");
+            offsets[mesh] = ((uint)vertices.Count, (uint)indices.Count);
+            foreach (Vertex vertex in sourceVertices)
+                vertices.Add(new RayTracingVertexData
+                {
+                    Position = new Vector4(vertex.Position, 1f), Normal = new Vector4(vertex.Normal, 0f),
+                    Tangent = vertex.Tangent, Uv = new Vector4(vertex.UV.X, vertex.UV.Y, 0f, 0f),
+                });
+            indices.AddRange(sourceIndices);
+        }
         frame.Vertices = UploadStorage(frame.Vertices, CollectionsMarshal.AsSpan(vertices));
         frame.Indices = UploadStorage(frame.Indices, CollectionsMarshal.AsSpan(indices));
-        frame.Surfaces = UploadStorage(frame.Surfaces, surfaces.AsSpan());
+        frame.ShadingOffsets = offsets;
+        frame.ShadingMeshOrder = meshes;
+    }
+
+    private unsafe bool WriteDynamic(IBuffer buffer, ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.IsEmpty)
+            return false;
+        IntPtr mapped = buffer.Map();
+        if (mapped == IntPtr.Zero)
+        {
+            _device.UploadBufferData(buffer, bytes);
+            return false;
+        }
+        try
+        {
+            bytes.CopyTo(new Span<byte>((void*)mapped, bytes.Length));
+        }
+        finally
+        {
+            buffer.Unmap();
+        }
+        return true;
     }
 
     private IBuffer UploadStorage<T>(IBuffer? previous, Span<T> values) where T : unmanaged
@@ -337,15 +416,15 @@ public sealed class RayTracingScene : IDisposable
         return buffer;
     }
 
-    private bool EnsureBuffer(IBuffer? previous, ulong minimumSize, BufferUsage usage, out IBuffer buffer)
+    private bool EnsureBuffer(IBuffer? previous, ulong minimumSize, BufferUsage usage, out IBuffer buffer, MemoryUsage memory = MemoryUsage.GpuOnly)
     {
-        if (previous is not null && previous.Size >= minimumSize)
+        if (previous is not null && previous.Size >= minimumSize && previous.Usage == usage && previous.Memory == memory)
         {
             buffer = previous;
             return false;
         }
         previous?.Dispose();
-        buffer = _device.CreateBuffer(new BufferDescription { Size = minimumSize, Usage = usage, Memory = MemoryUsage.GpuOnly });
+        buffer = _device.CreateBuffer(new BufferDescription { Size = minimumSize, Usage = usage, Memory = memory });
         return true;
     }
 

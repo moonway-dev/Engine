@@ -16,8 +16,9 @@ public class FbxModelLoaderTests
         Assert.Equal(3, model.Indices.Length);
         Assert.All(model.Indices, index => Assert.InRange(index, 0u, (uint)model.Vertices.Length - 1));
         Assert.All(model.Vertices, vertex => Assert.Equal(1f, vertex.Normal.Length, 4));
-        Assert.Contains(model.Vertices, vertex => vertex.UV == new Engine.Mathematics.Vector2(1f, 0f));
+        Assert.Contains(model.Vertices, vertex => vertex.UV == new Engine.Mathematics.Vector2(1f, 1f));
         Assert.Contains(model.Vertices, vertex => vertex.UV == new Engine.Mathematics.Vector2(0f, 1f));
+        Assert.Contains(model.Vertices, vertex => vertex.UV == new Engine.Mathematics.Vector2(0f, 0f));
         Assert.All(model.Vertices, vertex => Assert.InRange(vertex.Position.X, 9.999f, 11.001f));
         Assert.Single(model.Parts);
         Assert.Equal("TriangleNode", model.Parts[0].Name);

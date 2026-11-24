@@ -111,7 +111,7 @@ public static class ObjModelLoader
                         vertices.Add(new Vertex
                         {
                             Position = positions[position],
-                            UV = uv >= 0 ? uvs[uv] : Vector2.Zero,
+                            UV = uv >= 0 ? new Vector2(uvs[uv].X, 1f - uvs[uv].Y) : Vector2.Zero,
                             Normal = normal >= 0 ? normals[normal] : Vector3.Up,
                         });
                         missingNormals.Add(normal < 0);

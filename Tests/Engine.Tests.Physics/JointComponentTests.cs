@@ -24,15 +24,15 @@ public sealed class JointComponentTests : IDisposable
         GameObject crate = _scene.CreateObject(name);
         crate.Transform.Position = position;
         crate.Transform.Rotation = rotation ?? Quaternion.Identity;
-        crate.AddComponent<RigidBodyComponent>().Kind = RigidBodyKind.Kinematic;
-        crate.AddComponent<BoxColliderComponent>().Size = new Vector3(1f);
+        crate.AddComponent<Rigidbody>().Kind = RigidBodyKind.Kinematic;
+        crate.AddComponent<BoxCollider>().Size = new Vector3(1f);
         return crate;
     }
 
     private GameObject DynamicCrate(string name, Vector3 position, Quaternion? rotation = null)
     {
         GameObject crate = Crate(name, position, rotation);
-        crate.GetComponent<RigidBodyComponent>()!.Kind = RigidBodyKind.Dynamic;
+        crate.GetComponent<Rigidbody>()!.Kind = RigidBodyKind.Dynamic;
         return crate;
     }
 
@@ -49,7 +49,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
         GameObject b = DynamicCrate("B", new Vector3(2f, 6f, 0f));
-        BallJointComponent? joint = a.AddComponent<BallJointComponent>();
+        BallJoint? joint = a.AddComponent<BallJoint>();
         Assert.NotNull(joint);
         joint!.ConnectedBody = new EntityReference(b.Id);
         joint.LocalAnchor = new Vector3(0.5f, 0f, 0f);
@@ -66,7 +66,7 @@ public sealed class JointComponentTests : IDisposable
         Quaternion rotationB = Quaternion.FromAxisAngle(Vector3.UnitZ, 0.7f) * Quaternion.FromAxisAngle(Vector3.UnitY, 1.1f);
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
         GameObject b = DynamicCrate("B", new Vector3(0f, 7.5f, 0f), rotationB);
-        FixedJointComponent joint = a.AddComponent<FixedJointComponent>();
+        FixedJoint joint = a.AddComponent<FixedJoint>();
         joint.ConnectedBody = new EntityReference(b.Id);
         Step(60);
         Vector3 offset = b.Transform.Position - a.Transform.Position;
@@ -89,7 +89,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
         GameObject b = DynamicCrate("B", new Vector3(1f, 6f, 0f));
-        HingeJointComponent joint = a.AddComponent<HingeJointComponent>();
+        HingeJoint joint = a.AddComponent<HingeJoint>();
         joint.ConnectedBody = new EntityReference(b.Id);
         joint.LocalAnchor = new Vector3(0.5f, 0f, 0f);
         joint.ConnectedLocalAnchor = new Vector3(-0.5f, 0f, 0f);
@@ -105,7 +105,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
         GameObject b = Crate("B", new Vector3(1.05f, 6f, 0f));
-        HingeJointComponent joint = a.AddComponent<HingeJointComponent>();
+        HingeJoint joint = a.AddComponent<HingeJoint>();
         joint.ConnectedBody = new EntityReference(b.Id);
         joint.LocalAnchor = new Vector3(0.525f, 0f, 0f);
         joint.ConnectedLocalAnchor = new Vector3(-0.525f, 0f, 0f);
@@ -123,7 +123,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject a = DynamicCrate("A", new Vector3(-2f, 6f, 0f));
         GameObject b = DynamicCrate("B", new Vector3(2f, 6f, 0f));
-        SpringJointComponent joint = a.AddComponent<SpringJointComponent>();
+        SpringJoint joint = a.AddComponent<SpringJoint>();
         joint.ConnectedBody = new EntityReference(b.Id);
         joint.TargetDistance = 1f;
         joint.Frequency = 4f;
@@ -137,7 +137,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
         GameObject b = DynamicCrate("B", new Vector3(1f, 6f, 0f));
-        ConfigurableJointComponent joint = a.AddComponent<ConfigurableJointComponent>();
+        ConfigurableJoint joint = a.AddComponent<ConfigurableJoint>();
         joint.ConnectedBody = new EntityReference(b.Id);
         joint.XMotion = JointMotion.Locked;
         joint.YMotion = JointMotion.Locked;
@@ -152,7 +152,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject torso = DynamicCrate("Torso", new Vector3(0f, 6f, 0f));
         GameObject limb = DynamicCrate("Limb", new Vector3(0f, 4.8f, 0f));
-        CharacterJointComponent joint = torso.AddComponent<CharacterJointComponent>();
+        CharacterJoint joint = torso.AddComponent<CharacterJoint>();
         joint.ConnectedBody = new EntityReference(limb.Id);
         joint.LocalAnchor = new Vector3(0f, -0.5f, 0f);
         joint.ConnectedLocalAnchor = new Vector3(0f, 0.7f, 0f);
@@ -165,7 +165,7 @@ public sealed class JointComponentTests : IDisposable
     {
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
         GameObject b = DynamicCrate("B", new Vector3(2f, 6f, 0f));
-        BallJointComponent joint = a.AddComponent<BallJointComponent>();
+        BallJoint joint = a.AddComponent<BallJoint>();
         joint.ConnectedBody = new EntityReference(b.Id);
         joint.LocalAnchor = new Vector3(0.5f, 0f, 0f);
         joint.ConnectedLocalAnchor = new Vector3(-0.5f, 0f, 0f);
@@ -182,19 +182,19 @@ public sealed class JointComponentTests : IDisposable
     public void WheelColliderDrivesChassisForward()
     {
         GameObject ground = _scene.CreateObject("Ground");
-        ground.AddComponent<RigidBodyComponent>().Kind = RigidBodyKind.Static;
-        BoxColliderComponent floor = ground.AddComponent<BoxColliderComponent>();
+        ground.AddComponent<Rigidbody>().Kind = RigidBodyKind.Static;
+        BoxCollider floor = ground.AddComponent<BoxCollider>();
         floor.Size = new Vector3(60f, 0.25f, 400f);
         GameObject chassis = _scene.CreateObject("Chassis");
         chassis.Transform.Position = new Vector3(0f, 0.6f, 0f);
-        chassis.AddComponent<RigidBodyComponent>().Mass = 400f;
-        BoxColliderComponent body = chassis.AddComponent<BoxColliderComponent>();
+        chassis.AddComponent<Rigidbody>().Mass = 400f;
+        BoxCollider body = chassis.AddComponent<BoxCollider>();
         body.Size = new Vector3(2f, 0.4f, 3f);
         foreach ((float x, float z) in new[] { (-0.9f, -1.1f), (0.9f, -1.1f), (-0.9f, 1.1f), (0.9f, 1.1f) })
         {
             GameObject wheelObject = _scene.CreateObject($"Wheel{ x }_{ z }", chassis);
             wheelObject.Transform.LocalPosition = new Vector3(x, -0.1f, z);
-            WheelColliderComponent wheel = wheelObject.AddComponent<WheelColliderComponent>();
+            WheelCollider wheel = wheelObject.AddComponent<WheelCollider>();
             wheel.Radius = 0.3f;
             wheel.SuspensionDistance = 0.4f;
             wheel.MotorTorque = 400f;
@@ -209,9 +209,9 @@ public sealed class JointComponentTests : IDisposable
     public void ConstantForceAcceleratesBody()
     {
         GameObject a = DynamicCrate("A", new Vector3(0f, 6f, 0f));
-        ConstantForceComponent force = a.AddComponent<ConstantForceComponent>();
+        ConstantForce force = a.AddComponent<ConstantForce>();
         force.Force = new Vector3(10f, 0f, 0f);
-        float mass = a.GetComponent<RigidBodyComponent>()!.Mass;
+        float mass = a.GetComponent<Rigidbody>()!.Mass;
         Step(60);
         float velocityX = _physics.World.GetBodyLinearVelocity(_physics.TryGetBodyHandle(a, out BodyHandle handle) ? handle : default).X;
         Assert.InRange(velocityX, 9.2f, 10.8f);

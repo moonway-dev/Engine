@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Security.Cryptography;
 using Engine.Scene;
 using Engine.Mathematics;

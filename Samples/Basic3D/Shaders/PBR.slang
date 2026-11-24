@@ -193,12 +193,17 @@ FragmentOutput psMain(FragmentInput input)
     float3 normal = normalize(tangent * tangentNormal.x + bitangent * tangentNormal.y + geometryNormal * tangentNormal.z);
     float3 viewDirection = normalize(camera.cameraPosition - input.worldPosition);
 
-    float3 albedo = material.albedoColor * albedoTexture.Sample(materialSampler, input.uv).rgb;
+    float4 albedoSample = albedoTexture.Sample(materialSampler, input.uv);
+    float baseAlpha = saturate(material.opacity * albedoSample.a);
+    float alpha = baseAlpha;
+    float3 albedo = material.albedoColor * albedoSample.rgb;
     float metallic = saturate(material.metallic * metallicTexture.Sample(materialSampler, input.uv)[min(material.metallicChannel, 3u)]);
     float roughness = clamp(material.roughness * roughnessTexture.Sample(materialSampler, input.uv)[min(material.roughnessChannel, 3u)], 0.045, 1.0);
     float sampledAo = ambientOcclusionTexture.Sample(materialSampler, input.uv)[min(material.ambientOcclusionChannel, 3u)];
     float ambientOcclusion = lerp(1.0, sampledAo, saturate(material.aoStrength));
     float3 fresnelBase = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float fresnel = fresnelBase.r + (1.0 - fresnelBase.r) * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
+    alpha = saturate(baseAlpha + fresnel * (1.0 - baseAlpha));
 
     float shadowVisibility = 1.0;
 #if defined(RT_SHADOWS) && RT_SHADOWS
@@ -269,7 +274,7 @@ FragmentOutput psMain(FragmentInput input)
     float2 currentNdc = input.currentClipPosition.xy / max(abs(input.currentClipPosition.w), 1e-6);
     float2 previousNdc = input.previousClipPosition.xy / max(abs(input.previousClipPosition.w), 1e-6);
     FragmentOutput output;
-    output.color = float4(color, 1.0);
+    output.color = float4(color, alpha);
     float linearDepth = length(camera.cameraPosition - input.worldPosition);
 #if defined(TEMPORAL_MRT) && TEMPORAL_MRT
     float previousDepth = input.previousClipPosition.z / max(abs(input.previousClipPosition.w), 1e-6);
@@ -277,7 +282,7 @@ FragmentOutput psMain(FragmentInput input)
 #endif
 #if defined(SPECULAR_MRT) && SPECULAR_MRT
     output.specular = float4(specularIndirect, linearDepth);
-    output.specularResponse = float4(fresnelBase * brdf.x + brdf.y, 1.0);
+    output.specularResponse = float4(fresnelBase * brdf.x + brdf.y, baseAlpha);
 #endif
     return output;
 }

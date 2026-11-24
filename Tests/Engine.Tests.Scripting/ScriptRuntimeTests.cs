@@ -49,15 +49,34 @@ public sealed class ScriptRuntimeTests : IDisposable
             public int DisableCount { get; set; }
             public int DestroyCount { get; set; }
             public float LastDelta { get; set; }
+            public float LastFixedDelta { get; set; }
 
             public override void OnEnable() => EnableCount++;
             public override void OnStart() => StartCount++;
             public override void OnUpdate() { UpdateCount++; LastDelta = ScriptTime.DeltaTime; }
-            public override void OnFixedUpdate() => FixedUpdateCount++;
+            public override void OnFixedUpdate() { FixedUpdateCount++; LastFixedDelta = ScriptTime.DeltaTime; }
             public override void OnDisable() => DisableCount++;
             public override void OnDestroy() => DestroyCount++;
         }
         """;
+
+    [Fact]
+    public void FixedTickStartsBehaviourBeforeSimulationAndUsesFixedDelta()
+    {
+        File.WriteAllText(Path.Combine(_root, "LifecycleScript.cs"), LifecycleSource);
+        using ScriptingModule module = CreateModule();
+        SceneModel scene = new("Fixed lifecycle");
+        module.AttachScene(scene);
+        Script script = (Script)scene.CreateObject("Actor").AddComponent("LifecycleScript");
+        module.BeginPlay(scene);
+        module.FixedUpdate(new FrameTime(1f / 144f, 1f / 144f, 0.5f, 0.02f, 0));
+        object behaviour = script.Instance!;
+        Type type = behaviour.GetType();
+        Assert.Equal(1, (int)type.GetProperty("StartCount")!.GetValue(behaviour)!);
+        Assert.Equal(1, (int)type.GetProperty("FixedUpdateCount")!.GetValue(behaviour)!);
+        Assert.Equal(0, (int)type.GetProperty("UpdateCount")!.GetValue(behaviour)!);
+        Assert.Equal(0.02f, (float)type.GetProperty("LastFixedDelta")!.GetValue(behaviour)!);
+    }
 
     [Fact]
     public void PlayLifecycle_StartUpdatePauseStepDestroy()
@@ -67,11 +86,11 @@ public sealed class ScriptRuntimeTests : IDisposable
         SceneModel editScene = new("Lifecycle");
         module.AttachScene(editScene);
         GameObject gameObject = editScene.CreateObject("Actor");
-        ScriptComponent script = (ScriptComponent)gameObject.AddComponent("LifecycleScript");
+        Script script = (Script)gameObject.AddComponent("LifecycleScript");
 
         SceneModel playScene = editScene.Clone(CloneIdPolicy.PreserveIds);
         module.BeginPlay(playScene);
-        ScriptComponent playScript = Assert.IsAssignableFrom<ScriptComponent>(playScene.FindComponentById(script.Id));
+        Script playScript = Assert.IsAssignableFrom<Script>(playScene.FindComponentById(script.Id));
 
         FrameTime time = new(1f / 60f, 1f / 60f, 0.5f, 1f / 30f, 0);
         module.Update(time);
@@ -110,7 +129,7 @@ public sealed class ScriptRuntimeTests : IDisposable
         SceneModel scene = new("Disabled");
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Actor");
-        ScriptComponent script = (ScriptComponent)gameObject.AddComponent("LifecycleScript");
+        Script script = (Script)gameObject.AddComponent("LifecycleScript");
         module.BeginPlay(scene);
 
         gameObject.Active = false;
@@ -146,16 +165,16 @@ public sealed class ScriptRuntimeTests : IDisposable
 
         SceneModel scene = new("Facade");
         GameObject ground = scene.CreateObject("Ground");
-        ground.AddComponent<Engine.Physics.RigidBodyComponent>().Kind = Engine.Physics.RigidBodyKind.Static;
-        ground.AddComponent<Engine.Physics.BoxColliderComponent>().Size = new Vector3(24f, 0.5f, 24f);
+        ground.AddComponent<Engine.Physics.Rigidbody>().Kind = Engine.Physics.RigidBodyKind.Static;
+        ground.AddComponent<Engine.Physics.BoxCollider>().Size = new Vector3(24f, 0.5f, 24f);
         ground.Transform.Position = new Vector3(0f, -0.25f, 0f);
         GameObject player = scene.CreateObject("Player");
         player.Transform.Position = new Vector3(0f, 1f, 0f);
-        Engine.Physics.RigidBodyComponent rigidBody = player.AddComponent<Engine.Physics.RigidBodyComponent>();
+        Engine.Physics.Rigidbody rigidBody = player.AddComponent<Engine.Physics.Rigidbody>();
         rigidBody.Kind = Engine.Physics.RigidBodyKind.Dynamic;
         rigidBody.Mass = 2f;
-        player.AddComponent<Engine.Physics.BoxColliderComponent>().Size = new Vector3(1.4f, 1.4f, 1.4f);
-        ScriptComponent script = Assert.IsAssignableFrom<ScriptComponent>(player.AddComponent("FacadeScript"));
+        player.AddComponent<Engine.Physics.BoxCollider>().Size = new Vector3(1.4f, 1.4f, 1.4f);
+        Script script = Assert.IsAssignableFrom<Script>(player.AddComponent("FacadeScript"));
 
         physics.AttachScene(scene);
         scripting.AttachScene(scene);
@@ -218,7 +237,7 @@ public sealed class ScriptRuntimeTests : IDisposable
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Actor");
         gameObject.AddComponent("LifecycleScript");
-        ScriptComponent script = gameObject.GetComponent<ScriptComponent>()!;
+        Script script = gameObject.GetComponent<Script>()!;
 
         FrameTime time = new(1f / 60f, 1f / 60f, 1f, 1f / 30f, 0);
         module.Update(time);

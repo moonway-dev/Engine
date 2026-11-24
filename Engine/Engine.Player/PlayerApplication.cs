@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Reflection;
 using System.Text.Json;
 using Engine.Backends.Null;

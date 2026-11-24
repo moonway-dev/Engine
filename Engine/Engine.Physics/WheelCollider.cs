@@ -12,9 +12,9 @@ internal enum SuspensionProbeState
 }
 
 [InspectorTooltip("Unity-style sphere-cast suspension wheel. Place on a child object of the vehicle, one per wheel; drives the wheel mesh rotation and travel.")]
-public sealed class WheelColliderComponent : Component
+public sealed class WheelCollider : Component
 {
-    [InspectorTooltip("Suspension attachment point relative to the vehicle body.")]
+    [InspectorTooltip("Wheel rest position relative to the vehicle body; suspension compresses upward and droops downward from here.")]
     public Vector3 LocalAnchor { get; set; }
     [InspectorRange(0.05f, 3f)]
     public float Radius { get; set; } = 0.6f;
@@ -83,13 +83,58 @@ public sealed class WheelColliderComponent : Component
     private Vector3 _smoothedNormal = Vector3.Up;
     internal float LastTravel { get; set; }
     internal float LastRoll { get; set; }
+    internal float PreviousTravel { get; private set; }
+    internal float PreviousRoll { get; private set; }
+    internal float PreviousSteer { get; private set; }
+    internal float LastSteer { get; private set; }
+    internal float GizmoGravityMagnitude { get; set; } = 9.81f;
+    internal float RenderInterpolationAlpha { get; set; } = 1f;
     internal bool HasVisual { get; set; }
+
+    internal GameObject ResolveChassis()
+    {
+        for (GameObject? current = Owner; current is not null; current = current.Parent)
+            if (current.GetComponent<Rigidbody>() is not null)
+                return current;
+        return Owner.Parent ?? Owner;
+    }
+
+    private void RecordVisual(float travel)
+    {
+        PreviousTravel = HasVisual ? LastTravel : travel;
+        PreviousRoll = HasVisual ? LastRoll : _rollAngle;
+        PreviousSteer = HasVisual ? LastSteer : SteerAngle;
+        LastTravel = travel;
+        LastRoll = _rollAngle;
+        LastSteer = SteerAngle;
+        HasVisual = true;
+    }
 
     private const float TireComplianceRate = 60f;
     private const float MaxDampingForce = 4500f;
     private const float NormalSmoothingRate = 45f;
     private const float MinSupportNormal = 0.35f;
     private const float ProbeMargin = 0.05f;
+
+    internal static float ComputeNeutralTravel(float suspensionDistance, float frequency, float gravityMagnitude)
+    {
+        if (frequency <= MathUtil.Epsilon)
+            return 0f;
+        float restCompression = gravityMagnitude / (4f * MathF.PI * MathF.PI * frequency * frequency);
+        return MathUtil.Clamp(suspensionDistance - restCompression, 0f, suspensionDistance);
+    }
+
+    internal static Vector3 SuspensionTopWorld(
+        Vector3 chassisPosition,
+        Quaternion chassisRotation,
+        Vector3 localAnchor,
+        float suspensionDistance,
+        float frequency,
+        float gravityMagnitude)
+    {
+        Vector3 up = chassisRotation.Rotate(Vector3.Up);
+        return chassisPosition + chassisRotation.Rotate(localAnchor) + up * ComputeNeutralTravel(suspensionDistance, frequency, gravityMagnitude);
+    }
 
     internal static SuspensionProbeState ProbeSupport(
         PhysicsWorld world,
@@ -179,25 +224,35 @@ public sealed class WheelColliderComponent : Component
         return true;
     }
 
+    internal (Vector3 Top, Vector3 Center, Vector3 End, Quaternion Rotation) GizmoGeometry()
+    {
+        Transform chassis = ResolveChassis().Transform;
+        Matrix4x4 matrix = chassis.GetInterpolatedWorldMatrix(RenderInterpolationAlpha);
+        matrix.Decompose(out _, out Quaternion rotation, out Vector3 position);
+        Vector3 top = SuspensionTopWorld(position, rotation, LocalAnchor, SuspensionDistance, Frequency, GizmoGravityMagnitude);
+        Vector3 down = -rotation.Rotate(Vector3.Up);
+        float travel = ComputeNeutralTravel(SuspensionDistance, Frequency, GizmoGravityMagnitude);
+        Vector3 center = top + down * travel;
+        Quaternion axle = Quaternion.FromAxisAngle(rotation.Rotate(Vector3.Up), -SteerAngle * MathUtil.DegToRad)
+            * rotation * Quaternion.FromAxisAngle(Vector3.Backward, -MathF.PI * 0.5f);
+        if (HasVisual)
+        {
+            Transform.RenderWorldMatrix.Decompose(out _, out axle, out center);
+        }
+        return (top, center, top + down * SuspensionDistance, axle);
+    }
+
     public override void OnDrawGizmos()
     {
-        Transform owner = Owner.Transform;
-        Transform chassis = owner.Parent ?? owner;
-        Vector3 chassisScale = new(
-            MathF.Abs(chassis.Scale.X),
-            MathF.Abs(chassis.Scale.Y),
-            MathF.Abs(chassis.Scale.Z));
-        Vector3 anchor = chassis.Position + chassis.Rotation.Rotate(LocalAnchor * chassisScale);
-        Quaternion axle = chassis.Rotation * Quaternion.FromAxisAngle(new Vector3(0f, 0f, 1f), -MathF.PI * 0.5f);
+        (Vector3 top, Vector3 center, Vector3 end, Quaternion axle) = GizmoGeometry();
         Vector3 axleDirection = axle.Rotate(Vector3.Up);
-        Vector3 down = -chassis.Rotation.Rotate(Vector3.Up);
         Vector4 cylinderColor = new(1f, 0.6f, 0.2f, 1f);
         Vector4 travelColor = new(1f, 0.95f, 0.3f, 1f);
-        DebugDraw.DrawWireCylinder(anchor, axle, Radius, MathF.Max(Width, 0.05f), cylinderColor);
-        Vector3 travelEnd = anchor + down * SuspensionDistance;
-        DebugDraw.DrawLine(anchor, travelEnd, travelColor);
+        DebugDraw.DrawWireCylinder(center, axle, Radius, MathF.Max(Width, 0.05f), cylinderColor);
+        DebugDraw.DrawLine(top, end, travelColor);
         float markerHalf = MathF.Max(Width * 0.5f, 0.05f);
-        DebugDraw.DrawLine(travelEnd - axleDirection * markerHalf, travelEnd + axleDirection * markerHalf, travelColor);
+        DebugDraw.DrawLine(top - axleDirection * markerHalf, top + axleDirection * markerHalf, travelColor);
+        DebugDraw.DrawLine(end - axleDirection * markerHalf, end + axleDirection * markerHalf, travelColor);
     }
 
     internal void Apply(
@@ -216,7 +271,7 @@ public sealed class WheelColliderComponent : Component
         Vector3 chassisPosition = chassisTransform.Position;
         Vector3 up = chassisRotation.Rotate(Vector3.Up);
         Vector3 forward = chassisRotation.Rotate(Vector3.Forward);
-        Vector3 anchor = chassisPosition + chassisRotation.Rotate(LocalAnchor);
+        Vector3 anchor = SuspensionTopWorld(chassisPosition, chassisRotation, LocalAnchor, SuspensionDistance, Frequency, MathF.Abs(world.Gravity.Y));
         Vector3 down = -up;
         Quaternion steerRotation = Quaternion.FromAxisAngle(up, -SteerAngle * MathF.PI / 180f);
         Vector3 steeredForward = steerRotation.Rotate(forward);
@@ -232,9 +287,7 @@ public sealed class WheelColliderComponent : Component
         {
             _smoothedCompression = MathUtil.Lerp(_smoothedCompression, 0f, MathUtil.Clamp(deltaTime * TireComplianceRate, 0f, 1f));
             float travelVisual = SuspensionDistance - _smoothedCompression;
-            LastTravel = travelVisual;
-            LastRoll = _rollAngle;
-            HasVisual = true;
+            RecordVisual(travelVisual);
             UpdateVisual(wheelTransform, chassisRotation, anchor, down, travelVisual, up, steerRotation, LastRoll);
             return;
         }
@@ -298,9 +351,7 @@ public sealed class WheelColliderComponent : Component
 
         _rollAngle -= forwardSpeed / MathF.Max(Radius, MathUtil.Epsilon) * deltaTime;
         float groundedTravel = SuspensionDistance - _smoothedCompression;
-        LastTravel = groundedTravel;
-        LastRoll = _rollAngle;
-        HasVisual = true;
+        RecordVisual(groundedTravel);
         UpdateVisual(wheelTransform, chassisRotation, anchor, down, groundedTravel, up, steerRotation, LastRoll);
     }
 
@@ -326,15 +377,19 @@ public sealed class WheelColliderComponent : Component
         Vector3 up,
         Vector3 forward,
         float steerAngle,
-        float rollAngle)
+        float rollAngle,
+        bool renderOnly = false)
     {
         Quaternion steer = Quaternion.FromAxisAngle(up, -steerAngle);
         Quaternion tilt = Quaternion.FromAxisAngle(Vector3.Backward, -MathF.PI * 0.5f);
         Quaternion roll = Quaternion.FromAxisAngle(Vector3.Up, rollAngle);
         Vector3 position = anchor + down * travel;
         Quaternion rotation = steer * chassisRotation * tilt * roll;
-        wheelTransform.Position = position;
-        wheelTransform.Rotation = rotation;
+        if (!renderOnly)
+        {
+            wheelTransform.Position = position;
+            wheelTransform.Rotation = rotation;
+        }
         wheelTransform.SetRenderPose(position, rotation, overridesCurrent: true);
     }
 }

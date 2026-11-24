@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using Engine.Assets;
 using Engine.Backends.Null;
 using Engine.Physics;
@@ -224,7 +226,8 @@ internal sealed class Basic3DModule(
     private Vector2 _lastMousePosition;
     private bool _mouseCaptured;
     private Vector2 _cursorRestorePosition;
-    private float _orbitYaw = MathUtil.DegToRad * 35f;
+    private float _orbitYaw = MathUtil.DegToRad * float.Parse(Environment.GetEnvironmentVariable("ENGINE_ORBITYAW") ?? "35", System.Globalization.CultureInfo.InvariantCulture);
+    private readonly float _orbitSpin = MathUtil.DegToRad * float.Parse(Environment.GetEnvironmentVariable("ENGINE_ORBITSPIN") ?? "0", System.Globalization.CultureInfo.InvariantCulture);
     private float _orbitPitch = MathUtil.DegToRad * 25f;
     private float _flyYaw = MathUtil.DegToRad * 35f;
     private float _flyPitch = MathUtil.DegToRad * 25f;
@@ -232,7 +235,7 @@ internal sealed class Basic3DModule(
     private float _lastFrameDelta = 1f / 60f;
     private bool _flyInitialized;
     private Vector3 _flyPosition;
-    private float _orbitDistance = 9f;
+    private float _orbitDistance = float.Parse(Environment.GetEnvironmentVariable("ENGINE_ORBIT") ?? "9", System.Globalization.CultureInfo.InvariantCulture);
     private readonly List<GameObject> _rotatingObjects = [];
     private readonly Dictionary<string, Mesh> _meshes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PhysicsMeshData> _physicsMeshes = new(StringComparer.OrdinalIgnoreCase);
@@ -243,6 +246,13 @@ internal sealed class Basic3DModule(
     private long _benchmarkStart;
     private int _benchmarkFrames;
     private bool _benchmarkReported;
+    private double _benchmarkSyncMilliseconds;
+    private double _benchmarkWaitMilliseconds;
+    private double _benchmarkRecordMilliseconds;
+    private double _benchmarkUploadMilliseconds;
+    private readonly Dictionary<string, double> _benchmarkGpuMilliseconds = new(StringComparer.Ordinal);
+    private long _benchmarkGpuFrame = -1;
+    private int _benchmarkGpuFrames;
     private int _lastLoggedLodLevels = -1;
 
     public string Name => "Basic3D";
@@ -296,7 +306,7 @@ internal sealed class Basic3DModule(
         if (scenePath is not null)
             WriteLastOpenedScene(projectRoot, scenePath);
         _scene = scene;
-        _cameraObject = scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
+        _cameraObject = scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<Engine.Scene.Camera>() is not null);
         editor.AttachScene(scene, scenePath);
     }
 
@@ -324,6 +334,8 @@ internal sealed class Basic3DModule(
         _meshes["ground"] = new Mesh(device, groundVertices, groundIndices, "Ground");
         _physicsMeshes["ground"] = ToPhysicsMeshData(groundVertices, groundIndices);
         _assets = new AssetDatabase(device, ResolveAssetsDirectory());
+        if (Environment.GetEnvironmentVariable("ENGINE_NOLOD") == "1")
+            _assets.LodOptions = _assets.LodOptions with { MinTriangles = int.MaxValue };
         (Vertex[] cubeVertices, uint[] cubeIndices) = ObjModelLoader.Load(_assets.ResolvePath(Path.Combine("Models", "cube.obj")));
         Vertex[] cubeScaled = [.. cubeVertices.Select(static v => new Vertex { Position = v.Position * 1.4f, Normal = v.Normal, UV = v.UV, Tangent = v.Tangent })];
         _meshes["cube"] = new Mesh(device, cubeScaled, cubeIndices, "Cube");
@@ -343,23 +355,38 @@ internal sealed class Basic3DModule(
         if (scenePath is not null)
         {
             _scene = Scene.Load(scenePath);
-            WriteLastOpenedScene(projectRoot, scenePath);
+            if (Environment.GetEnvironmentVariable("ENGINE_BENCH") != "1" && Environment.GetEnvironmentVariable("ENGINE_MESH_BENCHMARK") != "1")
+                WriteLastOpenedScene(projectRoot, scenePath);
         }
         else
         {
             _scene = new Scene("Untitled");
         }
 
-        _cameraObject = _scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
+        _cameraObject = _scene.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<Engine.Scene.Camera>() is not null);
         renderer.MeshResolver = ResolveMesh;
         if (Environment.GetEnvironmentVariable("ENGINE_NOGI") == "1")
             renderer.GiMode = GlobalIlluminationMode.Off;
         if (Environment.GetEnvironmentVariable("ENGINE_SSGI") == "1")
             renderer.GiMode = GlobalIlluminationMode.ScreenSpace;
+        if (Environment.GetEnvironmentVariable("ENGINE_RTGI") == "1")
+            renderer.GiMode = GlobalIlluminationMode.RayTraced;
         if (Environment.GetEnvironmentVariable("ENGINE_NOREFL") == "1")
             renderer.RayTracingReflectionsEnabled = false;
         if (Environment.GetEnvironmentVariable("ENGINE_NOSHADOW") == "1")
             renderer.ShadowMode = ShadowMode.Off;
+        if (Environment.GetEnvironmentVariable("ENGINE_NORT") == "1")
+            renderer.RayTracingEnabled = false;
+        if (Enum.TryParse(Environment.GetEnvironmentVariable("ENGINE_RTQUALITY"), true, out RayTracingQualityPreset rtQuality))
+        {
+            renderer.RayTracingShadowQuality = rtQuality;
+            renderer.RayTracingReflectionQuality = rtQuality;
+            renderer.RayTracingGiQuality = rtQuality;
+        }
+        if (Environment.GetEnvironmentVariable("ENGINE_RTADAPTIVE") == "0")
+            renderer.RayTracingAdaptiveQualityEnabled = false;
+        if (int.TryParse(Environment.GetEnvironmentVariable("ENGINE_RTSAMPLES"), out int rtSamples))
+            renderer.RayTracingSamples = rtSamples;
         renderer.MeshRequestResolver = key => _meshes.TryGetValue(key, out Mesh? mesh) ? mesh : _assets.RequestMesh(key);
         renderer.MeshImportFailedResolver = key => !_meshes.ContainsKey(key) && _assets.IsMeshImportFailed(key);
         renderer.ModelPartRequestResolver = (key, part) => _assets.RequestMesh(key, part);
@@ -460,16 +487,51 @@ internal sealed class Basic3DModule(
         if (_scene is null)
             return;
 
+        if (Environment.GetEnvironmentVariable("ENGINE_BENCH") == "1" && _editor is not null)
+        {
+            renderer.RayTracingEnabled = Environment.GetEnvironmentVariable("ENGINE_NORT") != "1";
+            if (Environment.GetEnvironmentVariable("ENGINE_RTGI") == "1")
+                renderer.GiMode = GlobalIlluminationMode.RayTraced;
+            if (Enum.TryParse(Environment.GetEnvironmentVariable("ENGINE_RTQUALITY"), true, out RayTracingQualityPreset quality))
+            {
+                renderer.RayTracingReflectionQuality = quality;
+                renderer.RayTracingGiQuality = quality;
+            }
+            renderer.RayTracingAdaptiveQualityEnabled = Environment.GetEnvironmentVariable("ENGINE_RTADAPTIVE") != "0";
+            if (Environment.GetEnvironmentVariable("ENGINE_BENCHVIEWS") == "1")
+            {
+                renderer.SceneViewVisible = true;
+                renderer.GameViewVisible = true;
+            }
+        }
         HandleInput();
         UpdateCamera(frameTime);
-        if (Environment.GetEnvironmentVariable("ENGINE_MESH_BENCHMARK") == "1" && renderer.SceneSourceTriangleCount > 1000000)
+        if (Environment.GetEnvironmentVariable("ENGINE_MESH_BENCHMARK") == "1" || Environment.GetEnvironmentVariable("ENGINE_BENCH") == "1")
         {
             _benchmarkFrames++;
-            if (_benchmarkFrames == 31)
+            if (_benchmarkFrames == 61)
                 _benchmarkStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (_benchmarkFrames == 151 && !_benchmarkReported)
+            if (_benchmarkFrames > 60 && _benchmarkFrames <= 240)
             {
-                double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(_benchmarkStart).TotalMilliseconds / 120;
+                _benchmarkSyncMilliseconds += renderer.SceneSyncMilliseconds;
+                _benchmarkWaitMilliseconds += renderer.FrameWaitMilliseconds;
+                _benchmarkRecordMilliseconds += renderer.RenderCpuMilliseconds;
+                _benchmarkUploadMilliseconds += renderer.UniformUploadMilliseconds;
+                if (_rhi!.LatestGpuFrameTiming is { Incomplete: false } timing && timing.FrameNumber != _benchmarkGpuFrame)
+                {
+                    _benchmarkGpuFrame = timing.FrameNumber;
+                    _benchmarkGpuFrames++;
+                    foreach (GpuPassTiming pass in timing.Passes)
+                        _benchmarkGpuMilliseconds[pass.Name] = _benchmarkGpuMilliseconds.GetValueOrDefault(pass.Name) + pass.Milliseconds;
+                }
+            }
+            if (_benchmarkFrames == 241 && !_benchmarkReported)
+            {
+                double milliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(_benchmarkStart).TotalMilliseconds / 180;
+                _log!.Information($"RT configuration: enabled {renderer.RayTracingEnabled}, GI {renderer.GiMode}, reflections {renderer.RayTracingReflectionsEnabled}, quality {renderer.RayTracingReflectionQuality}/{renderer.RayTracingGiQuality}, adaptive {renderer.RayTracingAdaptiveQualityEnabled}, scale {renderer.RayTracingResolutionScale}, samples {renderer.RayTracingSamples}");
+                _log.Information($"Benchmark averages: sync {_benchmarkSyncMilliseconds / 180:F2} ms, wait {_benchmarkWaitMilliseconds / 180:F2} ms, record {_benchmarkRecordMilliseconds / 180:F2} ms, uniforms/uploads {_benchmarkUploadMilliseconds / 180:F2} ms");
+                foreach ((string name, double total) in _benchmarkGpuMilliseconds.OrderByDescending(pair => pair.Value))
+                    _log.Information($"GPU {name}: {total / Math.Max(_benchmarkGpuFrames, 1):F3} ms");
                 _log!.Information($"Mesh benchmark: source {renderer.SceneSourceVertexCount} vertices/{renderer.SceneSourceTriangleCount} triangles; submitted Scene/Game/Shadow {renderer.SceneDrawnTriangleCount}/{renderer.GameDrawnTriangleCount}/{renderer.ShadowDrawnTriangleCount} triangles; max LOD Scene/Game {renderer.SceneLodLevel}/{renderer.GameLodLevel}; views {renderer.SceneViewVisible}/{renderer.GameViewVisible}, drawn {renderer.DrawnObjects}, culled {renderer.CulledObjects}; {milliseconds:F2} ms/frame, {1000 / milliseconds:F2} FPS; sync {renderer.SceneSyncMilliseconds:F2} ms, wait {renderer.FrameWaitMilliseconds:F2} ms, record {renderer.RenderCpuMilliseconds:F2} ms; import/cache {_assets!.LastMeshImportMilliseconds:F2} ms, cache hit {_assets.LastMeshCacheHit}; upload {_assets.LastMeshUploadMilliseconds:F2} ms; LOD chains {_assets.LodChainCount}, levels uploaded {_assets.UploadedLodLevels}, generating {_assets.GeneratingLodChains}, pending {_assets.PendingLodUploads}, LOD meshes {renderer.LodMeshCount}");
                 _benchmarkReported = true;
                 _context!.RequestExit();
@@ -632,7 +694,8 @@ internal sealed class Basic3DModule(
     private void UpdateCamera(FrameTime frameTime)
     {
         _lastFrameDelta = frameTime.DeltaTime;
-        _cameraObject = _scene?.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<CameraComponent>() is not null);
+        _orbitYaw += _orbitSpin * frameTime.DeltaTime;
+        _cameraObject = _scene?.EnumerateHierarchy().FirstOrDefault(gameObject => gameObject.GetComponent<Engine.Scene.Camera>() is not null);
         Transform? cameraTransform = _cameraObject?.Transform;
         if (_editor is not null)
         {
@@ -650,7 +713,8 @@ internal sealed class Basic3DModule(
                 : _window!.ClientSize;
             renderer.EditorCamera.AspectRatio = (float)editorExtent.Width / Math.Max(1, editorExtent.Height);
         }
-        else if (cameraTransform is not null)
+        else if (cameraTransform is not null && !_cameraObject!.Components.OfType<Script>()
+            .Any(script => script.IsActiveInHierarchy && script.Instance is ScriptBehaviour { IsActive: true }))
         {
             float cosPitch = MathF.Cos(_orbitPitch);
             Vector3 orbitPosition = new(
@@ -658,7 +722,7 @@ internal sealed class Basic3DModule(
                 MathF.Sin(_orbitPitch) * _orbitDistance,
                 MathF.Cos(_orbitYaw) * cosPitch * _orbitDistance + 0.8f);
             cameraTransform.Position = orbitPosition;
-            cameraTransform.LookAt(new Vector3(0f, 55f, 0f), Vector3.Up);
+            cameraTransform.LookAt(new Vector3(0f, 0.8f, 0f), Vector3.Up);
         }
 
         Size2D viewExtent = renderer.ViewTexture is not null ? new Size2D((int)renderer.ViewTexture.Width, (int)renderer.ViewTexture.Height) : _window!.ClientSize;

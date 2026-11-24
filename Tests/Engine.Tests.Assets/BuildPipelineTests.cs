@@ -183,9 +183,9 @@ public sealed class BuildPipelineTests : IDisposable
     public void GenerateScriptComponents_EmitsComponentPerScript()
     {
         string source = AssetBundler.GenerateScriptComponents(["TestScript", "Other"]);
-        Assert.Contains("public sealed class TestScriptComponent : Engine.Scene.ScriptComponent", source);
+        Assert.Contains("public sealed class TestScriptComponent : Engine.Scene.Script", source);
         Assert.Contains("Script = \"TestScript\";", source);
-        Assert.Contains("public sealed class OtherComponent : Engine.Scene.ScriptComponent", source);
+        Assert.Contains("public sealed class OtherComponent : Engine.Scene.Script", source);
     }
 
     [Fact]

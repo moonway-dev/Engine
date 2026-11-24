@@ -346,8 +346,8 @@ public sealed class ComponentRegistry
 
     internal void RegisterBuiltIns()
     {
-        RegisterIfMissing(typeof(CameraComponent), () => new CameraComponent());
-        RegisterIfMissing(typeof(LightComponent), () => new LightComponent());
+        RegisterIfMissing(typeof(Engine.Scene.Camera), () => new Engine.Scene.Camera());
+        RegisterIfMissing(typeof(Engine.Scene.Light), () => new Engine.Scene.Light());
         lock (GlobalLock)
         {
             foreach (ComponentRegistration registration in GlobalRegistrations.Values)
@@ -363,22 +363,29 @@ public sealed class ComponentRegistry
         return clone;
     }
 
-    public bool Contains(string componentKey) => _registrations.ContainsKey(componentKey);
+    private ComponentRegistration? FindRegistration(string componentKey)
+    {
+        if (_registrations.TryGetValue(componentKey, out ComponentRegistration? registration))
+            return registration;
+        string legacyKey = componentKey.EndsWith("Component", StringComparison.Ordinal)
+            ? componentKey[..^"Component".Length]
+            : componentKey;
+        if (_registrations.TryGetValue(legacyKey, out registration))
+            return registration;
+        return _registrations.Values.FirstOrDefault(candidate =>
+            string.Equals(candidate.ComponentType.FullName, legacyKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public bool Contains(string componentKey) => FindRegistration(componentKey) is not null;
 
     public string? GetKey(Type componentType) =>
         _registrationsByType.TryGetValue(componentType, out ComponentRegistration? registration)
             ? registration.Key
             : null;
 
-    public Type? GetRegisteredType(string componentKey) =>
-        _registrations.TryGetValue(componentKey, out ComponentRegistration? registration)
-            ? registration.ComponentType
-            : null;
+    public Type? GetRegisteredType(string componentKey) => FindRegistration(componentKey)?.ComponentType;
 
-    public Component? Create(string componentKey) =>
-        _registrations.TryGetValue(componentKey, out ComponentRegistration? registration)
-            ? registration.Factory()
-            : null;
+    public Component? Create(string componentKey) => FindRegistration(componentKey)?.Factory();
 
     public Component? Create(Type componentType) =>
         _registrationsByType.TryGetValue(componentType, out ComponentRegistration? registration)

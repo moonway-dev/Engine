@@ -23,10 +23,10 @@ public class SceneObjectModelTests
     {
         SceneModel scene = new("Test");
         GameObject gameObject = scene.CreateObject("Object");
-        gameObject.AddComponent<CameraComponent>();
-        Assert.Throws<InvalidOperationException>(() => gameObject.AddComponent<CameraComponent>());
-        Assert.NotNull(gameObject.GetComponent<CameraComponent>());
-        Assert.True(gameObject.TryGetComponent(out CameraComponent _));
+        gameObject.AddComponent<Engine.Scene.Camera>();
+        Assert.Throws<InvalidOperationException>(() => gameObject.AddComponent<Engine.Scene.Camera>());
+        Assert.NotNull(gameObject.GetComponent<Engine.Scene.Camera>());
+        Assert.True(gameObject.TryGetComponent(out Engine.Scene.Camera _));
     }
 
     [Fact]
@@ -34,10 +34,10 @@ public class SceneObjectModelTests
     {
         SceneModel scene = new("Test");
         GameObject gameObject = scene.CreateObject("Object");
-        gameObject.AddComponent<CameraComponent>();
-        Assert.True(gameObject.RemoveComponent<CameraComponent>());
-        Assert.Null(gameObject.GetComponent<CameraComponent>());
-        Assert.False(gameObject.RemoveComponent<CameraComponent>());
+        gameObject.AddComponent<Engine.Scene.Camera>();
+        Assert.True(gameObject.RemoveComponent<Engine.Scene.Camera>());
+        Assert.Null(gameObject.GetComponent<Engine.Scene.Camera>());
+        Assert.False(gameObject.RemoveComponent<Engine.Scene.Camera>());
     }
 
     [Fact]
@@ -189,14 +189,14 @@ public class SceneSerializationTests
         parent.Transform.Position = new Vector3(1f, 2f, 3f);
         parent.Transform.LocalRotation = Quaternion.FromAxisAngle(Vector3.UnitY, 0.5f);
         parent.Transform.LocalScale = new Vector3(2f, 2f, 2f);
-        LightComponent light = parent.AddComponent<LightComponent>();
+        Engine.Scene.Light light = parent.AddComponent<Engine.Scene.Light>();
         light.Intensity = 3.5f;
         light.Color = new Vector3(1f, 0.5f, 0.25f);
 
         GameObject child = original.CreateObject("Child");
         child.SetParent(parent);
         child.Transform.Position = new Vector3(0f, 5f, 0f);
-        CameraComponent camera = child.AddComponent<CameraComponent>();
+        Engine.Scene.Camera camera = child.AddComponent<Engine.Scene.Camera>();
         camera.FieldOfViewY = 1.1f;
 
         Guid parentId = parent.Id;
@@ -212,13 +212,13 @@ public class SceneSerializationTests
         Assert.Equal(2, loaded.AllObjects.Count);
 
         MathAssert.Equal(new Vector3(1f, 2f, 3f), loadedParent.Transform.Position);
-        LightComponent loadedLight = Assert.Single(loadedParent.Components.OfType<LightComponent>());
+        Engine.Scene.Light loadedLight = Assert.Single(loadedParent.Components.OfType<Engine.Scene.Light>());
         Assert.Equal(3.5f, loadedLight.Intensity, 5);
         MathAssert.Equal(new Vector3(1f, 0.5f, 0.25f), loadedLight.Color);
 
         GameObject loadedChild = loadedParent.Children[0];
         MathAssert.Equal(new Vector3(0f, 5f, 0f), loadedChild.Transform.Position);
-        CameraComponent loadedCamera = Assert.Single(loadedChild.Components.OfType<CameraComponent>());
+        Engine.Scene.Camera loadedCamera = Assert.Single(loadedChild.Components.OfType<Engine.Scene.Camera>());
         Assert.Equal(1.1f, loadedCamera.FieldOfViewY, 5);
     }
 
@@ -264,12 +264,12 @@ public class PrefabTests
             SceneModel source = new("PrefabSource");
             GameObject root = source.CreateObject("PrefabRoot");
             root.Transform.Position = new Vector3(1f, 2f, 3f);
-            LightComponent light = root.AddComponent<LightComponent>();
+            Engine.Scene.Light light = root.AddComponent<Engine.Scene.Light>();
             light.Intensity = 2f;
             GameObject child = source.CreateObject("PrefabChild");
             child.SetParent(root);
             child.Transform.Position = new Vector3(0f, 1f, 0f);
-            CameraComponent camera = child.AddComponent<CameraComponent>();
+            Engine.Scene.Camera camera = child.AddComponent<Engine.Scene.Camera>();
             camera.NearPlane = 0.25f;
 
             Prefab.Save(root, path);
@@ -279,13 +279,13 @@ public class PrefabTests
             Assert.Equal("PrefabRoot", instantiated.Name);
             Assert.NotEqual(root.Id, instantiated.Id);
             MathAssert.Equal(new Vector3(1f, 2f, 3f), instantiated.Transform.Position);
-            LightComponent? instantiatedLight = instantiated.GetComponent<LightComponent>();
+            Engine.Scene.Light? instantiatedLight = instantiated.GetComponent<Engine.Scene.Light>();
             Assert.NotNull(instantiatedLight);
             Assert.Equal(2f, instantiatedLight!.Intensity, 5);
             GameObject instantiatedChild = Assert.Single(instantiated.Children);
             Assert.Equal("PrefabChild", instantiatedChild.Name);
             Assert.NotEqual(child.Id, instantiatedChild.Id);
-            CameraComponent? instantiatedCamera = instantiatedChild.GetComponent<CameraComponent>();
+            Engine.Scene.Camera? instantiatedCamera = instantiatedChild.GetComponent<Engine.Scene.Camera>();
             Assert.NotNull(instantiatedCamera);
             Assert.Equal(0.25f, instantiatedCamera!.NearPlane, 5);
             Assert.Equal(2, target.AllObjects.Count);

@@ -6,7 +6,7 @@ using Engine.Scene;
 
 namespace Engine.Physics;
 
-public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
+public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule, IFramePreparationModule
 {
     public const string LogCategory = "Physics";
 
@@ -14,17 +14,18 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     private readonly HashSet<(Guid ObjectId, string Message)> _warnedBodies = [];
     private readonly Dictionary<Component, List<ConstraintHandle>> _joints = [];
     private readonly Dictionary<Component, string> _jointSignatures = [];
-    private readonly List<WheelColliderComponent> _groundedWheels = [];
+    private readonly List<WheelCollider> _groundedWheels = [];
     private PhysicsWorld? _world;
     private ILogger? _log;
     private Scene.Scene? _attachedScene;
+    private bool _framePrepared;
 
     private readonly record struct Configuration(RigidBodyKind Kind, string ConfigKey);
 
     private sealed class Registration(Configuration configuration)
     {
         public Configuration Configuration = configuration;
-        public RigidBodyComponent? RigidBody;
+        public Rigidbody? RigidBody;
         public BodyHandle Body;
         public StaticHandle Static;
         public bool HasBody;
@@ -46,10 +47,11 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     public float RenderInterpolationAlpha { get; private set; } = 1f;
     public PhysicsWorld World => _world ?? throw new InvalidOperationException("Physics module is not initialized.");
 
-    public bool TryGetBodyHandle(GameObject gameObject, out BodyHandle body)
+    public bool TryGetBodyHandle(GameObject gameObject, out BodyHandle body, bool synchronize = true)
     {
         body = default;
-        Synchronize();
+        if (synchronize || !_bodies.ContainsKey(gameObject))
+            Synchronize();
         if (_world is null || !_bodies.TryGetValue(gameObject, out Registration? registration))
             return false;
         if (!registration.HasBody || registration.Configuration.Kind == RigidBodyKind.Static || registration.RigidBody is { IsActiveInHierarchy: false })
@@ -122,24 +124,36 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     public void Initialize(IEngineContext context)
     {
         _log = context.Logging.CreateLogger(LogCategory);
-        ComponentRegistry.RegisterGlobal(() => new RigidBodyComponent());
-        ComponentRegistry.RegisterGlobal(() => new BoxColliderComponent());
-        ComponentRegistry.RegisterGlobal(() => new SphereColliderComponent());
-        ComponentRegistry.RegisterGlobal(() => new CapsuleColliderComponent());
-        ComponentRegistry.RegisterGlobal(() => new MeshColliderComponent());
-        ComponentRegistry.RegisterGlobal(() => new FixedJointComponent());
-        ComponentRegistry.RegisterGlobal(() => new HingeJointComponent());
-        ComponentRegistry.RegisterGlobal(() => new SpringJointComponent());
-        ComponentRegistry.RegisterGlobal(() => new CharacterJointComponent());
-        ComponentRegistry.RegisterGlobal(() => new ConfigurableJointComponent());
-        ComponentRegistry.RegisterGlobal(() => new ConstantForceComponent());
-        ComponentRegistry.RegisterGlobal(() => new WheelColliderComponent());
+        ComponentRegistry.RegisterGlobal(() => new Rigidbody());
+        ComponentRegistry.RegisterGlobal(() => new BoxCollider());
+        ComponentRegistry.RegisterGlobal(() => new SphereCollider());
+        ComponentRegistry.RegisterGlobal(() => new CapsuleCollider());
+        ComponentRegistry.RegisterGlobal(() => new MeshCollider());
+        ComponentRegistry.RegisterGlobal(() => new FixedJoint());
+        ComponentRegistry.RegisterGlobal(() => new HingeJoint());
+        ComponentRegistry.RegisterGlobal(() => new SpringJoint());
+        ComponentRegistry.RegisterGlobal(() => new CharacterJoint());
+        ComponentRegistry.RegisterGlobal(() => new ConfigurableJoint());
+        ComponentRegistry.RegisterGlobal(() => new ConstantForce());
+        ComponentRegistry.RegisterGlobal(() => new WheelCollider());
         _world = new PhysicsWorld(Gravity);
         _log.Information($"Physics initialized (gravity {Gravity.Y} m/s^2)");
     }
 
+    public void PrepareFrame(in FrameTime frameTime)
+    {
+        _framePrepared = false;
+        Update(frameTime);
+        _framePrepared = true;
+    }
+
     public void Update(in FrameTime frameTime)
     {
+        if (_framePrepared)
+        {
+            _framePrepared = false;
+            return;
+        }
         if (_world is null || _attachedScene is null)
             return;
         SyncBodies();
@@ -218,7 +232,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 continue;
             if (registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody)
                 continue;
-            foreach (ConstantForceComponent force in gameObject.Components.OfType<ConstantForceComponent>())
+            foreach (ConstantForce force in gameObject.Components.OfType<ConstantForce>())
             {
                 if (!force.Enabled)
                     continue;
@@ -231,24 +245,24 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     {
         foreach (GameObject gameObject in _attachedScene!.EnumerateHierarchy())
         {
-            foreach (WheelColliderComponent wheel in gameObject.Components.OfType<WheelColliderComponent>())
+            foreach (WheelCollider wheel in gameObject.Components.OfType<WheelCollider>())
             {
-                GameObject chassis = !_bodies.ContainsKey(wheel.Owner) && wheel.Owner.Parent is { } parent ? parent : wheel.Owner;
+                GameObject chassis = wheel.ResolveChassis();
+                wheel.GizmoGravityMagnitude = _world is null ? MathF.Abs(Gravity.Y) : MathF.Abs(_world.Gravity.Y);
+                wheel.RenderInterpolationAlpha = RenderInterpolationAlpha;
                 if (!wheel.HasVisual || !_bodies.TryGetValue(chassis, out Registration? registration) || !registration.HasBody)
                     continue;
                 Quaternion rotation = registration.RenderRotation;
                 Vector3 position = registration.RenderPosition;
                 Vector3 up = rotation.Rotate(Vector3.Up);
                 Vector3 forward = rotation.Rotate(Vector3.Forward);
-                Vector3 anchor = position + rotation.Rotate(wheel.LocalAnchor);
-                float travel = wheel.LastTravel;
-                if (wheel.Enabled && _world is not null)
-                {
-                    SuspensionProbeState state = WheelColliderComponent.ProbeSupport(_world, registration.Body, anchor, up, wheel.SuspensionDistance, wheel.Radius, out float probed, out _, out _);
-                    if (state == SuspensionProbeState.Supported)
-                        travel = probed;
-                }
-                wheel.UpdateVisualOnly(wheel.Owner.Transform, rotation, anchor, -up, travel, up, forward, wheel.SteerAngle * MathF.PI / 180f, wheel.LastRoll);
+                float gravityMagnitude = _world is null ? 9.81f : MathF.Abs(_world.Gravity.Y);
+                Vector3 anchor = WheelCollider.SuspensionTopWorld(position, rotation, wheel.LocalAnchor, wheel.SuspensionDistance, wheel.Frequency, gravityMagnitude);
+                float alpha = registration.RigidBody?.Interpolation == RigidbodyInterpolation.None ? 1f : RenderInterpolationAlpha;
+                float travel = MathUtil.Lerp(wheel.PreviousTravel, wheel.LastTravel, alpha);
+                float roll = MathUtil.Lerp(wheel.PreviousRoll, wheel.LastRoll, alpha);
+                float steer = MathUtil.Lerp(wheel.PreviousSteer, wheel.LastSteer, alpha) * MathF.PI / 180f;
+                wheel.UpdateVisualOnly(wheel.Owner.Transform, rotation, anchor, -up, travel, up, forward, steer, roll, renderOnly: true);
             }
         }
     }
@@ -257,7 +271,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     {
         foreach ((Component component, _) in _joints)
         {
-            if (component is HingeJointComponent hinge)
+            if (component is HingeJoint hinge)
                 hinge.ApplyMotor(this, deltaTime);
         }
     }
@@ -267,29 +281,29 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         if (_world is null || _attachedScene is null)
             return;
         _groundedWheels.Clear();
-        Dictionary<GameObject, List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)>> wheelsByChassis = [];
+        Dictionary<GameObject, List<(WheelCollider Wheel, Engine.Scene.Transform Transform)>> wheelsByChassis = [];
         foreach (GameObject gameObject in _attachedScene.EnumerateHierarchy())
         {
             if (!gameObject.IsActiveInHierarchy)
                 continue;
-            foreach (WheelColliderComponent wheel in gameObject.Components.OfType<WheelColliderComponent>())
+            foreach (WheelCollider wheel in gameObject.Components.OfType<WheelCollider>())
             {
                 if (!wheel.Enabled)
                     continue;
-                GameObject chassis = !_bodies.ContainsKey(wheel.Owner) && wheel.Owner.Parent is { } parent ? parent : wheel.Owner;
-                if (!wheelsByChassis.TryGetValue(chassis, out List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)>? list))
+                GameObject chassis = wheel.ResolveChassis();
+                if (!wheelsByChassis.TryGetValue(chassis, out List<(WheelCollider Wheel, Engine.Scene.Transform Transform)>? list))
                     wheelsByChassis[chassis] = list = [];
                 list.Add((wheel, wheel.Owner.Transform));
             }
         }
-        foreach ((GameObject chassis, List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)> wheels) in wheelsByChassis)
+        foreach ((GameObject chassis, List<(WheelCollider Wheel, Engine.Scene.Transform Transform)> wheels) in wheelsByChassis)
         {
             if (!_bodies.TryGetValue(chassis, out Registration? registration))
                 continue;
             if (registration.Configuration.Kind != RigidBodyKind.Dynamic || !registration.HasBody)
                 continue;
             float sprungMass = MathF.Max(registration.Mass / wheels.Count, 0.1f);
-            foreach ((WheelColliderComponent wheel, Engine.Scene.Transform transform) in wheels)
+            foreach ((WheelCollider wheel, Engine.Scene.Transform transform) in wheels)
             {
                 wheel.Apply(_world, registration.Body, chassis.Transform, transform, sprungMass, deltaTime);
                 if (wheel.IsGrounded)
@@ -303,7 +317,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         PhysicsWorld world,
         BodyHandle body,
         Transform chassisTransform,
-        List<(WheelColliderComponent Wheel, Engine.Scene.Transform Transform)> wheels,
+        List<(WheelCollider Wheel, Engine.Scene.Transform Transform)> wheels,
         float deltaTime)
     {
         Quaternion rotation = chassisTransform.Rotation;
@@ -311,12 +325,12 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         Vector3 position = chassisTransform.Position;
         for (int i = 0; i < wheels.Count; i++)
         {
-            (WheelColliderComponent leftWheel, _) = wheels[i];
+            (WheelCollider leftWheel, _) = wheels[i];
             if (leftWheel.AntiRollStiffness <= 0f)
                 continue;
             for (int j = i + 1; j < wheels.Count; j++)
             {
-                (WheelColliderComponent rightWheel, _) = wheels[j];
+                (WheelCollider rightWheel, _) = wheels[j];
                 if (MathF.Abs(MathF.Abs(rightWheel.LocalAnchor.Z) - MathF.Abs(leftWheel.LocalAnchor.Z)) > 0.05f)
                     continue;
                 if (leftWheel.LocalAnchor.X * rightWheel.LocalAnchor.X >= 0f)
@@ -328,8 +342,9 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 if (MathF.Abs(compressionDifference) < MathUtil.Epsilon)
                     break;
                 float impulse = compressionDifference * stiffness * deltaTime;
-                Vector3 leftAnchor = position + rotation.Rotate(leftWheel.LocalAnchor);
-                Vector3 rightAnchor = position + rotation.Rotate(rightWheel.LocalAnchor);
+                float gravityMagnitude = MathF.Abs(world.Gravity.Y);
+                Vector3 leftAnchor = WheelCollider.SuspensionTopWorld(position, rotation, leftWheel.LocalAnchor, leftWheel.SuspensionDistance, leftWheel.Frequency, gravityMagnitude);
+                Vector3 rightAnchor = WheelCollider.SuspensionTopWorld(position, rotation, rightWheel.LocalAnchor, rightWheel.SuspensionDistance, rightWheel.Frequency, gravityMagnitude);
                 world.ApplyImpulseAtPoint(body, up * impulse, leftAnchor);
                 world.ApplyImpulseAtPoint(body, -up * impulse, rightAnchor);
                 break;
@@ -391,7 +406,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
                 continue;
             foreach (Component component in gameObject.Components)
             {
-                if (component is not PhysicsJointComponent joint || !joint.Enabled)
+                if (component is not PhysicsJoint joint || !joint.Enabled)
                     continue;
                 if (joint.ConnectedBody.Resolve(_attachedScene) is not { } connected
                     || !TryGetJointBody(gameObject, out BodyHandle bodyA)
@@ -451,12 +466,12 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         {
             if (!gameObject.IsActiveInHierarchy)
                 continue;
-            RigidBodyComponent? rigidBody = gameObject.GetComponent<RigidBodyComponent>();
+            Rigidbody? rigidBody = gameObject.GetComponent<Rigidbody>();
             if (rigidBody is { Enabled: false })
                 continue;
-            bool hasCollider = gameObject.Components.OfType<ColliderComponent>().Any(collider => collider.IsActiveInHierarchy);
+            bool hasCollider = gameObject.Components.OfType<Collider>().Any(collider => collider.IsActiveInHierarchy);
             bool foldedIntoAncestor = hasCollider
-                && gameObject.GetComponent<RigidBodyComponent>() is null
+                && gameObject.GetComponent<Rigidbody>() is null
                 && HasRigidBodyAncestor(gameObject);
             if ((rigidBody is not null || hasCollider) && !foldedIntoAncestor)
                 active.Add(gameObject);
@@ -469,7 +484,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         }
         foreach (GameObject gameObject in active)
         {
-            RigidBodyComponent? rigidBody = gameObject.GetComponent<RigidBodyComponent>();
+            Rigidbody? rigidBody = gameObject.GetComponent<Rigidbody>();
             RigidBodyKind kind = rigidBody?.Kind ?? RigidBodyKind.Static;
             float mass = rigidBody?.Mass ?? 1f;
             List<PhysicsColliderSpec> specs = CollectSpecs(gameObject, kind);
@@ -534,7 +549,7 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         Vector3 scale = gameObject.Transform.Scale;
         scale = new Vector3(MathF.Abs(scale.X), MathF.Abs(scale.Y), MathF.Abs(scale.Z));
         List<PhysicsColliderSpec> specs = [];
-        foreach (ColliderComponent collider in gameObject.Components.OfType<ColliderComponent>())
+        foreach (Collider collider in gameObject.Components.OfType<Collider>())
         {
             if (!collider.IsActiveInHierarchy)
                 continue;
@@ -565,9 +580,9 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         {
             if (!child.IsActiveInHierarchy)
                 continue;
-            if (child.GetComponent<RigidBodyComponent>() is not null)
+            if (child.GetComponent<Rigidbody>() is not null)
                 continue;
-            foreach (ColliderComponent collider in child.Components.OfType<ColliderComponent>())
+            foreach (Collider collider in child.Components.OfType<Collider>())
             {
                 if (!collider.IsActiveInHierarchy)
                     continue;
@@ -595,13 +610,15 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
         {
             if (!child.IsActiveInHierarchy)
                 continue;
-            foreach (WheelColliderComponent wheel in child.Components.OfType<WheelColliderComponent>())
+            foreach (WheelCollider wheel in child.Components.OfType<WheelCollider>())
             {
                 if (!wheel.IsActiveInHierarchy || wheel.Radius <= 0f)
                     continue;
+                float neutralTravel = WheelCollider.ComputeNeutralTravel(wheel.SuspensionDistance, wheel.Frequency, MathF.Abs(Gravity.Y));
+                Vector3 cylinderCenter = wheel.LocalAnchor + new Vector3(0f, neutralTravel, 0f);
                 specs.Add(new PhysicsColliderSpec(
                     PhysicsColliderKind.Cylinder,
-                    wheel.LocalAnchor,
+                    cylinderCenter,
                     Quaternion.FromAxisAngle(new Vector3(0f, 0f, 1f), -MathF.PI * 0.5f),
                     Vector3.Zero,
                     wheel.Radius,
@@ -617,14 +634,14 @@ public sealed class PhysicsModule : IUpdatableModule, IFixedUpdateModule
     private static bool HasRigidBodyAncestor(GameObject gameObject)
     {
         for (GameObject? current = gameObject.Parent; current is not null; current = current.Parent)
-            if (current.GetComponent<RigidBodyComponent>() is not null)
+            if (current.GetComponent<Rigidbody>() is not null)
                 return true;
         return false;
     }
 
     private int ResolveBodyLayer(GameObject gameObject)
     {
-        foreach (ColliderComponent collider in gameObject.Components.OfType<ColliderComponent>())
+        foreach (Collider collider in gameObject.Components.OfType<Collider>())
         {
             if (!collider.IsActiveInHierarchy)
                 continue;

@@ -13,10 +13,10 @@ internal static class ScriptComponentInspector
         if (_registered)
             return;
         _registered = true;
-        ComponentInspectorHooks.Register<ScriptComponent>(Draw);
+        ComponentInspectorHooks.Register<Script>(Draw);
     }
 
-    private static bool Draw(EditorContext context, ScriptComponent component)
+    private static bool Draw(EditorContext context, Script component)
     {
         ImGui.PushID(component.Id.ToString("N"));
         DrawEnabled(context, component);
@@ -37,7 +37,7 @@ internal static class ScriptComponentInspector
         return true;
     }
 
-    private static void DrawEnabled(EditorContext context, ScriptComponent component)
+    private static void DrawEnabled(EditorContext context, Script component)
     {
         bool enabled = component.Enabled;
         if (ImGui.Checkbox("##scriptEnabled", ref enabled))
@@ -52,7 +52,7 @@ internal static class ScriptComponentInspector
         ImGui.SameLine();
     }
 
-    private static void DrawScriptSelector(EditorContext context, ScriptComponent component)
+    private static void DrawScriptSelector(EditorContext context, Script component)
     {
         ImGui.PushStyleColor(ImGuiCol.Text, EditorTheme.MutedText);
         ImGui.TextUnformatted("Script");
@@ -74,16 +74,16 @@ internal static class ScriptComponentInspector
         ImGui.EndCombo();
     }
 
-    private static void SetScript(EditorContext context, ScriptComponent component, string value)
+    private static void SetScript(EditorContext context, Script component, string value)
     {
         InspectorEditing.SetComponentProperty<string>(
             context,
             component.Id,
-            nameof(ScriptComponent.Script),
-            current => ((ScriptComponent)current).Script,
+            nameof(Script.Script),
+            current => ((Script)current).Script,
             (current, next) =>
             {
-                ScriptComponent script = (ScriptComponent)current;
+                Script script = (Script)current;
                 script.Script = next;
                 script.RecreateInstance();
             },
@@ -101,7 +101,7 @@ internal static class ScriptComponentInspector
                 continue;
             if (property.GetCustomAttribute<InspectorHiddenAttribute>() is not null)
                 continue;
-            if (property.Name == nameof(ScriptComponent.Script))
+            if (property.Name == nameof(Script.Script))
                 continue;
             if (!ComponentPropertyInspector.IsSupportedType(property.PropertyType))
                 continue;

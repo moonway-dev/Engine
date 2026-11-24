@@ -1,3 +1,4 @@
+using Engine.Mathematics;
 using Engine.Rendering;
 using Engine.RHI;
 using Xunit;
@@ -6,6 +7,34 @@ namespace Engine.Tests.Rendering;
 
 public sealed class RayTracingQualityControllerTests
 {
+    [Theory]
+    [InlineData(0, 1600, 900, 400, 225)]
+    [InlineData(1, 1600, 900, 800, 450)]
+    [InlineData(2, 1600, 900, 1200, 675)]
+    [InlineData(3, 1600, 900, 1600, 900)]
+    [InlineData(0, 801, 451, 201, 113)]
+    [InlineData(0, 1, 1, 1, 1)]
+    [InlineData(1, 800, 450, 400, 225)]
+    public void Profile_LogicalExtentScalesWithinAllocatedTexture(int stage, int width, int height, int expectedWidth, int expectedHeight)
+    {
+        Size2D extent = RayTracingQualityProfile.FromStage(stage).LogicalExtent(new Size2D(width, height));
+        Assert.Equal(new Size2D(expectedWidth, expectedHeight), extent);
+    }
+
+    [Fact]
+    public void Profiles_IncreaseRayWorkMonotonically()
+    {
+        long previousWork = 0;
+        for (int stage = 0; stage <= 3; stage++)
+        {
+            RayTracingQualityProfile profile = RayTracingQualityProfile.FromStage(stage);
+            Size2D extent = profile.LogicalExtent(new Size2D(1600, 900));
+            long work = (long)extent.Width * extent.Height * profile.Samples;
+            Assert.True(work > previousWork);
+            previousWork = work;
+        }
+    }
+
     [Fact]
     public void Update_IgnoresUnsupportedIncompleteAndStaleTimings()
     {

@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using Engine.Core;
 using Engine.Physics;
 using Engine.Scene;

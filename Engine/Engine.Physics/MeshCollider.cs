@@ -3,7 +3,7 @@ using Engine.Scene;
 
 namespace Engine.Physics;
 
-public sealed class MeshColliderComponent : ColliderComponent
+public sealed class MeshCollider : Collider
 {
     [InspectorTooltip("Path to the model whose triangles form the collision shape.")]
     public string ResourceKey { get; set; } = string.Empty;

@@ -4,7 +4,7 @@ using Engine.Scene;
 
 namespace Engine.Physics;
 
-public abstract class PhysicsJointComponent : Component
+public abstract class PhysicsJoint : Component
 {
     [InspectorTooltip("Connected body; drag a Hierarchy object with a Rigidbody here.")]
     public EntityReference ConnectedBody { get; set; }
@@ -20,7 +20,7 @@ public abstract class PhysicsJointComponent : Component
 }
 
 [InspectorTooltip("Ball joint that keeps two anchors together while allowing free rotation.")]
-public sealed class BallJointComponent : PhysicsJointComponent
+public sealed class BallJoint : PhysicsJoint
 {
     [InspectorTooltip("Anchor on this object, in its local space.")]
     public Vector3 LocalAnchor { get; set; }
@@ -43,7 +43,7 @@ public sealed class BallJointComponent : PhysicsJointComponent
 }
 
 [InspectorTooltip("Welds two bodies together, preserving their relative pose at creation.")]
-public sealed class FixedJointComponent : PhysicsJointComponent
+public sealed class FixedJoint : PhysicsJoint
 {
     internal override string BuildSignature() => $"Fixed|{ConnectedBody.Id}";
 
@@ -56,7 +56,7 @@ public sealed class FixedJointComponent : PhysicsJointComponent
 }
 
 [InspectorTooltip("Rotates around a single axis with an optional motor.")]
-public sealed class HingeJointComponent : PhysicsJointComponent
+public sealed class HingeJoint : PhysicsJoint
 {
     [InspectorTooltip("Anchor on this object, in its local space.")]
     public Vector3 LocalAnchor { get; set; }
@@ -119,7 +119,7 @@ public sealed class HingeJointComponent : PhysicsJointComponent
 }
 
 [InspectorTooltip("Soft spring that pulls two anchors toward a target distance.")]
-public sealed class SpringJointComponent : PhysicsJointComponent
+public sealed class SpringJoint : PhysicsJoint
 {
     [InspectorTooltip("Anchor on this object, in its local space.")]
     public Vector3 LocalAnchor { get; set; }
@@ -151,7 +151,7 @@ public sealed class SpringJointComponent : PhysicsJointComponent
 }
 
 [InspectorTooltip("Ball joint with cone (swing) and twist limits for ragdoll-style limbs.")]
-public sealed class CharacterJointComponent : PhysicsJointComponent
+public sealed class CharacterJoint : PhysicsJoint
 {
     [InspectorTooltip("Anchor on this object, in its local space.")]
     public Vector3 LocalAnchor { get; set; }
@@ -186,7 +186,7 @@ public sealed class CharacterJointComponent : PhysicsJointComponent
 }
 
 [InspectorTooltip("Limits linear motion along this object's local X, Y and Z axes.")]
-public sealed class ConfigurableJointComponent : PhysicsJointComponent
+public sealed class ConfigurableJoint : PhysicsJoint
 {
     public JointMotion XMotion { get; set; } = JointMotion.Locked;
     public JointMotion YMotion { get; set; } = JointMotion.Locked;
@@ -235,7 +235,7 @@ public enum JointMotion
 }
 
 [InspectorTooltip("Constant force and torque applied every physics step.")]
-public sealed class ConstantForceComponent : Component
+public sealed class ConstantForce : Component
 {
     public Vector3 Force { get; set; }
     public Vector3 Torque { get; set; }

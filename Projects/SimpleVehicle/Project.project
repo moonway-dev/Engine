@@ -1,5 +1,5 @@
 {
-  "Exposure": 1.108,
+  "Exposure": 1,
   "LodPixelBudget": 320,
   "Shadows": {
     "Resolution": 2048,
@@ -19,8 +19,8 @@
   "ShadowConstantBias": 1.25,
   "ShadowSlopeBias": 1.75,
   "GiMode": 2,
-  "ScreenSpaceGiIntensity": 0.608,
-  "ScreenSpaceGiRadius": 1.117,
+  "ScreenSpaceGiIntensity": 0.5,
+  "ScreenSpaceGiRadius": 1.2,
   "RayTracingEnabled": true,
   "RayTracingReflectionsEnabled": true,
   "RayTracingReflectionStrength": 1,
@@ -28,11 +28,11 @@
   "RayTracingResolutionScale": 1,
   "RayTracingRayBias": 0.0015,
   "RayTracingMaxDistance": 1000,
-  "RayTracingReflectionRoughnessLimit": 0.542,
+  "RayTracingReflectionRoughnessLimit": 0.5,
   "ShadowMode": 2,
-  "RayTracingShadowQuality": 3,
-  "RayTracingReflectionQuality": 3,
-  "RayTracingGiQuality": 3,
+  "RayTracingShadowQuality": 2,
+  "RayTracingReflectionQuality": 2,
+  "RayTracingGiQuality": 2,
   "RayTracingAdaptiveQuality": true,
   "LastScene": "Scenes/SimpleVehicle.scene",
   "VSync": false,
@@ -59,6 +59,6 @@
     "Mode": "Managed",
     "Configuration": "Release",
     "OutputDirectory": "Builds",
-    "PackKey": "381962BE6C7A6D94F68B2C9FD65AA1A47A2C91ED988E915A4EA366FDE1B0688A"
+    "PackKey": "770BC23156077F66397EF08D707E99401E41FE7E3075D75C4F6DA5CFBDE75AC4"
   }
 }

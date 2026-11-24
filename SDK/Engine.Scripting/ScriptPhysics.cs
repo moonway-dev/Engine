@@ -33,6 +33,8 @@ public static class ScriptPhysics
 
     public static Func<Vector3, Vector3, float, GameObject?, ScriptRayHit?>? RayCaster { get; set; }
 
+    public static Func<Vector3, Vector3, float, float, GameObject?, ScriptRayHit?>? SphereCaster { get; set; }
+
     public static Func<GameObject, (Vector3 Position, Quaternion Rotation)>? InterpolatedPoseGetter { get; set; }
 
     public static (Vector3 Position, Quaternion Rotation) GetInterpolatedPose(GameObject gameObject) =>
@@ -74,6 +76,9 @@ public static class ScriptPhysics
 
     public static ScriptRayHit? RayCast(Vector3 origin, Vector3 direction, float maximumDistance, GameObject? ignore = null) =>
         RayCaster?.Invoke(origin, direction, maximumDistance, ignore);
+
+    public static ScriptRayHit? SphereCast(Vector3 origin, Vector3 direction, float maximumDistance, float radius, GameObject? ignore = null) =>
+        SphereCaster?.Invoke(origin, direction, maximumDistance, radius, ignore);
 
     public static Func<GameObject, GameObject, Vector3, Vector3, ScriptJoint?>? BallJointCreator { get; set; }
 

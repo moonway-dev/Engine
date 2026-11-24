@@ -3,23 +3,21 @@ using Engine.Scene;
 
 namespace Engine.Physics;
 
-public sealed class BoxColliderComponent : ColliderComponent
+public sealed class SphereCollider : Collider
 {
-    [InspectorTooltip("Full box size in world units before object scale.")]
-    public Vector3 Size { get; set; } = new(1f, 1f, 1f);
+    [InspectorTooltip("Sphere radius in world units before object scale.")]
+    [InspectorRange(0.01f, 100f)]
+    public float Radius { get; set; } = 0.5f;
 
     internal override PhysicsColliderSpec CreateSpec(Vector3 scale, Func<string, PhysicsMeshData?>? meshResolver)
     {
         Vector3 effectiveScale = GetEffectiveScale(scale);
         return new PhysicsColliderSpec(
-            PhysicsColliderKind.Box,
+            PhysicsColliderKind.Sphere,
             Center * effectiveScale,
             Rotation,
-            new Vector3(
-                MathF.Abs(Size.X * effectiveScale.X),
-                MathF.Abs(Size.Y * effectiveScale.Y),
-                MathF.Abs(Size.Z * effectiveScale.Z)),
-            0f,
+            Vector3.Zero,
+            MathF.Max(0f, Radius) * MathF.Max(effectiveScale.X, MathF.Max(effectiveScale.Y, effectiveScale.Z)),
             string.Empty,
             null);
     }
@@ -28,6 +26,6 @@ public sealed class BoxColliderComponent : ColliderComponent
     {
         Transform owner = Owner.Transform;
         PhysicsColliderSpec spec = CreateSpec(AbsScale(owner.Scale), null);
-        DebugDraw.DrawWireBox(owner.Position + owner.Rotation.Rotate(spec.Center), spec.Size, owner.Rotation * spec.Rotation);
+        DebugDraw.DrawWireSphere(owner.Position + owner.Rotation.Rotate(spec.Center), spec.Radius);
     }
 }

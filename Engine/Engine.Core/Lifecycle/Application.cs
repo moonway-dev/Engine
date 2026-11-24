@@ -9,6 +9,7 @@ public sealed class Application
     private readonly IEngineModule[] _modules;
     private readonly List<IUpdatableModule> _updatableModules;
     private readonly List<IFixedUpdateModule> _fixedUpdateModules;
+    private readonly List<IFramePreparationModule> _framePreparationModules;
     private readonly Stopwatch _stopwatch = new();
     private double _lastRawTime;
 
@@ -20,6 +21,7 @@ public sealed class Application
         _modules = [.. modules];
         _updatableModules = [.. _modules.OfType<IUpdatableModule>()];
         _fixedUpdateModules = [.. _modules.OfType<IFixedUpdateModule>()];
+        _framePreparationModules = [.. _modules.OfType<IFramePreparationModule>()];
     }
 
     public void Run()
@@ -91,6 +93,8 @@ public sealed class Application
                 Context.Clock.FixedStepsTakenThisFrame,
                 Context.Clock.FixedStepsPending,
                 Context.Clock.DroppedFixedTimeSecondsThisFrame);
+            foreach (IFramePreparationModule module in _framePreparationModules)
+                module.PrepareFrame(frameTime);
             foreach (IUpdatableModule module in _updatableModules)
                 module.Update(frameTime);
         }

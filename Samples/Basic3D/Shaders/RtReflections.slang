@@ -41,6 +41,7 @@ void rayGen()
     float roughness = clamp(surfaceNormal.w, 0.045, 1.0);
     float roughnessLimit = clamp(view.settings.x, 0.045, 1.0);
     float replacement = (1.0 - smoothstep(roughnessLimit * 0.75, roughnessLimit, roughness));
+    replacement *= step(0.999, primarySpecularResponse.Load(int3(sourcePixel, 0)).a);
     if (depth >= view.extentAndFrame.w || dot(surfaceNormal.xyz, surfaceNormal.xyz) < 1e-6 || replacement <= 0.0)
     {
         reflectionOutput[pixel] = float4(0.0);
@@ -60,7 +61,7 @@ void rayGen()
     float3 environmentDirection = normalize(reflect(-viewDirection, normal));
     float normalOffset = rtSurfaceOffset(position, normal, view);
     uint state = rtHash((pixel.y * extent.x + pixel.x) ^ rtHash(uint(view.extentAndFrame.z)));
-    uint sampleCount = clamp(uint(round(rtSampleCount(view, 1u) * (1.0 + roughness * 3.0))), 1u, RtMaximumSamples);
+    uint sampleCount = rtSampleCount(view, 1u);
     float3 radiance = float3(0.0);
     for (uint sample = 0; sample < sampleCount; sample++)
     {

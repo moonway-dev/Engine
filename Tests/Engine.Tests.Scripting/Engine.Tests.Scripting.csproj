@@ -9,6 +9,10 @@
     <ProjectReference Include="..\..\Engine\Engine.Editor\Engine.Editor.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\Projects\SimpleVehicle\Scripts\CarController.cs" Link="Vehicle\CarController.cs" />
+    <Compile Include="..\..\Projects\SimpleVehicle\Scripts\ChaseCamera.cs" Link="Vehicle\ChaseCamera.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

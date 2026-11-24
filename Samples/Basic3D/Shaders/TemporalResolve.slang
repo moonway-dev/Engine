@@ -21,10 +21,35 @@ struct TemporalConstants
 
 uint2 colorPixel(uint2 pixel)
 {
-    uint width;
-    uint height;
-    currentColor.GetDimensions(width, height);
-    return min(uint2((float2(pixel) + 0.5) * float2(constants.sourceExtent) / float2(constants.extent)), uint2(width, height) - 1u);
+    return min(uint2((float2(pixel) + 0.5) * float2(constants.sourceExtent) / float2(constants.extent)), constants.sourceExtent - 1u);
+}
+
+uint2 neighborhoodPixel(uint2 pixel, int2 offset)
+{
+    return uint2(clamp(int2(colorPixel(pixel)) + offset, int2(0), int2(constants.sourceExtent) - 1));
+}
+
+float4 reconstructedColor(uint2 pixel, float depth)
+{
+    if (all(constants.sourceExtent == constants.extent))
+        return currentColor.Load(int3(pixel, 0));
+    float2 coordinate = (float2(pixel) + 0.5) * float2(constants.sourceExtent) / float2(constants.extent) - 0.5;
+    int2 origin = int2(floor(coordinate));
+    float2 fraction = frac(coordinate);
+    float4 total = float4(0.0);
+    float totalWeight = 0.0;
+    for (int y = 0; y <= 1; y++)
+    for (int x = 0; x <= 1; x++)
+    {
+        uint2 samplePixel = uint2(clamp(origin + int2(x, y), int2(0), int2(constants.sourceExtent) - 1));
+        uint2 depthPixel = min(uint2((float2(samplePixel) + 0.5) * float2(constants.extent) / float2(constants.sourceExtent)), constants.extent - 1u);
+        float sampleDepth = currentDepth.Load(int3(depthPixel, 0));
+        float weight = (x == 0 ? 1.0 - fraction.x : fraction.x) * (y == 0 ? 1.0 - fraction.y : fraction.y);
+        weight *= exp(-abs(sampleDepth - depth) / max(constants.depthThreshold * max(abs(depth), 1e-3), 1e-6));
+        total += currentColor.Load(int3(samplePixel, 0)) * weight;
+        totalWeight += weight;
+    }
+    return totalWeight > 1e-6 ? total / totalWeight : currentColor.Load(int3(colorPixel(pixel), 0));
 }
 
 float3 neighborhoodMinimum(uint2 pixel)
@@ -33,8 +58,8 @@ float3 neighborhoodMinimum(uint2 pixel)
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++)
     {
-        int2 samplePixel = clamp(int2(pixel) + int2(x, y), int2(0), int2(constants.extent) - 1);
-        minimumColor = min(minimumColor, currentColor.Load(int3(colorPixel(uint2(samplePixel)), 0)).rgb);
+        uint2 samplePixel = neighborhoodPixel(pixel, int2(x, y));
+        minimumColor = min(minimumColor, currentColor.Load(int3(samplePixel, 0)).rgb);
     }
     return minimumColor;
 }
@@ -45,8 +70,8 @@ float3 neighborhoodMaximum(uint2 pixel)
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++)
     {
-        int2 samplePixel = clamp(int2(pixel) + int2(x, y), int2(0), int2(constants.extent) - 1);
-        maximumColor = max(maximumColor, currentColor.Load(int3(colorPixel(uint2(samplePixel)), 0)).rgb);
+        uint2 samplePixel = neighborhoodPixel(pixel, int2(x, y));
+        maximumColor = max(maximumColor, currentColor.Load(int3(samplePixel, 0)).rgb);
     }
     return maximumColor;
 }
@@ -57,8 +82,8 @@ float3 neighborhoodMean(uint2 pixel)
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++)
     {
-        int2 samplePixel = clamp(int2(pixel) + int2(x, y), int2(0), int2(constants.extent) - 1);
-        total += currentColor.Load(int3(colorPixel(uint2(samplePixel)), 0)).rgb;
+        uint2 samplePixel = neighborhoodPixel(pixel, int2(x, y));
+        total += currentColor.Load(int3(samplePixel, 0)).rgb;
     }
     return total / 9.0;
 }
@@ -69,8 +94,8 @@ float3 neighborhoodVariance(uint2 pixel, float3 mean)
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++)
     {
-        int2 samplePixel = clamp(int2(pixel) + int2(x, y), int2(0), int2(constants.extent) - 1);
-        float3 difference = currentColor.Load(int3(colorPixel(uint2(samplePixel)), 0)).rgb - mean;
+        uint2 samplePixel = neighborhoodPixel(pixel, int2(x, y));
+        float3 difference = currentColor.Load(int3(samplePixel, 0)).rgb - mean;
         total += difference * difference;
     }
     return total / 9.0;
@@ -84,8 +109,8 @@ void csMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (any(pixel >= constants.extent))
         return;
 
-    float4 current = currentColor.Load(int3(colorPixel(pixel), 0));
     float depth = currentDepth.Load(int3(pixel, 0));
+    float4 current = reconstructedColor(pixel, depth);
     if (constants.historyValid == 0)
     {
         resolvedHistory[pixel] = float4(current.rgb, depth);

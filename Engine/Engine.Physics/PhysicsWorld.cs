@@ -211,10 +211,19 @@ public sealed class PhysicsWorld : IDisposable
             if (children.Count == 0)
                 throw new ArgumentException("At least one valid collider is required.", nameof(colliders));
 
-            float weight = kind == RigidBodyKind.Dynamic ? MathF.Max(mass, Epsilon) / children.Count : 1f;
+            float totalWeightScale = 0f;
+            if (kind == RigidBodyKind.Dynamic)
+            {
+                foreach ((PhysicsColliderSpec spec, _) in children)
+                    totalWeightScale += MathF.Max(spec.WeightScale, 0f);
+                totalWeightScale = MathF.Max(totalWeightScale, Epsilon);
+            }
+            float weight = kind == RigidBodyKind.Dynamic ? MathF.Max(mass, Epsilon) : 1f;
             foreach ((PhysicsColliderSpec spec, RigidPose pose) in children)
             {
-                float childWeight = MathF.Max(weight * spec.WeightScale, Epsilon);
+                float childWeight = kind == RigidBodyKind.Dynamic
+                    ? MathF.Max(weight * MathF.Max(spec.WeightScale, 0f) / totalWeightScale, Epsilon)
+                    : 1f;
                 switch (spec.Kind)
                 {
                     case PhysicsColliderKind.Sphere:

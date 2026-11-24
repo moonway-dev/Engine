@@ -1,3 +1,4 @@
+using Lifetime = Engine.Scene.Lifetime;
 using System.Reflection;
 using Engine.Core;
 using Engine.Scripting;
@@ -24,7 +25,7 @@ public sealed class SceneBehavioursTests
     {
         SceneModel scene = new("Behaviours");
         GameObject spinning = scene.CreateObject("Spinner");
-        RotatorComponent component = spinning.AddComponent<RotatorComponent>();
+        Rotator component = spinning.AddComponent<Rotator>();
         component.DegreesPerSecond = 90f;
         using SceneBehavioursModule module = CreateModule(scene);
         module.Update(new FrameTime(1f, 1f, 0f, 1f / 60f, 0));
@@ -38,7 +39,7 @@ public sealed class SceneBehavioursTests
     {
         SceneModel scene = new("Behaviours");
         GameObject spinning = scene.CreateObject("Spinner");
-        RotatorComponent component = spinning.AddComponent<RotatorComponent>();
+        Rotator component = spinning.AddComponent<Rotator>();
         component.DegreesPerSecond = 360f;
         component.Enabled = false;
         using SceneBehavioursModule module = CreateModule(scene);
@@ -51,7 +52,7 @@ public sealed class SceneBehavioursTests
     {
         SceneModel scene = new("Behaviours");
         GameObject watcher = scene.CreateObject("Watcher");
-        LookAtComponent component = watcher.AddComponent<LookAtComponent>();
+        LookAt component = watcher.AddComponent<LookAt>();
         component.TurnSpeed = 0f;
         GameObject target = scene.CreateObject("Target");
         target.Transform.Position = new Vector3(0f, 0f, -10f);
@@ -67,7 +68,7 @@ public sealed class SceneBehavioursTests
         SceneModel scene = new("Behaviours");
         GameObject follower = scene.CreateObject("Follower");
         follower.Transform.Position = new Vector3(0f, 0f, 0f);
-        FollowComponent component = follower.AddComponent<FollowComponent>();
+        Follow component = follower.AddComponent<Follow>();
         component.Smoothness = 0f;
         GameObject target = scene.CreateObject("Target");
         target.Transform.Position = new Vector3(5f, 1f, 3f);
@@ -82,7 +83,7 @@ public sealed class SceneBehavioursTests
     {
         SceneModel scene = new("Behaviours");
         GameObject doomed = scene.CreateObject("Doomed");
-        LifetimeComponent component = doomed.AddComponent<LifetimeComponent>();
+        Lifetime component = doomed.AddComponent<Lifetime>();
         component.Seconds = 0.5f;
         using SceneBehavioursModule module = CreateModule(scene);
         module.Update(new FrameTime(0.3f, 0.3f, 0f, 1f / 60f, 0));
@@ -96,21 +97,21 @@ public sealed class SceneBehavioursTests
     {
         SceneModel scene = new("Behaviours");
         GameObject watcher = scene.CreateObject("Watcher");
-        LookAtComponent component = watcher.AddComponent<LookAtComponent>();
+        LookAt component = watcher.AddComponent<LookAt>();
         GameObject target = scene.CreateObject("Target");
         component.Target = new EntityReference(target.Id);
         component.KeepUpright = false;
 
         string json = SceneSerializer.ToJson(scene);
         SceneModel loaded = SceneSerializer.FromJson(json, scene.ComponentRegistry);
-        LookAtComponent loadedComponent = Assert.IsType<LookAtComponent>(loaded.FindById(watcher.Id)!.GetComponent<LookAtComponent>());
+        LookAt loadedComponent = Assert.IsType<LookAt>(loaded.FindById(watcher.Id)!.GetComponent<LookAt>());
         Assert.Equal(target.Id, loadedComponent.Target.Id);
         Assert.False(loadedComponent.KeepUpright);
 
         SceneModel remapped = scene.Clone(CloneIdPolicy.GenerateNewIds);
         GameObject newWatcher = remapped.EnumerateHierarchy().First(root => root.Name == "Watcher");
         GameObject newTarget = remapped.EnumerateHierarchy().First(root => root.Name == "Target");
-        LookAtComponent remappedComponent = Assert.IsType<LookAtComponent>(newWatcher.GetComponent<LookAtComponent>());
+        LookAt remappedComponent = Assert.IsType<LookAt>(newWatcher.GetComponent<LookAt>());
         Assert.Equal(newTarget.Id, remappedComponent.Target.Id);
     }
 
@@ -139,7 +140,7 @@ public sealed class SceneBehavioursTests
             GameObject holder = scene.CreateObject("Holder");
             GameObject target = scene.CreateObject("Target");
             GameObject muzzleParent = scene.CreateObject("Muzzle");
-            ScriptComponent component = (ScriptComponent)holder.AddComponent("RefHolder");
+            Script component = (Script)holder.AddComponent("RefHolder");
             component.Instance!.GetType().GetField("Target")!.SetValue(component.Instance, target);
             component.Instance!.GetType().GetField("Muzzle")!.SetValue(component.Instance, muzzleParent.Transform);
 
@@ -151,7 +152,7 @@ public sealed class SceneBehavioursTests
             Assert.Equal(muzzleParent.Id, Guid.Parse(properties["Muzzle"].GetString()!));
 
             GameObject holderCopy = scene.CreateObject("HolderCopy");
-            ScriptComponent copy = (ScriptComponent)holderCopy.AddComponent("RefHolder");
+            Script copy = (Script)holderCopy.AddComponent("RefHolder");
             SceneSerializer.ApplyProperties(copy, properties);
             Assert.Same(target, copy.Instance!.GetType().GetField("Target")!.GetValue(copy.Instance));
             Assert.Same(muzzleParent.Transform, copy.Instance!.GetType().GetField("Muzzle")!.GetValue(copy.Instance));

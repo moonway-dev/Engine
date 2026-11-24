@@ -17,6 +17,8 @@ public sealed record MaterialProperties
     public float Metallic { get; init; }
     public float Roughness { get; init; } = 0.5f;
     public float EmissiveIntensity { get; init; }
+    public float Opacity { get; init; } = 1f;
+    public bool Transparent { get; init; }
     public Vector3 EmissionColor { get; init; } = Vector3.One;
     public Vector2 UvScale { get; init; } = Vector2.One;
     public Vector2 UvOffset { get; init; } = Vector2.Zero;
@@ -33,7 +35,7 @@ public sealed record MaterialProperties
     public AssetReference EmissionTexture { get; init; }
     public bool LegacyEmission { get; init; }
 
-    public static MaterialProperties FromComponent(MeshRendererComponent component)
+    public static MaterialProperties FromComponent(MeshRenderer component)
     {
         ArgumentNullException.ThrowIfNull(component);
         return new MaterialProperties

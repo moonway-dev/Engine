@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using Engine.Core;
 using Engine.Editor.Input;
 using Engine.Editor.Commands;
@@ -251,7 +253,7 @@ public sealed class EditorOverlay : IDisposable
     private void AssignMaterialUnderCursor(AssetDragPayload payload)
     {
         PickingHit? hit = _renderer.PickEditorView(new Vector2(_sceneView.MouseNormalized.X, _sceneView.MouseNormalized.Y));
-        MeshRendererComponent? renderer = hit?.GameObject.GetComponent<MeshRendererComponent>();
+        MeshRenderer? renderer = hit?.GameObject.GetComponent<MeshRenderer>();
         if (renderer is null)
         {
             _context.Error = "Drop materials onto an object with a MeshRenderer in the Scene View.";
@@ -293,7 +295,7 @@ public sealed class EditorOverlay : IDisposable
         {
             GameObject created = _context.Document.Scene.CreateObject(Path.GetFileNameWithoutExtension(payload.RelativePath));
             created.Transform.Position = position;
-            created.AddComponent<MeshRendererComponent>().ResourceKey = payload.RelativePath;
+            created.AddComponent<MeshRenderer>().ResourceKey = payload.RelativePath;
             createdId = created.Id;
             _context.Document.Select(created);
         }), false);
@@ -346,14 +348,14 @@ public sealed class EditorOverlay : IDisposable
                     {
                         GameObject child = _context.Document.Scene.CreateObject(part.Name);
                         child.SetParent(root);
-                        MeshRendererComponent renderer = child.AddComponent<MeshRendererComponent>();
+                        MeshRenderer renderer = child.AddComponent<MeshRenderer>();
                         renderer.ResourceKey = pending.Path;
                         renderer.PartId = part.Id;
                     }
                 }
                 else
                 {
-                    root.AddComponent<MeshRendererComponent>().ResourceKey = pending.Path;
+                    root.AddComponent<MeshRenderer>().ResourceKey = pending.Path;
                     if (model.Parts.Length > 256)
                         _context.Error = "Model has more than 256 parts; kept combined to avoid excessive draw calls.";
                 }
@@ -367,7 +369,7 @@ public sealed class EditorOverlay : IDisposable
     private void AssignDroppedTexture(AssetDragPayload payload)
     {
         GameObject? selected = _context.Document.SelectedObject;
-        MeshRendererComponent? component = selected?.GetComponent<MeshRendererComponent>();
+        MeshRenderer? component = selected?.GetComponent<MeshRenderer>();
         if (component is null)
             return;
         if (!component.MaterialAsset.IsEmpty)
@@ -381,16 +383,16 @@ public sealed class EditorOverlay : IDisposable
         Guid componentId = component.Id;
         _context.Document.Execute(new PropertyCommand<AssetReference>(
             "Set Albedo Texture",
-            (componentId, nameof(MeshRendererComponent.AlbedoTexture)),
+            (componentId, nameof(MeshRenderer.AlbedoTexture)),
             () => ResolveMeshRenderer(componentId).AlbedoTexture,
             value => ResolveMeshRenderer(componentId).AlbedoTexture = value,
             before,
             after), false);
     }
 
-    private MeshRendererComponent ResolveMeshRenderer(Guid id) =>
-        _context.Document.Scene.FindComponentById(id) as MeshRendererComponent
-        ?? throw new InvalidOperationException("The MeshRendererComponent no longer exists.");
+    private MeshRenderer ResolveMeshRenderer(Guid id) =>
+        _context.Document.Scene.FindComponentById(id) as MeshRenderer
+        ?? throw new InvalidOperationException("The MeshRenderer no longer exists.");
 
     private Vector3 GetDropPosition()
     {

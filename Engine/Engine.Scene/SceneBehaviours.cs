@@ -20,11 +20,11 @@ public sealed class SceneBehavioursModule : IUpdatableModule, IFixedUpdateModule
 
     public void Initialize(IEngineContext context)
     {
-        ComponentRegistry.RegisterGlobal(() => new RotatorComponent());
-        ComponentRegistry.RegisterGlobal(() => new OscillatorComponent());
-        ComponentRegistry.RegisterGlobal(() => new LookAtComponent());
-        ComponentRegistry.RegisterGlobal(() => new FollowComponent());
-        ComponentRegistry.RegisterGlobal(() => new LifetimeComponent());
+        ComponentRegistry.RegisterGlobal(() => new Rotator());
+        ComponentRegistry.RegisterGlobal(() => new Oscillator());
+        ComponentRegistry.RegisterGlobal(() => new LookAt());
+        ComponentRegistry.RegisterGlobal(() => new Follow());
+        ComponentRegistry.RegisterGlobal(() => new Lifetime());
         DestroyRequested = QueueDestroy;
         _initialized = true;
     }

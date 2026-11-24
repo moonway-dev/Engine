@@ -1,4 +1,5 @@
 using Engine.Mathematics;
+using Engine.Platform;
 using Engine.Physics;
 using Engine.Scene;
 using Engine.Scripting;
@@ -61,23 +62,50 @@ public sealed class CarController : ScriptBehaviour
     [InspectorTooltip("Key used as a handbrake.")]
     public KeyCode HandbrakeKey = KeyCode.Space;
 
-    private WheelColliderComponent[] _wheels = [];
+    private WheelCollider[] _wheels = [];
     private float _steer;
     private float _airborneTime;
+    private float _throttle;
+    private float _steeringInput;
+    private bool _handbrake;
 
     public override void OnStart()
     {
-        _wheels = [.. Owner.GetComponentsInChildren<WheelColliderComponent>()];
+        _wheels = [.. Owner.GetComponentsInChildren<WheelCollider>()];
     }
 
     public override void OnUpdate()
     {
-        if (_wheels.Length == 0)
+        _throttle = MathUtil.Clamp(ScriptInput.GetAxis("Vertical"), -1f, 1f);
+        _steeringInput = MathUtil.Clamp(ScriptInput.GetAxis("Horizontal"), -1f, 1f);
+        _handbrake = ScriptInput.IsKeyDown(HandbrakeKey);
+    }
+
+    public override void OnDisable()
+    {
+        _throttle = 0f;
+        _steeringInput = 0f;
+        _handbrake = false;
+        _steer = 0f;
+        foreach (WheelCollider wheel in _wheels)
+        {
+            wheel.MotorTorque = 0f;
+            wheel.BrakeTorque = 0f;
+            wheel.SteerAngle = 0f;
+            wheel.LateralGrip = 1f;
+        }
+    }
+
+    public override void OnFixedUpdate()
+    {
+        if (_wheels.Length == 0 || !ScriptPhysics.HasBody(Owner))
             return;
-        float throttle = ScriptInput.GetAxis("Vertical");
-        float steerInput = ScriptInput.GetAxis("Horizontal");
-        bool handbrake = ScriptInput.IsKeyDown(HandbrakeKey);
-        float deltaTime = ScriptTime.DeltaTime;
+        float throttle = _throttle;
+        float steerInput = _steeringInput;
+        bool handbrake = _handbrake;
+        float deltaTime = ScriptTime.FixedDeltaTime;
+        if (MathF.Abs(throttle) > MathUtil.Epsilon || handbrake)
+            ScriptPhysics.Wake(Owner);
 
         Vector3 velocity = ScriptPhysics.GetLinearVelocity(Owner);
         float forwardSpeed = Vector3.Dot(velocity, Transform.Forward);
@@ -95,9 +123,9 @@ public sealed class CarController : ScriptBehaviour
         float frontBrake = braking ? BrakeTorque * FrontBrakeBias : 0f;
         float rearBrake = braking ? BrakeTorque * (1f - FrontBrakeBias) : 0f;
 
-        foreach (WheelColliderComponent wheel in _wheels)
+        foreach (WheelCollider wheel in _wheels)
         {
-            bool front = wheel.Transform.LocalPosition.Z < 0f;
+            bool front = wheel.LocalAnchor.Z < 0f;
             wheel.SteerAngle = front ? _steer : 0f;
             wheel.LateralGrip = 1f;
             wheel.MotorTorque = 0f;

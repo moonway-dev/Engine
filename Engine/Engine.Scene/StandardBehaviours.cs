@@ -9,7 +9,7 @@ public enum BehaviourSpace
     World,
 }
 
-public sealed class RotatorComponent : Component, ISceneBehaviour
+public sealed class Rotator : Component, ISceneBehaviour
 {
     public Vector3 Axis { get; set; } = Vector3.Up;
     [InspectorRange(0f, 720f)]
@@ -31,7 +31,7 @@ public sealed class RotatorComponent : Component, ISceneBehaviour
     }
 }
 
-public sealed class OscillatorComponent : Component, ISceneBehaviour
+public sealed class Oscillator : Component, ISceneBehaviour
 {
     public Vector3 Offset { get; set; } = new(0f, 1f, 0f);
     [InspectorRange(0.01f, 10f)]
@@ -60,7 +60,7 @@ public sealed class OscillatorComponent : Component, ISceneBehaviour
     }
 }
 
-public sealed class LookAtComponent : Component, ISceneBehaviour
+public sealed class LookAt : Component, ISceneBehaviour
 {
     [InspectorTooltip("Object to face; drag from the Hierarchy.")]
     public EntityReference Target { get; set; }
@@ -89,7 +89,7 @@ public sealed class LookAtComponent : Component, ISceneBehaviour
     }
 }
 
-public sealed class FollowComponent : Component, ISceneBehaviour
+public sealed class Follow : Component, ISceneBehaviour
 {
     [InspectorTooltip("Object to follow; drag from the Hierarchy.")]
     public EntityReference Target { get; set; }
@@ -117,7 +117,7 @@ public sealed class FollowComponent : Component, ISceneBehaviour
     }
 }
 
-public sealed class LifetimeComponent : Component, ISceneBehaviour
+public sealed class Lifetime : Component, ISceneBehaviour
 {
     [InspectorRange(0.01f, 600f)]
     public float Seconds { get; set; } = 3f;

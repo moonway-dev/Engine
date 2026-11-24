@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using Engine.Editor.Commands;
 using Engine.Editor.Panels;
 using Engine.Mathematics;

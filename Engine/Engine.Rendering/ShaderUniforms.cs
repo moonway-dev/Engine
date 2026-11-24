@@ -63,6 +63,8 @@ public struct MaterialData
     public uint MetallicChannel;
     public uint RoughnessChannel;
     public uint AmbientOcclusionChannel;
+    public float Opacity;
+    public uint Transparent;
     public float Padding0;
 }
 

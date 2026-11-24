@@ -64,7 +64,7 @@ public sealed class ScriptCompilerTests : IDisposable
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Spinner");
         Component component = gameObject.AddComponent("SpinTestA");
-        ScriptComponent script = Assert.IsAssignableFrom<ScriptComponent>(component);
+        Script script = Assert.IsAssignableFrom<Script>(component);
         Assert.True(script.HasInstance);
         Assert.IsAssignableFrom<ScriptBehaviour>(script.Instance);
         object instance = script.Instance!;
@@ -83,14 +83,14 @@ public sealed class ScriptCompilerTests : IDisposable
         SceneModel scene = new("RoundTrip");
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Spinner");
-        ScriptComponent script = (ScriptComponent)gameObject.AddComponent("SpinTestB");
+        Script script = (Script)gameObject.AddComponent("SpinTestB");
         ((ScriptBehaviour)script.Instance!).GetType().GetProperty("Speed")!.SetValue(script.Instance, 4.25f);
 
         string path = Path.Combine(_root, "scene.json");
         scene.Save(path);
         SceneModel loaded = Scene.Load(path);
         GameObject loadedObject = loaded.FindByName("Spinner")!;
-        ScriptComponent loadedScript = loadedObject.GetComponent<ScriptComponent>()!;
+        Script loadedScript = loadedObject.GetComponent<Script>()!;
         Assert.Equal("SpinTestB", loadedScript.Script);
         Assert.True(loadedScript.HasInstance);
         Assert.Equal(4.25f, (float)loadedScript.Instance!.GetType().GetProperty("Speed")!.GetValue(loadedScript.Instance)!);
@@ -104,7 +104,7 @@ public sealed class ScriptCompilerTests : IDisposable
         SceneModel scene = new("Reload");
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Spinner");
-        ScriptComponent script = (ScriptComponent)gameObject.AddComponent("SpinTestC");
+        Script script = (Script)gameObject.AddComponent("SpinTestC");
         ScriptBehaviour first = Assert.IsAssignableFrom<ScriptBehaviour>(script.Instance!);
         script.Instance!.GetType().GetProperty("Speed")!.SetValue(script.Instance, 7f);
 
@@ -147,12 +147,12 @@ public sealed class ScriptCompilerTests : IDisposable
         SceneModel scene = new("Fields");
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Actor");
-        ScriptComponent script = Assert.IsAssignableFrom<ScriptComponent>(gameObject.AddComponent("FieldScript"));
+        Script script = Assert.IsAssignableFrom<Script>(gameObject.AddComponent("FieldScript"));
         script.Instance!.GetType().GetField("Speed")!.SetValue(script.Instance, 5f);
         script.Instance!.GetType().GetField("Offset")!.SetValue(script.Instance, new Vector3(0f, 7f, 0f));
 
         SceneModel loaded = SceneModel.FromJson(scene.ToJson());
-        ScriptComponent loadedScript = loaded.FindByName("Actor")!.GetComponent<ScriptComponent>()!;
+        Script loadedScript = loaded.FindByName("Actor")!.GetComponent<Script>()!;
         Assert.Equal(5f, (float)loadedScript.Instance!.GetType().GetField("Speed")!.GetValue(loadedScript.Instance)!);
         Assert.Equal(new Vector3(0f, 7f, 0f), (Vector3)loadedScript.Instance!.GetType().GetField("Offset")!.GetValue(loadedScript.Instance)!);
 
@@ -182,12 +182,12 @@ public sealed class ScriptCompilerTests : IDisposable
         SceneModel scene = new("Pending");
         module.AttachScene(scene);
         GameObject gameObject = scene.CreateObject("Spinner");
-        ScriptComponent script = (ScriptComponent)gameObject.AddComponent("SpinTestE");
+        Script script = (Script)gameObject.AddComponent("SpinTestE");
         script.Instance!.GetType().GetProperty("Speed")!.SetValue(script.Instance, 9f);
         string json = scene.ToJson();
 
         SceneModel loaded = Scene.FromJson(json);
-        ScriptComponent pending = loaded.FindByName("Spinner")!.GetComponent<ScriptComponent>()!;
+        Script pending = loaded.FindByName("Spinner")!.GetComponent<Script>()!;
         Assert.Equal("SpinTestE", pending.Script);
 
         ScriptingModule other = new(_root);

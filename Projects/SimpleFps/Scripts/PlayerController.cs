@@ -32,7 +32,7 @@ public sealed class PlayerController : ScriptBehaviour
     [InspectorTooltip("Hide and lock the cursor while the script is active.")]
     public bool LockCursor = true;
 
-    private CameraComponent? _camera;
+    private Engine.Scene.Camera? _camera;
     private float _yaw;
     private float _pitch;
 
@@ -50,7 +50,7 @@ public sealed class PlayerController : ScriptBehaviour
 
     public override void OnStart()
     {
-        _camera = Owner.GetComponentsInChildren<CameraComponent>().FirstOrDefault();
+        _camera = Owner.GetComponentsInChildren<Engine.Scene.Camera>().FirstOrDefault();
         Vector3 bodyAngles = Transform.Rotation.ToYawPitchRoll();
         _yaw = bodyAngles.X;
         if (_camera is not null)

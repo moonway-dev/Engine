@@ -5,7 +5,7 @@ using Engine.Scene;
 namespace Engine.Physics;
 
 [InspectorTooltip("Rigid body with per-body gravity, damping, collision detection and axis constraints. Disable the component to remove it from physics.")]
-public sealed class RigidBodyComponent : Component
+public sealed class Rigidbody : Component
 {
     private bool _isAwake = true;
 

@@ -23,12 +23,12 @@ public sealed class SunCycle : ScriptBehaviour
     public float NightIntensity = 0.08f;
 
     private float _elapsed;
-    private LightComponent? _light;
+    private Engine.Scene.Light? _light;
 
     public override void OnStart()
     {
         _elapsed = MathUtil.Clamp(StartTimeOfDay, 0f, 1f) * MathF.Max(DayLengthSeconds, 0.1f);
-        _light = Owner.GetComponent<LightComponent>();
+        _light = Owner.GetComponent<Engine.Scene.Light>();
         Apply();
     }
 

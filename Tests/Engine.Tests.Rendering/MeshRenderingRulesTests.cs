@@ -1,3 +1,5 @@
+using Camera = Engine.Rendering.Camera;
+using Light = Engine.Rendering.Light;
 using System.Reflection;
 using Engine.Backends.Null;
 using Engine.Mathematics;
@@ -32,25 +34,25 @@ public sealed class MeshRenderingRulesTests
     public void RenderingModeSurvivesSceneRoundTripAndClone(MeshRenderingMode mode)
     {
         ComponentRegistry registry = new();
-        registry.Register(() => new MeshRendererComponent());
+        registry.Register(() => new MeshRenderer());
         Scene.Scene scene = new("Rendering rules", registry);
-        MeshRendererComponent renderer = scene.CreateObject("Mesh").AddComponent<MeshRendererComponent>();
+        MeshRenderer renderer = scene.CreateObject("Mesh").AddComponent<MeshRenderer>();
         renderer.RenderingMode = mode;
-        Assert.Equal(mode, Scene.Scene.FromJson(scene.ToJson(), registry).FindByName("Mesh")!.GetComponent<MeshRendererComponent>()!.RenderingMode);
-        Assert.Equal(mode, scene.Clone().FindByName("Mesh")!.GetComponent<MeshRendererComponent>()!.RenderingMode);
+        Assert.Equal(mode, Scene.Scene.FromJson(scene.ToJson(), registry).FindByName("Mesh")!.GetComponent<MeshRenderer>()!.RenderingMode);
+        Assert.Equal(mode, scene.Clone().FindByName("Mesh")!.GetComponent<MeshRenderer>()!.RenderingMode);
     }
 
     [Fact]
     public void ExistingScenesDefaultToFullRendering()
     {
-        Assert.Equal(MeshRenderingMode.Full, new MeshRendererComponent().RenderingMode);
+        Assert.Equal(MeshRenderingMode.Full, new MeshRenderer().RenderingMode);
         Assert.Equal(MeshRenderingMode.Full, new RenderItem { Mesh = null!, Material = null! }.RenderingMode);
         ComponentRegistry registry = new();
-        registry.Register(() => new MeshRendererComponent());
+        registry.Register(() => new MeshRenderer());
         Scene.Scene scene = Scene.Scene.FromJson("""
             { "version": 1, "objects": [{ "name": "Mesh", "components": [{ "type": "MeshRenderer", "properties": { "ResourceKey": "cube" } }] }] }
             """, registry);
-        Assert.Equal(MeshRenderingMode.Full, scene.FindByName("Mesh")!.GetComponent<MeshRendererComponent>()!.RenderingMode);
+        Assert.Equal(MeshRenderingMode.Full, scene.FindByName("Mesh")!.GetComponent<MeshRenderer>()!.RenderingMode);
     }
 
     [Theory]
@@ -69,9 +71,9 @@ public sealed class MeshRenderingRulesTests
         string shaderDirectory = Path.Combine(directory?.FullName ?? throw new DirectoryNotFoundException("Basic3D shaders not found."), "Samples", "Basic3D", "Shaders");
         RendererModule renderer = new(new RhiModule(new NullRHIFactory()), shaderDirectory);
         RenderItem item = new() { Mesh = mesh, Material = null!, Position = new Vector3(0f, 0f, -5f), RenderingMode = mode };
-        Dictionary<MeshRendererComponent, RenderItem> sceneItems = (Dictionary<MeshRendererComponent, RenderItem>)typeof(RendererModule)
+        Dictionary<MeshRenderer, RenderItem> sceneItems = (Dictionary<MeshRenderer, RenderItem>)typeof(RendererModule)
             .GetField("_sceneItems", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(renderer)!;
-        sceneItems.Add(new MeshRendererComponent(), item);
+        sceneItems.Add(new MeshRenderer(), item);
         typeof(RendererModule).GetField("_lastRtMasterEnabled", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(renderer, true);
         List<RayTracingDrawItem> visible = [];
         List<RayTracingDrawItem> traced = [];
