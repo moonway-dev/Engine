@@ -65,32 +65,40 @@ public sealed class RayTracingQualityControllerTests
             new GpuPassTiming("RtGameFilter", 1.6),
             new GpuPassTiming("RtGameComposite", 0.4),
             new GpuPassTiming("RtGameGi", 50),
+            new GpuPassTiming("RtGameGiPreFilter", 2),
+            new GpuPassTiming("RtGameGiTemporal", 1),
+            new GpuPassTiming("RtGameGiSpatial.0", 3),
             new GpuPassTiming("RtSceneTrace", 30),
+            new GpuPassTiming("RtSceneShadowStabilize", 4),
             new GpuPassTiming("ForwardPass", 100),
         ]), true);
 
         Assert.Equal(4.1d, controller.GetLastMilliseconds(RayTracingQualityCamera.Game, RayTracingQualityEffect.Reflections), 6);
-        Assert.Equal(50d, controller.GetLastMilliseconds(RayTracingQualityCamera.Game, RayTracingQualityEffect.Gi));
-        Assert.Equal(30d, controller.GetLastMilliseconds(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Shadows));
+        Assert.Equal(56d, controller.GetLastMilliseconds(RayTracingQualityCamera.Game, RayTracingQualityEffect.Gi));
+        Assert.Equal(34d, controller.GetLastMilliseconds(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Shadows));
         Assert.Equal(0d, controller.GetLastMilliseconds(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Gi));
     }
 
     [Fact]
-    public void Update_ReducesAfterThreeOverBudgetFramesAndStopsAtStageZero()
+    public void Update_ReducesAfterTenOverBudgetFramesAndStopsAtStageZero()
     {
         RayTracingQualityController controller = new();
         RayTracingQualityCamera camera = RayTracingQualityCamera.Game;
         RayTracingQualityEffect effect = RayTracingQualityEffect.Reflections;
 
-        for (int frame = 1; frame <= 3; frame++)
+        for (int frame = 1; frame <= 10; frame++)
             controller.Update(new GpuFrameTiming(frame, [new GpuPassTiming("RtGameReflections", 10)]), true);
         Assert.Equal(2, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
 
-        for (int frame = 4; frame <= 9; frame++)
+        for (int frame = 11; frame <= 20; frame++)
+            controller.Update(new GpuFrameTiming(frame, [new GpuPassTiming("RtGameReflections", 10)]), true);
+        Assert.Equal(1, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
+
+        for (int frame = 21; frame <= 30; frame++)
             controller.Update(new GpuFrameTiming(frame, [new GpuPassTiming("RtGameReflections", 10)]), true);
         Assert.Equal(0, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
 
-        for (int frame = 10; frame <= 18; frame++)
+        for (int frame = 31; frame <= 40; frame++)
             controller.Update(new GpuFrameTiming(frame, [new GpuPassTiming("RtGameReflections", 10)]), true);
         Assert.Equal(0, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
     }
@@ -101,15 +109,15 @@ public sealed class RayTracingQualityControllerTests
         RayTracingQualityController controller = new();
         RayTracingQualityCamera camera = RayTracingQualityCamera.Game;
         RayTracingQualityEffect effect = RayTracingQualityEffect.Reflections;
-        controller.Update(new GpuFrameTiming(1, [new GpuPassTiming("RtGameReflections", 10)]), true);
-        controller.Update(new GpuFrameTiming(2, [new GpuPassTiming("RtGameReflections", 10)]), true);
-        controller.Update(new GpuFrameTiming(3, [new GpuPassTiming("RtGameReflections", 10)]), true);
+
+        for (int frame = 1; frame <= 10; frame++)
+            controller.Update(new GpuFrameTiming(frame, [new GpuPassTiming("RtGameReflections", 10)]), true);
         Assert.Equal(2, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
 
-        for (int frame = 4; frame <= 32; frame++)
+        for (int frame = 11; frame <= 39; frame++)
             controller.Update(new GpuFrameTiming(frame, [new GpuPassTiming("RtGameReflections", 0.1)]), true);
         Assert.Equal(2, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
-        controller.Update(new GpuFrameTiming(33, [new GpuPassTiming("RtGameReflections", 0.1)]), true);
+        controller.Update(new GpuFrameTiming(40, [new GpuPassTiming("RtGameReflections", 0.1)]), true);
         Assert.Equal(3, controller.GetStage(camera, effect, RayTracingQualityPreset.Ultra, true, false, true));
     }
 
@@ -120,7 +128,7 @@ public sealed class RayTracingQualityControllerTests
 
         Assert.Equal(0, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Gi, RayTracingQualityPreset.Low, false, true, true));
         Assert.Equal(3, controller.GetStage(RayTracingQualityCamera.Game, RayTracingQualityEffect.Gi, RayTracingQualityPreset.Ultra, false, true, true));
-        Assert.Equal(0, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Gi, RayTracingQualityPreset.Ultra, true, true, true));
+        Assert.Equal(2, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Gi, RayTracingQualityPreset.Ultra, true, true, true));
         Assert.Equal(2, controller.GetStage(RayTracingQualityCamera.Game, RayTracingQualityEffect.Gi, RayTracingQualityPreset.Ultra, true, true, true));
         Assert.Equal(2, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Gi, RayTracingQualityPreset.Ultra, true, false, false));
     }
@@ -131,7 +139,7 @@ public sealed class RayTracingQualityControllerTests
         RayTracingQualityController controller = new();
         controller.Update(null, false);
 
-        Assert.Equal(0, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Shadows, RayTracingQualityPreset.Ultra, true, true, true));
+        Assert.Equal(2, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Shadows, RayTracingQualityPreset.Ultra, true, true, true));
         Assert.Equal(2, controller.GetStage(RayTracingQualityCamera.Game, RayTracingQualityEffect.Shadows, RayTracingQualityPreset.Ultra, true, true, true));
         Assert.Equal(2, controller.GetStage(RayTracingQualityCamera.Scene, RayTracingQualityEffect.Shadows, RayTracingQualityPreset.Ultra, true, true, false));
         Assert.Equal(1, controller.GetStage(RayTracingQualityCamera.Game, RayTracingQualityEffect.Shadows, RayTracingQualityPreset.Medium, true, false, false));

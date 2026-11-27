@@ -375,6 +375,9 @@ public sealed class RenderGraph : IDisposable
     public RenderGraphPass AddTransferPass(string name, Action<ICommandBuffer, RenderGraph> execute) =>
         AddPass(name, RenderPassKind.Transfer, execute);
 
+    public RenderGraphPass AddTransferPassBefore(RenderGraphPass before, string name, Action<ICommandBuffer, RenderGraph> execute) =>
+        AddPassBefore(before, name, RenderPassKind.Transfer, execute);
+
     public RenderGraphPass AddAccelerationStructureBuildPass(string name, Action<ICommandBuffer, RenderGraph> execute) =>
         AddPass(name, RenderPassKind.AccelerationStructureBuild, execute);
 

@@ -375,6 +375,8 @@ internal sealed class Basic3DModule(
             renderer.RayTracingReflectionsEnabled = false;
         if (Environment.GetEnvironmentVariable("ENGINE_NOSHADOW") == "1")
             renderer.ShadowMode = ShadowMode.Off;
+        if (Environment.GetEnvironmentVariable("ENGINE_RTSHADOWS") == "1")
+            renderer.ShadowMode = ShadowMode.RayTraced;
         if (Environment.GetEnvironmentVariable("ENGINE_NORT") == "1")
             renderer.RayTracingEnabled = false;
         if (Enum.TryParse(Environment.GetEnvironmentVariable("ENGINE_RTQUALITY"), true, out RayTracingQualityPreset rtQuality))
@@ -713,7 +715,7 @@ internal sealed class Basic3DModule(
                 : _window!.ClientSize;
             renderer.EditorCamera.AspectRatio = (float)editorExtent.Width / Math.Max(1, editorExtent.Height);
         }
-        else if (cameraTransform is not null && !_cameraObject!.Components.OfType<Script>()
+        else if (Environment.GetEnvironmentVariable("ENGINE_STATICCAMERA") != "1" && cameraTransform is not null && !_cameraObject!.Components.OfType<Script>()
             .Any(script => script.IsActiveInHierarchy && script.Instance is ScriptBehaviour { IsActive: true }))
         {
             float cosPitch = MathF.Cos(_orbitPitch);

@@ -169,16 +169,18 @@ float sampleShadowMap(float3 worldPosition, float3 geometryNormal)
 struct FragmentOutput
 {
     float4 color : SV_Target0;
-#if defined(TEMPORAL_MRT) && TEMPORAL_MRT
+#if defined(TEMPORAL_MRT) && TEMPORAL_MRT && !defined(TRANSPARENT_PASS)
     float4 motion : SV_Target1;
 #endif
-#if defined(SPECULAR_MRT) && SPECULAR_MRT
-#if defined(TEMPORAL_MRT) && TEMPORAL_MRT
+#if defined(SPECULAR_MRT) && SPECULAR_MRT && !defined(TRANSPARENT_PASS)
+#if defined(TEMPORAL_MRT) && TEMPORAL_MRT && !defined(TRANSPARENT_PASS)
     float4 specular : SV_Target2;
     float4 specularResponse : SV_Target3;
+    float4 diffuseResponse : SV_Target4;
 #else
     float4 specular : SV_Target1;
     float4 specularResponse : SV_Target2;
+    float4 diffuseResponse : SV_Target3;
 #endif
 #endif
 };
@@ -194,7 +196,8 @@ FragmentOutput psMain(FragmentInput input)
     float3 viewDirection = normalize(camera.cameraPosition - input.worldPosition);
 
     float4 albedoSample = albedoTexture.Sample(materialSampler, input.uv);
-    float baseAlpha = saturate(material.opacity * albedoSample.a);
+    float baseAlpha = material.transparent != 0u || material.opacity < 0.999
+        ? saturate(material.opacity * albedoSample.a) : 1.0;
     float alpha = baseAlpha;
     float3 albedo = material.albedoColor * albedoSample.rgb;
     float metallic = saturate(material.metallic * metallicTexture.Sample(materialSampler, input.uv)[min(material.metallicChannel, 3u)]);
@@ -223,6 +226,7 @@ FragmentOutput psMain(FragmentInput input)
     if (rtShadowControl.enabled != 0u && shadow.lightIndex >= 0)
     {
         float rtVisibility = rtShadowVisibility.Load(int3(rtPixel, 0)).r;
+        rtVisibility = rtVisibility * rtVisibility * (3.0 - 2.0 * rtVisibility);
         shadowVisibility = saturate(1.0 - (1.0 - rtVisibility) * shadow.lightDirectionAndStrength.w);
     }
     if (rtShadowControl.pointLightEnabled != 0u)
@@ -276,13 +280,14 @@ FragmentOutput psMain(FragmentInput input)
     FragmentOutput output;
     output.color = float4(color, alpha);
     float linearDepth = length(camera.cameraPosition - input.worldPosition);
-#if defined(TEMPORAL_MRT) && TEMPORAL_MRT
+#if defined(TEMPORAL_MRT) && TEMPORAL_MRT && !defined(TRANSPARENT_PASS)
     float previousDepth = input.previousClipPosition.z / max(abs(input.previousClipPosition.w), 1e-6);
     output.motion = float4((currentNdc - previousNdc) * 0.5, previousDepth, linearDepth);
 #endif
-#if defined(SPECULAR_MRT) && SPECULAR_MRT
+#if defined(SPECULAR_MRT) && SPECULAR_MRT && !defined(TRANSPARENT_PASS)
     output.specular = float4(specularIndirect, linearDepth);
     output.specularResponse = float4(fresnelBase * brdf.x + brdf.y, baseAlpha);
+    output.diffuseResponse = float4(albedo * (1.0 - metallic) * ambientOcclusion, baseAlpha);
 #endif
     return output;
 }

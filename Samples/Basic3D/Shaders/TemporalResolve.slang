@@ -1,5 +1,5 @@
 [[vk::binding(0, 0)]] Texture2D<float4> currentColor;
-#if defined(RT_GI_DENOISE) && RT_GI_DENOISE
+#if (defined(RT_GI_DENOISE) && RT_GI_DENOISE) || (defined(RT_REFLECTION_DENOISE) && RT_REFLECTION_DENOISE)
 [[vk::binding(1, 0)]] Texture2D<float4> motionVectors;
 #else
 [[vk::binding(1, 0)]] Texture2D<float2> motionVectors;
@@ -79,8 +79,8 @@ float3 neighborhoodMaximum(uint2 pixel)
 float3 neighborhoodMean(uint2 pixel)
 {
     float3 total = float3(0.0);
-    for (int y = -1; y <= 1; y++)
-    for (int x = -1; x <= 1; x++)
+    for (int y = -2; y <= 2; y++)
+    for (int x = -2; x <= 2; x++)
     {
         uint2 samplePixel = neighborhoodPixel(pixel, int2(x, y));
         total += currentColor.Load(int3(samplePixel, 0)).rgb;
@@ -91,8 +91,8 @@ float3 neighborhoodMean(uint2 pixel)
 float3 neighborhoodVariance(uint2 pixel, float3 mean)
 {
     float3 total = float3(0.0);
-    for (int y = -1; y <= 1; y++)
-    for (int x = -1; x <= 1; x++)
+    for (int y = -2; y <= 2; y++)
+    for (int x = -2; x <= 2; x++)
     {
         uint2 samplePixel = neighborhoodPixel(pixel, int2(x, y));
         float3 difference = currentColor.Load(int3(samplePixel, 0)).rgb - mean;
@@ -118,7 +118,7 @@ void csMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
 
     float2 uv = (float2(pixel) + 0.5) / float2(constants.extent);
-#if defined(RT_GI_DENOISE) && RT_GI_DENOISE
+#if (defined(RT_GI_DENOISE) && RT_GI_DENOISE) || (defined(RT_REFLECTION_DENOISE) && RT_REFLECTION_DENOISE)
     float4 motionDepth = motionVectors.Load(int3(pixel, 0));
     float2 motion = motionDepth.xy;
 #else
@@ -133,7 +133,7 @@ void csMain(uint3 dispatchThreadId : SV_DispatchThreadID)
     }
 
     float4 history = previousHistory.SampleLevel(linearSampler, previousUv, 0);
-#if defined(RT_GI_DENOISE) && RT_GI_DENOISE
+#if (defined(RT_GI_DENOISE) && RT_GI_DENOISE) || (defined(RT_REFLECTION_DENOISE) && RT_REFLECTION_DENOISE)
     float expectedDepth = motionDepth.z;
 #else
     float expectedDepth = depth;

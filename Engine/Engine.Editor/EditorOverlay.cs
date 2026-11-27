@@ -5,6 +5,7 @@ using Engine.Editor.Input;
 using Engine.Editor.Commands;
 using Engine.Editor.DragDrop;
 using Engine.Editor.Models;
+using Engine.Editor.Mcp;
 using Engine.Editor.Panels;
 using Engine.Mathematics;
 using Engine.Platform;
@@ -28,6 +29,7 @@ public sealed class EditorOverlay : IDisposable
     private readonly SceneSettingsPanel _sceneSettings;
     private readonly ViewportPanel _sceneView;
     private readonly ViewportPanel _gameView;
+    private readonly AssistantPanel? _assistant;
     private readonly List<IEditorPanel> _panels;
     private readonly EditorHotkeyService _hotkeys = new();
     private readonly RendererModule _renderer;
@@ -84,7 +86,8 @@ public sealed class EditorOverlay : IDisposable
         Func<string, IntPtr>? iconResolver = null,
         Func<Engine.Editor.Models.AssetEntry, AssetPreview>? previewResolver = null,
         Action<string>? openProjectHandler = null,
-        string? engineRoot = null)
+        string? engineRoot = null,
+        McpHub? mcp = null)
     {
         _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -101,7 +104,10 @@ public sealed class EditorOverlay : IDisposable
         _sceneSettings = new SceneSettingsPanel(context, renderer);
         _sceneView = new ViewportPanel("Scene View", tracksDesiredExtent: true, context);
         _gameView = new ViewportPanel("Game View", tracksDesiredExtent: false);
+        _assistant = mcp is null ? null : new AssistantPanel(mcp);
         _panels = [_hierarchy, _inspector, _projectBrowser, _console, _stats, _projectSettings, _sceneSettings, _sceneView, _gameView];
+        if (_assistant is not null)
+            _panels.Add(_assistant);
         _projectSettings.VSyncChanged += OnVSyncChanged;
         RegisterDefaultHotkeys();
     }

@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Engine.Core\Engine.Core.csproj" />
+    <ProjectReference Include="..\Engine.Mcp\Engine.Mcp.csproj" />
     <ProjectReference Include="..\Engine.Assets\Engine.Assets.csproj" />
     <ProjectReference Include="..\Engine.Shaders\Engine.Shaders.csproj" />
     <ProjectReference Include="..\Engine.Platform\Engine.Platform.csproj" />

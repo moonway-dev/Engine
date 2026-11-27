@@ -14,11 +14,15 @@ struct FragmentInput
     float3 tangent : TANGENT;
     float handedness : TANGENT_HANDEDNESS;
     float2 uv : TEXCOORD;
+    float3 worldPosition : WORLD_POSITION;
+    float4 currentClipPosition : CURRENT_CLIP_POSITION;
+    float4 previousClipPosition : PREVIOUS_CLIP_POSITION;
 };
 
 struct FragmentOutput
 {
     float4 normalRoughness : SV_Target0;
+    float4 motion : SV_Target1;
 };
 
 [shader("vertex")]
@@ -27,6 +31,9 @@ FragmentInput vsMain(VertexInput input)
     FragmentInput output;
     float4 worldPosition = mul(pushConstants.model, float4(input.position, 1.0));
     output.position = mul(camera.viewProjection, worldPosition);
+    output.worldPosition = worldPosition.xyz;
+    output.currentClipPosition = output.position;
+    output.previousClipPosition = mul(camera.previousViewProjection, mul(pushConstants.previousModel, float4(input.position, 1.0)));
     float3x3 modelBasis = (float3x3)pushConstants.model;
     float3 basisX = float3(modelBasis[0][0], modelBasis[1][0], modelBasis[2][0]);
     float3 basisY = float3(modelBasis[0][1], modelBasis[1][1], modelBasis[2][1]);
@@ -58,5 +65,9 @@ FragmentOutput psMain(FragmentInput input)
     float roughness = clamp(material.roughness * roughnessTexture.Sample(materialSampler, input.uv)[min(material.roughnessChannel, 3u)], 0.045, 1.0);
     FragmentOutput output;
     output.normalRoughness = float4(normal, roughness);
+    float2 currentNdc = input.currentClipPosition.xy / max(abs(input.currentClipPosition.w), 1e-6);
+    float2 previousNdc = input.previousClipPosition.xy / max(abs(input.previousClipPosition.w), 1e-6);
+    float previousDepth = input.previousClipPosition.z / max(abs(input.previousClipPosition.w), 1e-6);
+    output.motion = float4((currentNdc - previousNdc) * 0.5, previousDepth, length(camera.cameraPosition - input.worldPosition));
     return output;
 }

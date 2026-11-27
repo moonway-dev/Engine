@@ -43,7 +43,7 @@ public readonly record struct RayTracingQualityProfile(float ResolutionScale, ui
 
 public sealed class RayTracingQualityController
 {
-    private const int OverBudgetFramesToReduce = 3;
+    private const int OverBudgetFramesToReduce = 10;
     private const int UnderBudgetFramesToRaise = 30;
     private readonly AdaptationState[,] _states = new AdaptationState[2, 3];
     private readonly double[,] _latestMilliseconds = new double[2, 3];
@@ -59,6 +59,8 @@ public sealed class RayTracingQualityController
 
     public bool HasGpuTiming { get; private set; }
     public long LastTimingFrame => _lastFrameNumber;
+
+    public event Action<string>? StageChanged;
 
     public void ResetTiming()
     {
@@ -111,9 +113,10 @@ public sealed class RayTracingQualityController
                 {
                     state.Stage = Math.Max(0, state.Stage - 1);
                     state.OverBudgetFrames = 0;
+                    StageChanged?.Invoke($"{(RayTracingQualityCamera)camera} {(RayTracingQualityEffect)effect} stage -> {state.Stage} ({milliseconds:F2} ms > {budget:F2} ms budget)");
                 }
             }
-            else if (milliseconds < budget * 0.55)
+            else if (milliseconds < budget * 0.8)
             {
                 state.UnderBudgetFrames++;
                 state.OverBudgetFrames = 0;
@@ -121,6 +124,7 @@ public sealed class RayTracingQualityController
                 {
                     state.Stage = Math.Min(3, state.Stage + 1);
                     state.UnderBudgetFrames = 0;
+                    StageChanged?.Invoke($"{(RayTracingQualityCamera)camera} {(RayTracingQualityEffect)effect} stage -> {state.Stage} ({milliseconds:F2} ms < {budget * 0.8:F2} ms)");
                 }
             }
             else
@@ -144,17 +148,11 @@ public sealed class RayTracingQualityController
             return maximum;
 
         if (!HasGpuTiming)
-        {
-            if (sceneActive && gameActive)
-                return camera == RayTracingQualityCamera.Game ? Math.Min(maximum, 2) : 0;
             return Math.Min(maximum, 2);
-        }
 
         AdaptationState state = _states[(int)camera, (int)effect];
         int stage = state.Initialized ? state.Stage : camera == RayTracingQualityCamera.Game ? 2 : 1;
         stage = Math.Min(maximum, stage);
-        if (sceneActive && gameActive && camera == RayTracingQualityCamera.Scene)
-            stage = Math.Min(stage, 2);
         return stage;
     }
 
@@ -167,13 +165,13 @@ public sealed class RayTracingQualityController
             {
                 RayTracingQualityEffect.Shadows => 2.0,
                 RayTracingQualityEffect.Reflections => 3.5,
-                _ => 2.5,
+                _ => 5.5,
             }
             : effect switch
             {
                 RayTracingQualityEffect.Shadows => 1.0,
                 RayTracingQualityEffect.Reflections => 2.0,
-                _ => 1.5,
+                _ => 2.0,
             };
 
     private static bool TryClassify(string name, out int camera, out int effect)

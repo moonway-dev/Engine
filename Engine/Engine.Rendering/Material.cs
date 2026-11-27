@@ -233,6 +233,8 @@ public sealed class Material : IDisposable
     internal IBuffer ParamsBuffer { get; set; } = null!;
     internal IDescriptorSet? Set { get; set; }
     internal IDescriptorSet? RtSet { get; set; }
+    internal IDescriptorSet? TransparentSet { get; set; }
+    internal IDescriptorSet? RtTransparentSet { get; set; }
     internal IDescriptorSet? RtPrepassSet { get; set; }
     internal bool ParamsDirty { get; set; } = true;
 
@@ -267,6 +269,8 @@ public sealed class Material : IDisposable
         _disposed = true;
         Set?.Dispose();
         RtSet?.Dispose();
+        TransparentSet?.Dispose();
+        RtTransparentSet?.Dispose();
         RtPrepassSet?.Dispose();
         ParamsBuffer?.Dispose();
     }

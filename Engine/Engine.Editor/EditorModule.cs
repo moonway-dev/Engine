@@ -4,6 +4,7 @@ using Engine.Core;
 using Engine.Physics;
 using Engine.Scene;
 using Engine.Editor.Documents;
+using Engine.Editor.Mcp;
 using Engine.Mathematics;
 using Engine.Platform;
 using Engine.RHI;
@@ -31,6 +32,8 @@ public sealed class EditorModule : IUpdatableModule
     private ILogger? _log;
     private IEngineContext? _engineContext;
     private MemoryLogSink? _memoryLogSink;
+    private EditorMcpBridge? _mcpBridge;
+    private McpHub? _mcp;
     private IWindow? _window;
     private Scene.Scene? _scene;
     private string? _pendingScenePath;
@@ -140,6 +143,7 @@ public sealed class EditorModule : IUpdatableModule
         _renderer.PrepareEditorResources = PrepareEditorResources;
         _renderer.RenderEditorResources = RenderEditorResources;
         _renderer.EnableEditorMode(new Size2D(1280, 720));
+        CreateMcp();
         CreateOverlay();
         _initialized = true;
     }
@@ -169,6 +173,27 @@ public sealed class EditorModule : IUpdatableModule
     private System.Numerics.Vector2? _mousePositionOverride;
 
     public void SetMousePositionOverride(System.Numerics.Vector2? position) => _mousePositionOverride = position;
+
+    private void CreateMcp()
+    {
+        string projectRoot = ResolveAssetsPath();
+        _mcpBridge = new EditorMcpBridge(
+            () => Context,
+            () => PlayMode,
+            () => _memoryLogSink,
+            () => _rhiModule.Instance,
+            () => _renderer.ViewTexture,
+            () => _renderer.GameTexture,
+            projectRoot);
+        _mcp = new McpHub
+        {
+            Port = 8777,
+            StatusPath = Path.Combine(projectRoot, "Cache", "mcp-server.json"),
+        };
+        _mcp.Log += message => _log?.Information(message);
+        _mcp.Attach(_mcpBridge);
+        _mcp.Start();
+    }
 
     private void CreateOverlay()
     {
@@ -226,7 +251,8 @@ public sealed class EditorModule : IUpdatableModule
             name => _backend.GetIconTexture(name),
             entry => _previews?.Request(entry) ?? default,
             path => RequestProjectOpen(path),
-            EngineRoot);
+            EngineRoot,
+            _mcp);
         _renderer.ColliderGizmoSource = CollectColliderGizmos;
         _overlay.VSyncChanged += OnVSyncChanged;
     }
@@ -429,6 +455,7 @@ public sealed class EditorModule : IUpdatableModule
 
     public void Update(in FrameTime frameTime)
     {
+        _mcpBridge?.Pump();
         if (!_initialized || _backend is null)
             return;
         if (_overlay is not null)
@@ -463,6 +490,9 @@ public sealed class EditorModule : IUpdatableModule
 
     public void Shutdown()
     {
+        _mcp?.Dispose();
+        _mcpBridge = null;
+        _mcp = null;
         _rhiModule.Instance?.WaitIdle();
         _renderer.PrepareEditorResources = null;
         _renderer.RenderEditorResources = null;

@@ -107,6 +107,24 @@ bool rtTracePixel(uint2 pixel, uint rate, uint effect)
     return all((pixel & (rate - 1u)) == offset);
 }
 
+float2 rtSequence(uint2 pixel, uint frame, uint sample)
+{
+    uint seed = rtHash(pixel.x ^ rtHash(pixel.y));
+    float2 rotation = float2(float(seed >> 8), float(rtHash(seed) >> 8)) / 16777216.0;
+    uint index = (frame & 1023u) * RtMaximumSamples + sample;
+    return frac(rotation + float2(0.754877666, 0.569840296) * float(index + 1u));
+}
+
+float3 rtCosineDirection(float3 normal, float2 random)
+{
+    float3 tangent;
+    float3 bitangent;
+    rtBasis(normal, tangent, bitangent);
+    float radius = sqrt(random.x);
+    float angle = 6.2831853 * random.y;
+    return tangent * (radius * cos(angle)) + bitangent * (radius * sin(angle)) + normal * sqrt(1.0 - random.x);
+}
+
 float3 rtConeDirection(float3 direction, float angularRadius, float2 random)
 {
     float3 tangent;

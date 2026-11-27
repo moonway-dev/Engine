@@ -239,6 +239,19 @@ public struct RtFilterConstants
 }
 
 [StructLayout(LayoutKind.Sequential)]
+public struct RtDenoiseConstants
+{
+    public uint ExtentWidth;
+    public uint ExtentHeight;
+    public uint SourceWidth;
+    public uint SourceHeight;
+    public uint HistoryValid;
+    public uint Effect;
+
+    public static int SizeInBytes => Marshal.SizeOf<RtDenoiseConstants>();
+}
+
+[StructLayout(LayoutKind.Sequential)]
 public struct RtCompositeConstants
 {
     public uint ExtentWidth;
@@ -268,5 +281,5 @@ public struct GiCompositeConstants
     public uint Width;
     public uint Height;
     public float Intensity;
-    public float Padding0;
+    public uint Mode;
 }

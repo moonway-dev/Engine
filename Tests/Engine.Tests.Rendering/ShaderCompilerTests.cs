@@ -381,10 +381,11 @@ public class ShaderCompilerTests : IDisposable
         ShaderProgramDescription program = compiler.CompileProgram(shaderPath, [(ShaderStage.Compute, "csMain")]);
 
         DescriptorSetLayout set = Assert.Single(program.Reflection.DescriptorSets);
-        Assert.Equal(3, set.Bindings.Count);
+        Assert.Equal(4, set.Bindings.Count);
         Assert.Equal(DescriptorType.SampledImage, Assert.Single(set.Bindings, binding => binding.Binding == 0).Type);
         Assert.Equal(DescriptorType.SampledImage, Assert.Single(set.Bindings, binding => binding.Binding == 1).Type);
         Assert.Equal(DescriptorType.StorageImage, Assert.Single(set.Bindings, binding => binding.Binding == 2).Type);
+        Assert.Equal(DescriptorType.SampledImage, Assert.Single(set.Bindings, binding => binding.Binding == 3).Type);
         Assert.Equal(16u, Assert.Single(program.Reflection.PushConstants).Size);
     }
 

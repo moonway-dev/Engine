@@ -8,7 +8,7 @@ using Engine.Shaders;
 
 namespace Engine.Rendering;
 
-public sealed class RendererModule : IUpdatableModule
+public sealed partial class RendererModule : IUpdatableModule
 {
     public const string LogCategory = "Renderer";
 
@@ -35,6 +35,8 @@ public sealed class RendererModule : IUpdatableModule
     private IGraphicsPipeline? _shadowPipeline;
     private IGraphicsPipeline? _pbrPipeline;
     private IGraphicsPipeline? _pbrTransparentPipeline;
+    private IShaderProgram? _pbrTransparentProgram;
+    private IShaderProgram? _pbrRtTransparentProgram;
     private IGraphicsPipeline? _tonemapPipeline;
     private IShaderProgram? _debugLinesProgram;
     private IGraphicsPipeline? _debugLinesPipeline;
@@ -77,6 +79,12 @@ public sealed class RendererModule : IUpdatableModule
     private IShaderProgram? _bloomProgram;
     private IShaderProgram? _temporalProgram;
     private IShaderProgram? _rtGiTemporalProgram;
+    private IShaderProgram? _rtTemporalProgram;
+    private IComputePipeline? _rtTemporalPipeline;
+    private readonly Dictionary<(bool GameView, int Effect), RtDenoiserHistory> _rtDenoisers = [];
+    private readonly List<(RtDenoiserHistory History, RenderGraphResource ColorRead, RenderGraphResource ColorWrite, RenderGraphResource MomentsRead, RenderGraphResource MomentsWrite, RenderGraphResource GeometryRead, RenderGraphResource GeometryWrite, bool GameView, int Effect)> _rtDenoiserStates = [];
+    private IShaderProgram? _rtReflectionTemporalProgram;
+    private IComputePipeline? _rtReflectionTemporalPipeline;
     private IShaderProgram? _ssgiProgram;
     private IShaderProgram? _giCompositeProgram;
     private ITexture? _bloomFallbackTexture;
@@ -151,6 +159,7 @@ public sealed class RendererModule : IUpdatableModule
     private bool _gameRtCanTraceThisFrame;
     private RenderGraphResource? _rtNormalRoughness;
     private RenderGraphResource? _rtDepth;
+    private RenderGraphResource? _rtMotion;
     private RenderGraphResource? _rtVisibility;
     private RenderGraphResource? _rtVisibilityValidity;
     private RenderGraphResource? _rtResolvedVisibility;
@@ -158,6 +167,7 @@ public sealed class RendererModule : IUpdatableModule
     private RenderGraphResource? _rtGiValidity;
     private RenderGraphResource? _gameRtNormalRoughness;
     private RenderGraphResource? _gameRtDepth;
+    private RenderGraphResource? _gameRtMotion;
     private RenderGraphResource? _gameRtVisibility;
     private RenderGraphResource? _gameRtVisibilityValidity;
     private RenderGraphResource? _gameRtResolvedVisibility;
@@ -195,19 +205,19 @@ public sealed class RendererModule : IUpdatableModule
     private RenderGraphResource? _rtFilteredReflection;
     private RenderGraphResource? _rtSpecular;
     private RenderGraphResource? _rtSpecularResponse;
+    private RenderGraphResource? _rtDiffuseResponse;
     private RenderGraphResource? _rtCompositeTarget;
     private RenderGraphResource? _gameRtRawReflection;
     private RenderGraphResource? _gameRtFilteredReflection;
     private RenderGraphResource? _gameRtSpecular;
     private RenderGraphResource? _gameRtSpecularResponse;
+    private RenderGraphResource? _gameRtDiffuseResponse;
     private RenderGraphResource? _gameRtCompositeTarget;
     private RenderGraphBufferResource? _rtReflectionSbtResource;
     private RenderGraphBufferResource? _rtGiSbtResource;
     private RenderGraphPass? _rtSceneReflectionTracePass;
-    private RenderGraphPass? _rtSceneFilterPass;
     private RenderGraphPass? _rtSceneCompositePass;
     private RenderGraphPass? _rtGameReflectionTracePass;
-    private RenderGraphPass? _rtGameFilterPass;
     private RenderGraphPass? _rtGameCompositePass;
     private RenderGraphPass? _rtSceneGiPass;
     private RenderGraphPass? _rtGameGiPass;
@@ -225,6 +235,8 @@ public sealed class RendererModule : IUpdatableModule
     private RayTracingQualityPreset _rtReflectionPreset = RayTracingQualityPreset.High;
     private RayTracingQualityPreset _rtGiPreset = RayTracingQualityPreset.High;
     private readonly RayTracingQualityController _rtQualityController = new();
+
+    private void OnRtStageChanged(string message) => _log?.Information($"RT adaptive: {message}");
     private readonly float[] _rtTimingMilliseconds = new float[6];
     private float _rtRayBias = 0.002f;
     private float _rtMaxDistance = 200f;
@@ -430,6 +442,8 @@ public sealed class RendererModule : IUpdatableModule
         {
             if (!float.IsFinite(value) || value < 0.25f || value > 1f)
                 throw new ArgumentOutOfRangeException(nameof(value));
+            if (_rtResolutionScale == value)
+                return;
             _rtResolutionScale = value;
             _sceneHistory.Invalidate();
             _gameHistory.Invalidate();
@@ -642,6 +656,7 @@ public sealed class RendererModule : IUpdatableModule
     {
         _rhiModule = rhiModule;
         _shaderDirectory = ResolveShaderDirectory(shaderDirectory);
+        _rtQualityController.StageChanged += OnRtStageChanged;
     }
 
     public void EnableEditorMode(Size2D initialViewExtent)
@@ -1091,6 +1106,7 @@ public sealed class RendererModule : IUpdatableModule
 
     private void UpdateGraphDescriptors()
     {
+        UpdateRtDenoiserDescriptors();
         if (!_temporalEnabled)
             return;
         _graph!.RebindImportedTexture(
@@ -1169,6 +1185,7 @@ public sealed class RendererModule : IUpdatableModule
 
     private void BuildGraphTopology(Size2D sceneExtent)
     {
+        _rtDenoiserStates.Clear();
         _forwardPass = null;
         _tonemapPass = null;
         _gameForwardPass = null;
@@ -1184,10 +1201,8 @@ public sealed class RendererModule : IUpdatableModule
         _rtGamePrepassPass = null;
         _rtGameTracePass = null;
         _rtSceneReflectionTracePass = null;
-        _rtSceneFilterPass = null;
         _rtSceneCompositePass = null;
         _rtGameReflectionTracePass = null;
-        _rtGameFilterPass = null;
         _rtGameCompositePass = null;
         _rtSceneGiPass = null;
         _rtGameGiPass = null;
@@ -1202,6 +1217,7 @@ public sealed class RendererModule : IUpdatableModule
         {
             _graph.WritesColor(_forwardPass, _rtSpecular!, clear: true, Vector4.Zero);
             _graph.WritesColor(_forwardPass, _rtSpecularResponse!, clear: true, Vector4.Zero);
+            _graph.WritesColor(_forwardPass, _rtDiffuseResponse!, clear: true, Vector4.Zero);
         }
         _graph.WritesDepth(_forwardPass, _mainDepth!, clear: true, 1f);
         _graph.ReadsShader(_forwardPass, _shadowDepth!, PipelineStages.FragmentShader);
@@ -1233,7 +1249,7 @@ public sealed class RendererModule : IUpdatableModule
                     _rtSceneGiPass = _graph.AddRayTracingPassBefore(temporalPass!, "RtSceneGi", (commandBuffer, graph) => ExecuteRtGiPass(commandBuffer, graph, gameView: false));
                     RenderGraphPass clearGi = _graph.AddGraphicsPassBefore(_rtSceneGiPass, "RtSceneGiClear", (_, _) => { });
                     _graph.WritesColor(clearGi, _giTarget!, clear: true, Vector4.Zero);
-                    _graph.WritesColor(clearGi, _rtGiValidity!, clear: true, Vector4.One);
+                    _graph.WritesColor(clearGi, _rtGiValidity!, clear: true, Vector4.Zero);
                     clearGi.ShouldExecute = sceneVisible;
                     _graph.ReadsSampled(_rtSceneGiPass, _rtDepth!);
                     _graph.ReadsSampled(_rtSceneGiPass, _rtNormalRoughness!);
@@ -1254,22 +1270,26 @@ public sealed class RendererModule : IUpdatableModule
                     _graph.WritesStorage(_ssgiPass, _giTarget!, PipelineStages.ComputeShader);
                 }
 
-                RenderGraphResource giInput = giViaRt ? _rtGiFiltered! : _giTarget!;
-                _giTemporalPass = _graph.AddComputePass("GiTemporalResolve", (commandBuffer, graph) =>
-                    ExecuteTemporalPass(commandBuffer, graph, giInput, _motionTarget!, _mainDepth!, _sceneGiHistoryRead!, _sceneGiHistoryWrite!, _sceneGiHistory, ScreenSpaceGIHistoryWeight, denoiseGi: giViaRt,
-                        logicalSourceExtent: giViaRt ? RayTracingLogicalExtent(false, RayTracingQualityEffect.Gi) : null));
-                if (giViaRt)
-                    AddRtGiFilterChain(gameView: false, _giTarget!, _rtGiFilterScratch!, _rtGiFiltered!, _giTemporalPass);
-                _graph.ReadsShader(_giTemporalPass, giInput, PipelineStages.ComputeShader);
-                _graph.ReadsShader(_giTemporalPass, _motionTarget!, PipelineStages.ComputeShader);
-                _graph.ReadsShader(_giTemporalPass, _mainDepth!, PipelineStages.ComputeShader);
-                _graph.ReadsShader(_giTemporalPass, _sceneGiHistoryRead!, PipelineStages.ComputeShader);
-                _graph.WritesStorage(_giTemporalPass, _sceneGiHistoryWrite!, PipelineStages.ComputeShader);
-
+                RenderGraphResource resolvedGi = _sceneGiHistoryWrite!;
                 _giCompositePass = giCompositePass = _graph.AddComputePass("GiComposite", (commandBuffer, graph) =>
-                    ExecuteGiCompositePass(commandBuffer, graph, _historyWrite!, _sceneGiHistoryWrite!, _compositeTarget!));
+                    ExecuteGiCompositePass(commandBuffer, graph, _historyWrite!, resolvedGi, _compositeTarget!,
+                        gameView: false, rtTrace: giViaRt ? _rtSceneGiPass : null));
+                if (giViaRt)
+                    resolvedGi = AddRtDenoiseChain(false, 2, _giTarget!, _rtSceneGiPass!, _giCompositePass, out _giTemporalPass);
+                else
+                {
+                    _giTemporalPass = _graph.AddComputePassBefore(_giCompositePass, "GiTemporalResolve", (commandBuffer, graph) =>
+                        ExecuteTemporalPass(commandBuffer, graph, _giTarget!, _motionTarget!, _mainDepth!, _sceneGiHistoryRead!, _sceneGiHistoryWrite!, _sceneGiHistory, ScreenSpaceGIHistoryWeight));
+                    _graph.ReadsShader(_giTemporalPass, _giTarget!, PipelineStages.ComputeShader);
+                    _graph.ReadsShader(_giTemporalPass, _motionTarget!, PipelineStages.ComputeShader);
+                    _graph.ReadsShader(_giTemporalPass, _mainDepth!, PipelineStages.ComputeShader);
+                    _graph.ReadsShader(_giTemporalPass, _sceneGiHistoryRead!, PipelineStages.ComputeShader);
+                    _graph.WritesStorage(_giTemporalPass, _sceneGiHistoryWrite!, PipelineStages.ComputeShader);
+                }
                 _graph.ReadsShader(_giCompositePass, _historyWrite!, PipelineStages.ComputeShader);
-                _graph.ReadsShader(_giCompositePass, _sceneGiHistoryWrite!, PipelineStages.ComputeShader);
+                _graph.ReadsShader(_giCompositePass, resolvedGi, PipelineStages.ComputeShader);
+                if (giViaRt)
+                    _graph.ReadsSampled(_giCompositePass, _rtDiffuseResponse!);
                 _graph.WritesStorage(_giCompositePass, _compositeTarget!, PipelineStages.ComputeShader);
                 sceneColor = _compositeTarget!;
             }
@@ -1284,6 +1304,8 @@ public sealed class RendererModule : IUpdatableModule
                 sceneColor = bloomSource = _rtCompositeTarget!;
                 _graph.ReadsShader(bloomPass, _rtCompositeTarget!, PipelineStages.ComputeShader);
             }
+            sceneColor = bloomSource = AddTransparentPass(false, sceneColor, bloomPass);
+            _graph.ReadsShader(bloomPass, sceneColor, PipelineStages.ComputeShader);
             sceneBloom = _bloomTarget!;
         }
 
@@ -1292,11 +1314,16 @@ public sealed class RendererModule : IUpdatableModule
         _graph.WritesColor(_tonemapPass, tonemapOutput, clear: true, SkyColor);
         _graph.ReadsShader(_tonemapPass, sceneColor, PipelineStages.FragmentShader);
         _graph.ReadsShader(_tonemapPass, sceneBloom, PipelineStages.FragmentShader);
+        if (!_temporalEnabled)
+        {
+            sceneColor = AddTransparentPass(false, sceneColor, _tonemapPass);
+            _graph.ReadsShader(_tonemapPass, sceneColor, PipelineStages.FragmentShader);
+        }
 
         Func<bool> sceneSkyVisible = () => (_forwardPass!.ShouldExecute?.Invoke() ?? true)
             && _skyPipeline is not null
             && _skyboxMode == SkyboxMode.Procedural;
-        RenderGraphPass sceneSkyPass = _graph.AddGraphicsPassBefore(temporalPass ?? _tonemapPass, "ProceduralSky",
+        RenderGraphPass sceneSkyPass = _graph.AddGraphicsPassBefore(temporalPass ?? _graph.Passes.Single(pass => pass.Name == "SceneTransparencyCopy"), "ProceduralSky",
             (commandBuffer, _) => ExecuteSkyPass(commandBuffer, sceneExtent, gameView: false));
         sceneSkyPass.ShouldExecute = sceneSkyVisible;
         _graph.WritesColor(sceneSkyPass, _hdrTarget!, clear: false);
@@ -1311,7 +1338,7 @@ public sealed class RendererModule : IUpdatableModule
         Func<bool> sceneCloudsVisible = () => (_forwardPass!.ShouldExecute?.Invoke() ?? true)
             && CloudsEnabled
             && _cloudShapeTexture is not null;
-        RenderGraphPass sceneCloudsPass = _graph.AddGraphicsPassBefore(temporalPass ?? _tonemapPass, "VolumetricClouds",
+        RenderGraphPass sceneCloudsPass = _graph.AddGraphicsPassBefore(temporalPass ?? _graph.Passes.Single(pass => pass.Name == "SceneTransparencyCopy"), "VolumetricClouds",
             (commandBuffer, _) => ExecuteCloudsPass(commandBuffer, sceneExtent, gameView: false));
         sceneCloudsPass.ShouldExecute = sceneCloudsVisible;
         _graph.WritesColor(sceneCloudsPass, _hdrTarget!, clear: false);
@@ -1330,6 +1357,7 @@ public sealed class RendererModule : IUpdatableModule
             {
                 _graph.WritesColor(_gameForwardPass, _gameRtSpecular!, clear: true, Vector4.Zero);
                 _graph.WritesColor(_gameForwardPass, _gameRtSpecularResponse!, clear: true, Vector4.Zero);
+                _graph.WritesColor(_gameForwardPass, _gameRtDiffuseResponse!, clear: true, Vector4.Zero);
             }
             _graph.WritesDepth(_gameForwardPass, _gameDepth!, clear: true, 1f);
             _graph.ReadsShader(_gameForwardPass, _gameShadowDepth!, PipelineStages.FragmentShader);
@@ -1360,7 +1388,7 @@ public sealed class RendererModule : IUpdatableModule
                         _rtGameGiPass = _graph.AddRayTracingPassBefore(gameTemporalPass!, "RtGameGi", (commandBuffer, graph) => ExecuteRtGiPass(commandBuffer, graph, gameView: true));
                         RenderGraphPass clearGi = _graph.AddGraphicsPassBefore(_rtGameGiPass, "RtGameGiClear", (_, _) => { });
                         _graph.WritesColor(clearGi, _gameGiTarget!, clear: true, Vector4.Zero);
-                        _graph.WritesColor(clearGi, _gameRtGiValidity!, clear: true, Vector4.One);
+                        _graph.WritesColor(clearGi, _gameRtGiValidity!, clear: true, Vector4.Zero);
                         clearGi.ShouldExecute = gameVisible;
                         _graph.ReadsSampled(_rtGameGiPass, _gameRtDepth!);
                         _graph.ReadsSampled(_rtGameGiPass, _gameRtNormalRoughness!);
@@ -1381,22 +1409,26 @@ public sealed class RendererModule : IUpdatableModule
                         _graph.WritesStorage(_gameSsgiPass, _gameGiTarget!, PipelineStages.ComputeShader);
                     }
 
-                    RenderGraphResource giInput = giViaRt ? _gameRtGiFiltered! : _gameGiTarget!;
-                    _gameGiTemporalPass = _graph.AddComputePass("GameGiTemporalResolve", (commandBuffer, graph) =>
-                        ExecuteTemporalPass(commandBuffer, graph, giInput, _gameMotionTarget!, _gameDepth!, _gameGiHistoryRead!, _gameGiHistoryWrite!, _gameGiHistory, ScreenSpaceGIHistoryWeight, denoiseGi: giViaRt,
-                            logicalSourceExtent: giViaRt ? RayTracingLogicalExtent(true, RayTracingQualityEffect.Gi) : null));
-                    if (giViaRt)
-                        AddRtGiFilterChain(gameView: true, _gameGiTarget!, _gameRtGiFilterScratch!, _gameRtGiFiltered!, _gameGiTemporalPass);
-                    _graph.ReadsShader(_gameGiTemporalPass, giInput, PipelineStages.ComputeShader);
-                    _graph.ReadsShader(_gameGiTemporalPass, _gameMotionTarget!, PipelineStages.ComputeShader);
-                    _graph.ReadsShader(_gameGiTemporalPass, _gameDepth!, PipelineStages.ComputeShader);
-                    _graph.ReadsShader(_gameGiTemporalPass, _gameGiHistoryRead!, PipelineStages.ComputeShader);
-                    _graph.WritesStorage(_gameGiTemporalPass, _gameGiHistoryWrite!, PipelineStages.ComputeShader);
-
+                    RenderGraphResource resolvedGi = _gameGiHistoryWrite!;
                     _gameGiCompositePass = _graph.AddComputePass("GameGiComposite", (commandBuffer, graph) =>
-                        ExecuteGiCompositePass(commandBuffer, graph, _gameHistoryWrite!, _gameGiHistoryWrite!, _gameCompositeTarget!));
+                        ExecuteGiCompositePass(commandBuffer, graph, _gameHistoryWrite!, resolvedGi, _gameCompositeTarget!,
+                            gameView: true, rtTrace: giViaRt ? _rtGameGiPass : null));
+                    if (giViaRt)
+                        resolvedGi = AddRtDenoiseChain(true, 2, _gameGiTarget!, _rtGameGiPass!, _gameGiCompositePass, out _gameGiTemporalPass);
+                    else
+                    {
+                        _gameGiTemporalPass = _graph.AddComputePassBefore(_gameGiCompositePass, "GameGiTemporalResolve", (commandBuffer, graph) =>
+                            ExecuteTemporalPass(commandBuffer, graph, _gameGiTarget!, _gameMotionTarget!, _gameDepth!, _gameGiHistoryRead!, _gameGiHistoryWrite!, _gameGiHistory, ScreenSpaceGIHistoryWeight));
+                        _graph.ReadsShader(_gameGiTemporalPass, _gameGiTarget!, PipelineStages.ComputeShader);
+                        _graph.ReadsShader(_gameGiTemporalPass, _gameMotionTarget!, PipelineStages.ComputeShader);
+                        _graph.ReadsShader(_gameGiTemporalPass, _gameDepth!, PipelineStages.ComputeShader);
+                        _graph.ReadsShader(_gameGiTemporalPass, _gameGiHistoryRead!, PipelineStages.ComputeShader);
+                        _graph.WritesStorage(_gameGiTemporalPass, _gameGiHistoryWrite!, PipelineStages.ComputeShader);
+                    }
                     _graph.ReadsShader(_gameGiCompositePass, _gameHistoryWrite!, PipelineStages.ComputeShader);
-                    _graph.ReadsShader(_gameGiCompositePass, _gameGiHistoryWrite!, PipelineStages.ComputeShader);
+                    _graph.ReadsShader(_gameGiCompositePass, resolvedGi, PipelineStages.ComputeShader);
+                    if (giViaRt)
+                        _graph.ReadsSampled(_gameGiCompositePass, _gameRtDiffuseResponse!);
                     _graph.WritesStorage(_gameGiCompositePass, _gameCompositeTarget!, PipelineStages.ComputeShader);
                     gameColor = _gameCompositeTarget!;
                 }
@@ -1411,6 +1443,8 @@ public sealed class RendererModule : IUpdatableModule
                     gameColor = gameBloomSource = _gameRtCompositeTarget!;
                     _graph.ReadsShader(gameBloomPass, _gameRtCompositeTarget!, PipelineStages.ComputeShader);
                 }
+                gameColor = gameBloomSource = AddTransparentPass(true, gameColor, gameBloomPass);
+                _graph.ReadsShader(gameBloomPass, gameColor, PipelineStages.ComputeShader);
                 gameBloom = _gameBloomTarget!;
             }
 
@@ -1418,17 +1452,22 @@ public sealed class RendererModule : IUpdatableModule
             _graph.WritesColor(_gameTonemapPass, _gameTarget!, clear: true, Vector4.Zero);
             _graph.ReadsShader(_gameTonemapPass, gameColor, PipelineStages.FragmentShader);
             _graph.ReadsShader(_gameTonemapPass, gameBloom, PipelineStages.FragmentShader);
+            if (!_temporalEnabled)
+            {
+                gameColor = AddTransparentPass(true, gameColor, _gameTonemapPass);
+                _graph.ReadsShader(_gameTonemapPass, gameColor, PipelineStages.FragmentShader);
+            }
 
             Func<bool> gameSkyVisible = () => (_gameForwardPass!.ShouldExecute?.Invoke() ?? true)
                 && _skyPipeline is not null
                 && _skyboxMode == SkyboxMode.Procedural;
-            RenderGraphPass gameSkyPass = _graph.AddGraphicsPassBefore(gameTemporalPass ?? _gameTonemapPass, "GameProceduralSky",
+            RenderGraphPass gameSkyPass = _graph.AddGraphicsPassBefore(gameTemporalPass ?? _graph.Passes.Single(pass => pass.Name == "GameTransparencyCopy"), "GameProceduralSky",
                 (commandBuffer, _) => ExecuteSkyPass(commandBuffer, _gameRenderExtent.Width > 8 ? _gameRenderExtent : sceneExtent, gameView: true));
             gameSkyPass.ShouldExecute = gameSkyVisible;
             _graph.WritesColor(gameSkyPass, _gameHdrTarget!, clear: false);
             _graph.ReadsDepth(gameSkyPass, _gameDepth!);
 
-            RenderGraphPass gameCloudsPass = _graph.AddGraphicsPassBefore(gameTemporalPass ?? _gameTonemapPass, "GameVolumetricClouds",
+            RenderGraphPass gameCloudsPass = _graph.AddGraphicsPassBefore(gameTemporalPass ?? _graph.Passes.Single(pass => pass.Name == "GameTransparencyCopy"), "GameVolumetricClouds",
                 (commandBuffer, _) => ExecuteCloudsPass(commandBuffer, _gameRenderExtent.Width > 8 ? _gameRenderExtent : sceneExtent, gameView: true));
             gameCloudsPass.ShouldExecute = () => gameSkyVisible() && CloudsEnabled && _cloudShapeTexture is not null;
             _graph.WritesColor(gameCloudsPass, _gameHdrTarget!, clear: false);
@@ -1439,7 +1478,7 @@ public sealed class RendererModule : IUpdatableModule
                 gameTemporalPass.ShouldExecute = _gameForwardPass.ShouldExecute;
             if (_gameSsgiPass is not null)
                 _gameSsgiPass.ShouldExecute = _gameForwardPass.ShouldExecute;
-            if (_gameGiTemporalPass is not null)
+            if (_gameGiTemporalPass is not null && !_lastGiViaRt)
                 _gameGiTemporalPass.ShouldExecute = _gameForwardPass.ShouldExecute;
             if (_gameGiCompositePass is not null)
                 _gameGiCompositePass.ShouldExecute = _gameForwardPass.ShouldExecute;
@@ -1472,7 +1511,7 @@ public sealed class RendererModule : IUpdatableModule
             temporalPass.ShouldExecute = _forwardPass.ShouldExecute;
         if (_ssgiPass is not null)
             _ssgiPass.ShouldExecute = _forwardPass.ShouldExecute;
-        if (_giTemporalPass is not null)
+        if (_giTemporalPass is not null && !_lastGiViaRt)
             _giTemporalPass.ShouldExecute = _forwardPass.ShouldExecute;
         if (_giCompositePass is not null)
             _giCompositePass.ShouldExecute = _forwardPass.ShouldExecute;
@@ -1516,17 +1555,22 @@ public sealed class RendererModule : IUpdatableModule
     private void ExecuteForwardPass(ICommandBuffer commandBuffer, Size2D extent) =>
         ExecuteForwardPass(commandBuffer, extent, _cameraAllocation);
 
-    private void ExecuteForwardPass(ICommandBuffer commandBuffer, Size2D extent, FrameAllocation cameraAllocation)
+    private void ExecuteForwardPass(ICommandBuffer commandBuffer, Size2D extent, FrameAllocation cameraAllocation, bool transparent = false)
     {
         bool gameView = cameraAllocation == _gameCameraAllocation;
         bool rtActive = _lastRtMasterEnabled;
-        commandBuffer.BindGraphicsPipeline(rtActive ? _pbrRtPipeline! : _pbrPipeline!);
+        commandBuffer.BindGraphicsPipeline(transparent
+            ? (rtActive ? _pbrRtTransparentPipeline! : _pbrTransparentPipeline!)
+            : (rtActive ? _pbrRtPipeline! : _pbrPipeline!));
         commandBuffer.SetViewport(new Viewport(0f, 0f, extent.Width, extent.Height, 0f, 1f));
         commandBuffer.SetScissor(new Rect(0, 0, extent.Width, extent.Height));
 
         FrameAllocation shadowAllocation = gameView ? _gameShadowAllocation : _shadowAllocation;
         RenderGraphResource shadowDepth = gameView ? _gameShadowDepth! : _shadowDepth!;
-        IDescriptorSet frameSet = (rtActive ? _pbrRtProgram : _pbrProgram)!.CreateDescriptorSet(0);
+        IShaderProgram program = (transparent
+            ? (rtActive ? _pbrRtTransparentProgram : _pbrTransparentProgram)
+            : (rtActive ? _pbrRtProgram : _pbrProgram))!;
+        IDescriptorSet frameSet = program.CreateDescriptorSet(0);
         frameSet.WriteUniformBuffer(0, _uniformRing!.Buffer, cameraAllocation.Offset, (ulong)CameraData.SizeInBytes);
         frameSet.WriteUniformBuffer(1, _uniformRing.Buffer, shadowAllocation.Offset, (ulong)Marshal.SizeOf<ShadowData>());
         frameSet.WriteTexture(2, _graph!.GetTexture(shadowDepth));
@@ -1538,7 +1582,7 @@ public sealed class RendererModule : IUpdatableModule
         frameSet.WriteSampler(8, _iblResources.Sampler);
         if (rtActive)
         {
-            frameSet.WriteTexture(9, _graph.GetTexture(gameView ? _gameRtVisibility! : _rtVisibility!));
+            frameSet.WriteTexture(9, _graph.GetTexture(gameView ? _gameRtResolvedVisibility! : _rtResolvedVisibility!));
             FrameAllocation control = gameView ? _rtGameControlAllocation : _rtSceneControlAllocation;
             frameSet.WriteUniformBuffer(10, _uniformRing.Buffer, control.Offset, (ulong)RtShadowControl.SizeInBytes);
         }
@@ -1553,6 +1597,8 @@ public sealed class RendererModule : IUpdatableModule
         {
             RenderItem renderItem = preparedDraw.Item;
             Mesh drawMesh = preparedDraw.Mesh;
+            if (IsTransparentMaterial(renderItem.Material) != transparent)
+                continue;
             DrawnObjects++;
             if (_editorMode && cameraAllocation != _gameCameraAllocation)
             {
@@ -1596,7 +1642,11 @@ public sealed class RendererModule : IUpdatableModule
                     _device!.UploadBufferData(renderItem.Material.ParamsBuffer, StructuredBytes(renderItem.Material.ToData()));
                     renderItem.Material.ParamsDirty = false;
                 }
-                commandBuffer.BindDescriptorSet((rtActive ? renderItem.Material.RtSet : renderItem.Material.Set)!, 1);
+                Material material = renderItem.Material;
+                IDescriptorSet materialSet = rtActive
+                    ? material.RtTransparentSet ??= CreateTransparentMaterialSet(_pbrRtTransparentProgram!, material)
+                    : material.TransparentSet ??= CreateTransparentMaterialSet(_pbrTransparentProgram!, material);
+                commandBuffer.BindDescriptorSet(materialSet, 1);
                 Matrix4x4 model = renderItem.ModelMatrix;
                 Matrix4x4 previousModel = previousModels.TryGetValue(renderItem, out Matrix4x4 previous) ? previous : model;
                 ModelConstants constants = ModelConstants.FromModel(model, previousModel);
@@ -1605,6 +1655,47 @@ public sealed class RendererModule : IUpdatableModule
                 (gameView ? _gameDrawnItems : _sceneDrawnItems).Add(renderItem);
             }
         }
+    }
+
+    private IDescriptorSet CreateTransparentMaterialSet(IShaderProgram program, Material material)
+    {
+        IDescriptorSet set = program.CreateDescriptorSet(1);
+        set.WriteUniformBuffer(0, material.ParamsBuffer);
+        set.WriteSampler(6, _linearSampler!);
+        WriteMaterialTextures(set, material.ResolveTextures(_defaultMaterialTextures!));
+        return set;
+    }
+
+    private static void WriteMaterialTextures(IDescriptorSet set, MaterialTextureSet textures)
+    {
+        set.WriteTexture(1, textures.Albedo);
+        set.WriteTexture(2, textures.Metallic);
+        set.WriteTexture(3, textures.Roughness);
+        set.WriteTexture(4, textures.Normal);
+        set.WriteTexture(5, textures.AmbientOcclusion);
+        set.WriteTexture(7, textures[MaterialTextureSlot.Emission]);
+    }
+
+    private RenderGraphResource AddTransparentPass(bool gameView, RenderGraphResource color, RenderGraphPass before)
+    {
+        RenderGraphPass forward = gameView ? _gameForwardPass! : _forwardPass!;
+        RenderGraphResource target = _graph!.DeclareTransientTexture(gameView ? "GameTransparentColor" : "SceneTransparentColor", color.Description);
+        RenderGraphPass copy = _graph.AddTransferPassBefore(before, gameView ? "GameTransparencyCopy" : "SceneTransparencyCopy", (commandBuffer, graph) =>
+            commandBuffer.CopyImage(graph.GetTexture(color), ImageLayout.TransferSrcOptimal, graph.GetTexture(target), ImageLayout.TransferDstOptimal));
+        _graph.ReadsTransfer(copy, color);
+        _graph.WritesTransfer(copy, target);
+        RenderGraphPass pass = _graph.AddGraphicsPassBefore(before, gameView ? "GameTransparent" : "SceneTransparent",
+            (commandBuffer, _) => ExecuteForwardPass(commandBuffer, color.Description.Extent,
+                gameView ? _gameCameraAllocation : _cameraAllocation, transparent: true));
+        _graph.WritesColor(pass, target, clear: false);
+        _graph.ReadsDepth(pass, (gameView ? _gameDepth : _mainDepth)!);
+        _graph.ReadsShader(pass, (gameView ? _gameShadowDepth : _shadowDepth)!, PipelineStages.FragmentShader);
+        if (_rtVisibility is not null)
+            _graph.ReadsShader(pass, (gameView ? _gameRtResolvedVisibility : _rtResolvedVisibility)!, PipelineStages.FragmentShader);
+        copy.ShouldExecute = () => forward.ShouldExecute?.Invoke() ?? true;
+        pass.ShouldExecute = () => copy.ShouldExecute()
+            && (gameView ? _gamePreparedDrawItems : _scenePreparedDrawItems).Any(draw => IsTransparentMaterial(draw.Item.Material));
+        return target;
     }
 
     private static bool IsTransparentMaterial(Material material) =>
@@ -1654,6 +1745,7 @@ public sealed class RendererModule : IUpdatableModule
 
         RenderGraphPass prepass = _graph!.AddGraphicsPassBefore(forward, $"Rt{prefix}Prepass", (commandBuffer, _) => ExecuteRtPrepassPass(commandBuffer, extent, gameView));
         _graph.WritesColor(prepass, normalRoughness, clear: true, Vector4.Zero);
+        _graph.WritesColor(prepass, (gameView ? _gameRtMotion : _rtMotion)!, clear: true, Vector4.Zero);
         _graph.WritesDepth(prepass, depth, clear: true, 1f);
         prepass.ShouldExecute = traceReady;
 
@@ -1664,7 +1756,12 @@ public sealed class RendererModule : IUpdatableModule
         _graph.WritesStorage(trace, visibility);
         _graph.WritesStorage(trace, validity);
         trace.ShouldExecute = () => traceReady() && ShadowMode == ShadowMode.RayTraced && RtShadowLightActive(gameView ? _currentGameShadowData : _currentShadowData);
-        _graph.ReadsShader(forward, visibility);
+        RenderGraphResource resolvedVisibility = AddRtDenoiseChain(gameView, 0, visibility, trace, forward, out _);
+        if (gameView)
+            _gameRtResolvedVisibility = resolvedVisibility;
+        else
+            _rtResolvedVisibility = resolvedVisibility;
+        _graph.ReadsShader(forward, resolvedVisibility);
 
         if (gameView)
         {
@@ -1713,30 +1810,25 @@ public sealed class RendererModule : IUpdatableModule
         _graph.WritesStorage(reflectionTrace, validity);
         reflectionTrace.ShouldExecute = reflectionTraceReady;
 
-        if (gameView)
-            _rtGameFilterPass = _graph.AddComputePassBefore(insertBefore, "RtGameFilter", (commandBuffer, graph) => ExecuteRtFilterPass(commandBuffer, graph, gameView: true));
-        else
-            _rtSceneFilterPass = _graph.AddComputePassBefore(insertBefore, "RtSceneFilter", (commandBuffer, graph) => ExecuteRtFilterPass(commandBuffer, graph, gameView: false));
-        RenderGraphPass filter = gameView ? _rtGameFilterPass! : _rtSceneFilterPass!;
-        _graph.ReadsSampled(filter, rawReflection);
-        _graph.ReadsSampled(filter, depth);
-        _graph.ReadsSampled(filter, normalRoughness);
-        _graph.ReadsSampled(filter, motion);
-        _graph.ReadsSampled(filter, validity);
+        RenderGraphPass filter = _graph.AddComputePassBefore(insertBefore, $"Rt{prefix}ReflectionSpatial", (commandBuffer, graph) =>
+            ExecuteRtFilterPass(commandBuffer, graph, rawReflection, filteredReflection, depth, normalRoughness, motion, validity,
+                mode: 1u, stepWidth: 1u, validityEnabled: true,
+                logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections),
+                logicalDestinationExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections)));
+        foreach (RenderGraphResource resource in new[] { rawReflection, depth, normalRoughness, motion, validity })
+            _graph.ReadsSampled(filter, resource);
         _graph.WritesStorage(filter, filteredReflection);
         filter.ShouldExecute = reflectionTraceReady;
-
         RenderGraphResource reflectionHistoryRead = (gameView ? _gameReflectionHistoryRead : _sceneReflectionHistoryRead)!;
         RenderGraphResource reflectionHistoryWrite = (gameView ? _gameReflectionHistoryWrite : _sceneReflectionHistoryWrite)!;
-        RenderGraphPass reflectionTemporal = _graph!.AddComputePassBefore(insertBefore, $"Rt{prefix}ReflectionTemporal", (commandBuffer, graph) =>
-            ExecuteTemporalPass(commandBuffer, graph, filteredReflection, motion, depth, reflectionHistoryRead, reflectionHistoryWrite, gameView ? _gameReflectionHistory : _sceneReflectionHistory, 0.85f,
+        RenderGraphPass temporal = _graph.AddComputePassBefore(insertBefore, $"Rt{prefix}ReflectionTemporal", (commandBuffer, graph) =>
+            ExecuteTemporalPass(commandBuffer, graph, filteredReflection, motion, depth, reflectionHistoryRead, reflectionHistoryWrite,
+                gameView ? _gameReflectionHistory : _sceneReflectionHistory, 0.95f, denoiseReflections: true,
                 logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Reflections)));
-        _graph.ReadsShader(reflectionTemporal, filteredReflection, PipelineStages.ComputeShader);
-        _graph.ReadsShader(reflectionTemporal, motion, PipelineStages.ComputeShader);
-        _graph.ReadsShader(reflectionTemporal, depth, PipelineStages.ComputeShader);
-        _graph.ReadsShader(reflectionTemporal, reflectionHistoryRead, PipelineStages.ComputeShader);
-        _graph.WritesStorage(reflectionTemporal, reflectionHistoryWrite, PipelineStages.ComputeShader);
-        reflectionTemporal.ShouldExecute = reflectionTraceReady;
+        foreach (RenderGraphResource resource in new[] { filteredReflection, motion, depth, reflectionHistoryRead })
+            _graph.ReadsSampled(temporal, resource);
+        _graph.WritesStorage(temporal, reflectionHistoryWrite);
+        temporal.ShouldExecute = reflectionTraceReady;
 
         if (gameView)
             _rtGameCompositePass = _graph.AddComputePassBefore(insertBefore, "RtGameComposite", (commandBuffer, graph) =>
@@ -1821,6 +1913,8 @@ public sealed class RendererModule : IUpdatableModule
         foreach (RayTracingDrawItem preparedDraw in preparedDrawItems)
         {
             RenderItem renderItem = preparedDraw.Item;
+            if (IsTransparentMaterial(renderItem.Material))
+                continue;
             if (renderItem.Material.ParamsDirty)
             {
                 _device!.UploadBufferData(renderItem.Material.ParamsBuffer, StructuredBytes(renderItem.Material.ToData()));
@@ -1828,7 +1922,9 @@ public sealed class RendererModule : IUpdatableModule
             }
             if (renderItem.Material.RtPrepassSet is not null)
                 commandBuffer.BindDescriptorSet(renderItem.Material.RtPrepassSet, 1);
-            commandBuffer.PushConstants(StructuredBytes(ModelConstants.FromModel(renderItem.ModelMatrix)), _rtPrepassPushStages);
+            Dictionary<RenderItem, Matrix4x4> models = gameView ? _gamePreviousModels : _scenePreviousModels;
+            Matrix4x4 previous = models.TryGetValue(renderItem, out Matrix4x4 previousModel) ? previousModel : renderItem.ModelMatrix;
+            commandBuffer.PushConstants(StructuredBytes(ModelConstants.FromModel(renderItem.ModelMatrix, previous)), _rtPrepassPushStages);
             preparedDraw.Mesh.Draw(commandBuffer);
         }
     }
@@ -1931,8 +2027,9 @@ public sealed class RendererModule : IUpdatableModule
         set.WriteTexture(3, graph.GetTexture(normalRoughness));
         set.WriteStorageImage(4, graph.GetTexture(giTarget));
         set.WriteStorageImage(7, graph.GetTexture(validity));
-        set.WriteTexture(5, _iblResources!.Irradiance);
-        set.WriteSampler(6, _iblResources.Sampler);
+        set.WriteSampler(6, _iblResources!.Sampler);
+        set.WriteUniformBuffer(8, _uniformRing.Buffer, _lightsAllocation.Offset, (ulong)Marshal.SizeOf<LightsData>());
+        set.WriteTexture(9, _iblResources.Environment);
         _frameSets[_activeFrameSlot].Add(set);
         IDescriptorSet shadingSet = _rtGiProgram.CreateDescriptorSet(1);
         shadingSet.WriteStorageBuffer(0, frame.Surfaces);
@@ -1951,36 +2048,6 @@ public sealed class RendererModule : IUpdatableModule
         commandBuffer.TraceRays(_rtGiSbt, (uint)extent.Width, (uint)extent.Height, 1);
     }
 
-
-    private void AddRtGiFilterChain(bool gameView, RenderGraphResource source, RenderGraphResource scratch, RenderGraphResource destination, RenderGraphPass insertBefore)
-    {
-        RenderGraphPass forward = (gameView ? _gameForwardPass : _forwardPass)!;
-        RenderGraphResource depth = (gameView ? _gameRtDepth : _rtDepth)!;
-        RenderGraphResource normalRoughness = (gameView ? _gameRtNormalRoughness : _rtNormalRoughness)!;
-        RenderGraphResource motion = (gameView ? _gameMotionTarget : _motionTarget)!;
-        RenderGraphResource giValidity = (gameView ? _gameRtGiValidity : _rtGiValidity)!;
-        string prefix = gameView ? "Game" : "Scene";
-        RenderGraphResource input = source;
-        for (uint iteration = 0; iteration < 2; iteration++)
-        {
-            RenderGraphResource filterInput = input;
-            RenderGraphResource filterOutput = iteration == 0 ? scratch : destination;
-            uint stepWidth = 1u << (int)iteration;
-            bool useValidity = iteration == 0;
-            RenderGraphPass filter = _graph!.AddComputePassBefore(insertBefore, $"Rt{prefix}GiFilter.{iteration}", (commandBuffer, graph) =>
-                ExecuteRtFilterPass(commandBuffer, graph, filterInput, filterOutput, depth, normalRoughness, motion, giValidity, mode: 2u, stepWidth, validityEnabled: useValidity,
-                    logicalSourceExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Gi),
-                    logicalDestinationExtent: RayTracingLogicalExtent(gameView, RayTracingQualityEffect.Gi)));
-            _graph.ReadsSampled(filter, filterInput);
-            _graph.ReadsSampled(filter, depth);
-            _graph.ReadsSampled(filter, normalRoughness);
-            _graph.ReadsSampled(filter, motion);
-            _graph.ReadsSampled(filter, giValidity);
-            _graph.WritesStorage(filter, filterOutput);
-            filter.ShouldExecute = () => forward.ShouldExecute?.Invoke() ?? true;
-            input = filterOutput;
-        }
-    }
 
     private void ExecuteRtFilterPass(ICommandBuffer commandBuffer, RenderGraph graph, bool gameView)
     {
@@ -2009,14 +2076,16 @@ public sealed class RendererModule : IUpdatableModule
         bool validityEnabled,
         bool useSceneDepth = false,
         Size2D? logicalSourceExtent = null,
-        Size2D? logicalDestinationExtent = null)
+        Size2D? logicalDestinationExtent = null,
+        RenderGraphResource? moments = null,
+        uint padding2 = 0)
     {
         IDescriptorSet set = _rtFilterProgram!.CreateDescriptorSet(0);
         set.WriteTexture(0, graph.GetTexture(source));
         set.WriteTexture(1, graph.GetTexture(depth));
         set.WriteTexture(2, graph.GetTexture(normalRoughness));
         set.WriteTexture(3, graph.GetTexture(motion));
-        set.WriteTexture(4, graph.GetTexture(normalRoughness));
+        set.WriteTexture(4, graph.GetTexture(moments ?? normalRoughness));
         set.WriteTexture(5, graph.GetTexture(normalRoughness));
         set.WriteStorageImage(6, graph.GetTexture(destination));
         set.WriteTexture(7, graph.GetTexture(validity));
@@ -2034,11 +2103,13 @@ public sealed class RendererModule : IUpdatableModule
             HistoryValid = 0,
             Mode = mode,
             HistoryWeight = 0f,
-            DepthThreshold = 0.01f,
+            DepthThreshold = moments is not null ? 0.001f : 0.01f,
             NormalThreshold = 0.85f,
             StepWidth = stepWidth,
             ValidityEnabled = validityEnabled ? 1u : 0u,
             UseSceneDepth = useSceneDepth ? 1u : 0u,
+            Padding1 = moments is not null ? 1u : 0u,
+            Padding2 = padding2,
         };
         commandBuffer.PushConstants(StructuredBytes(constants), _rtFilterPushStages);
         commandBuffer.Dispatch((uint)(extent.Width + 7) / 8, (uint)(extent.Height + 7) / 8);
@@ -2113,7 +2184,9 @@ public sealed class RendererModule : IUpdatableModule
     private Vector4 RayTracingQualityVector(RayTracingQualityCamera camera, RayTracingQualityEffect effect)
     {
         (_, RayTracingQualityProfile profile, _) = GetRayTracingQuality(camera, effect);
-        uint samples = Math.Clamp(profile.Samples, 1u, (uint)Math.Clamp(_rtSamples, 1, 8));
+        uint samples = effect == RayTracingQualityEffect.Gi
+            ? Math.Clamp(profile.Samples * 2u, 1u, (uint)Math.Clamp(_rtSamples * 4, 1, 16))
+            : Math.Clamp(profile.Samples, 1u, (uint)Math.Clamp(_rtSamples, 1, 8));
         return new Vector4(samples, _rtMaxDistance * 0.3f, profile.FarTraceRate, profile.ResolutionScale);
     }
 
@@ -2201,11 +2274,12 @@ public sealed class RendererModule : IUpdatableModule
         RenderGraphResource historyRead,
         RenderGraphResource historyWrite,
         TemporalHistory history,
-        float historyWeight = 0.9f,
+        float historyWeight = 0.975f,
         bool denoiseGi = false,
-        Size2D? logicalSourceExtent = null)
+        Size2D? logicalSourceExtent = null,
+        bool denoiseReflections = false)
     {
-        IDescriptorSet set = (denoiseGi ? _rtGiTemporalProgram : _temporalProgram)!.CreateDescriptorSet(0);
+        IDescriptorSet set = (denoiseGi ? _rtGiTemporalProgram : denoiseReflections ? _rtReflectionTemporalProgram : _temporalProgram)!.CreateDescriptorSet(0);
         set.WriteTexture(0, graph.GetTexture(color));
         set.WriteTexture(1, graph.GetTexture(motion));
         set.WriteTexture(2, graph.GetTexture(depth));
@@ -2213,7 +2287,7 @@ public sealed class RendererModule : IUpdatableModule
         set.WriteStorageImage(4, graph.GetTexture(historyWrite));
         set.WriteSampler(5, _linearSampler!);
         _frameSets[_activeFrameSlot].Add(set);
-        commandBuffer.BindComputePipeline((denoiseGi ? _rtGiTemporalPipeline : _temporalPipeline)!);
+        commandBuffer.BindComputePipeline((denoiseGi ? _rtGiTemporalPipeline : denoiseReflections ? _rtReflectionTemporalPipeline : _temporalPipeline)!);
         commandBuffer.BindDescriptorSet(set, 0);
         Size2D extent = historyWrite.Description.Extent;
         Size2D sourceExtent = logicalSourceExtent ?? color.Description.Extent;
@@ -2256,12 +2330,17 @@ public sealed class RendererModule : IUpdatableModule
         RenderGraph graph,
         RenderGraphResource sceneColor,
         RenderGraphResource giColor,
-        RenderGraphResource destination)
+        RenderGraphResource destination,
+        bool gameView,
+        RenderGraphPass? rtTrace)
     {
+        bool rtActive = rtTrace?.ShouldExecute?.Invoke() == true;
         IDescriptorSet set = _giCompositeProgram!.CreateDescriptorSet(0);
-        set.WriteTexture(0, graph.GetTexture(sceneColor));
-        set.WriteTexture(1, graph.GetTexture(giColor));
+        ITexture color = graph.GetTexture(sceneColor);
+        set.WriteTexture(0, color);
+        set.WriteTexture(1, rtTrace is null || rtActive ? graph.GetTexture(giColor) : color);
         set.WriteStorageImage(2, graph.GetTexture(destination));
+        set.WriteTexture(3, rtActive ? graph.GetTexture((gameView ? _gameRtDiffuseResponse : _rtDiffuseResponse)!) : color);
         _frameSets[_activeFrameSlot].Add(set);
         commandBuffer.BindComputePipeline(_giCompositePipeline!);
         commandBuffer.BindDescriptorSet(set, 0);
@@ -2271,6 +2350,7 @@ public sealed class RendererModule : IUpdatableModule
             Width = (uint)extent.Width,
             Height = (uint)extent.Height,
             Intensity = ScreenSpaceGIIntensity,
+            Mode = rtTrace is null ? 0u : rtActive ? 1u : 2u,
         };
         commandBuffer.PushConstants(StructuredBytes(constants), ShaderStages.Compute);
         commandBuffer.Dispatch((uint)(extent.Width + 7) / 8, (uint)(extent.Height + 7) / 8);
@@ -2531,6 +2611,8 @@ public sealed class RendererModule : IUpdatableModule
 
     private void CommitTemporalFrame()
     {
+        foreach (var state in _rtDenoiserStates)
+            state.History.Commit();
         if (_sceneViewRendered)
         {
             _sceneHistory.Commit();
@@ -2538,7 +2620,7 @@ public sealed class RendererModule : IUpdatableModule
                 _sceneReflectionHistory.Commit();
             else
                 _sceneReflectionHistory.Invalidate();
-            if (_sceneGiHistoryWrite is not null)
+            if (_sceneGiHistoryWrite is not null && !_lastGiViaRt)
                 _sceneGiHistory.Commit();
             _scenePreviousViewProjection = _sceneCurrentViewProjection;
             _scenePreviousJitter = _sceneJitter;
@@ -2552,7 +2634,7 @@ public sealed class RendererModule : IUpdatableModule
                 _gameReflectionHistory.Commit();
             else
                 _gameReflectionHistory.Invalidate();
-            if (_gameGiHistoryWrite is not null)
+            if (_gameGiHistoryWrite is not null && !_lastGiViaRt)
                 _gameGiHistory.Commit();
             _gamePreviousViewProjection = _gameCurrentViewProjection;
             _gamePreviousJitter = _gameJitter;
@@ -2576,6 +2658,8 @@ public sealed class RendererModule : IUpdatableModule
         _gameGiHistory.Invalidate();
         _sceneReflectionHistory.Invalidate();
         _gameReflectionHistory.Invalidate();
+        foreach (RtDenoiserHistory denoiser in _rtDenoisers.Values)
+            denoiser.Invalidate();
         _sceneJitterIndex = 0;
         _gameJitterIndex = 0;
         _scenePreviousModels.Clear();
@@ -2611,7 +2695,7 @@ public sealed class RendererModule : IUpdatableModule
         Size2D rtExtent = new(Math.Max(1, (int)MathF.Ceiling(sceneExtent.Width * _rtResolutionScale)), Math.Max(1, (int)MathF.Ceiling(sceneExtent.Height * _rtResolutionScale)));
         Size2D gameRtExtent = new(Math.Max(1, (int)MathF.Ceiling(gameExtent.Width * _rtResolutionScale)), Math.Max(1, (int)MathF.Ceiling(gameExtent.Height * _rtResolutionScale)));
         _gameRenderExtent = gameExtent;
-        bool giViaRt = rtGiActive;
+        bool giViaRt = rtGiActive && _temporalEnabled;
         if (giViaRt != _lastGiViaRt)
         {
             _sceneGiHistory.Invalidate();
@@ -2751,6 +2835,7 @@ public sealed class RendererModule : IUpdatableModule
             var rtColorUsage = TextureUsage.ColorAttachment | TextureUsage.Sampled | TextureUsage.Storage | TextureUsage.TransferSource;
             var rtDepthUsage = TextureUsage.DepthAttachment | TextureUsage.Sampled | TextureUsage.TransferSource;
             _rtNormalRoughness = _graph.DeclareTransientTexture("RtNormalRoughness", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
+            _rtMotion = _graph.DeclareTransientTexture("RtMotion", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             _rtDepth = _graph.DeclareTransientTexture("RtDepth", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.D32Float, Usage = rtDepthUsage });
             _rtVisibility = _graph.DeclareTransientTexture("RtVisibility", new TextureDescription { Extent = rtExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             _rtVisibilityValidity = _graph.DeclareTransientTexture("RtVisibilityValidity", new TextureDescription { Extent = rtExtent, Format = TextureFormat.R8G8B8A8UNorm, Usage = rtColorUsage });
@@ -2764,6 +2849,7 @@ public sealed class RendererModule : IUpdatableModule
             _rtFilteredReflection = _graph.DeclareTransientTexture("RtFilteredReflection", new TextureDescription { Extent = rtExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             _rtSpecular = _graph.DeclareTransientTexture("RtSpecular", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             _rtSpecularResponse = _graph.DeclareTransientTexture("RtSpecularResponse", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
+            _rtDiffuseResponse = _graph.DeclareTransientTexture("RtDiffuseResponse", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             _rtCompositeTarget = _graph.DeclareTransientTexture("RtCompositeColor", new TextureDescription { Extent = sceneExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             _rtReflectionSbtResource = _graph.ImportBuffer(
                 "RtReflectionSbt",
@@ -2776,6 +2862,7 @@ public sealed class RendererModule : IUpdatableModule
             if (_editorMode)
             {
                 _gameRtNormalRoughness = _graph.DeclareTransientTexture("GameRtNormalRoughness", new TextureDescription { Extent = gameExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
+                _gameRtMotion = _graph.DeclareTransientTexture("GameRtMotion", new TextureDescription { Extent = gameExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
                 _gameRtDepth = _graph.DeclareTransientTexture("GameRtDepth", new TextureDescription { Extent = gameExtent, Format = TextureFormat.D32Float, Usage = TextureUsage.DepthAttachment | TextureUsage.Sampled | TextureUsage.TransferSource });
                 _gameRtVisibility = _graph.DeclareTransientTexture("GameRtVisibility", new TextureDescription { Extent = gameRtExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
                 _gameRtVisibilityValidity = _graph.DeclareTransientTexture("GameRtVisibilityValidity", new TextureDescription { Extent = gameRtExtent, Format = TextureFormat.R8G8B8A8UNorm, Usage = rtColorUsage });
@@ -2785,6 +2872,7 @@ public sealed class RendererModule : IUpdatableModule
                 _gameRtFilteredReflection = _graph.DeclareTransientTexture("GameRtFilteredReflection", new TextureDescription { Extent = gameRtExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
                 _gameRtSpecular = _graph.DeclareTransientTexture("GameRtSpecular", new TextureDescription { Extent = gameExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
                 _gameRtSpecularResponse = _graph.DeclareTransientTexture("GameRtSpecularResponse", new TextureDescription { Extent = gameExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
+                _gameRtDiffuseResponse = _graph.DeclareTransientTexture("GameRtDiffuseResponse", new TextureDescription { Extent = gameExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
                 _gameRtCompositeTarget = _graph.DeclareTransientTexture("GameRtCompositeColor", new TextureDescription { Extent = gameExtent, Format = TextureFormat.R16G16B16A16Float, Usage = rtColorUsage });
             }
         }
@@ -2792,11 +2880,13 @@ public sealed class RendererModule : IUpdatableModule
         {
             _rtNormalRoughness = null;
             _rtDepth = null;
+            _rtMotion = null;
             _rtVisibility = null;
             _rtVisibilityValidity = null;
             _rtResolvedVisibility = null;
             _gameRtNormalRoughness = null;
             _gameRtDepth = null;
+            _gameRtMotion = null;
             _gameRtVisibility = null;
             _gameRtVisibilityValidity = null;
             _gameRtResolvedVisibility = null;
@@ -2806,12 +2896,14 @@ public sealed class RendererModule : IUpdatableModule
             _rtFilteredReflection = null;
             _rtSpecular = null;
             _rtSpecularResponse = null;
+            _rtDiffuseResponse = null;
             _rtCompositeTarget = null;
             _gameRtRawReflection = null;
             _gameRtReflectionValidity = null;
             _gameRtFilteredReflection = null;
             _gameRtSpecular = null;
             _gameRtSpecularResponse = null;
+            _gameRtDiffuseResponse = null;
             _gameRtCompositeTarget = null;
             _rtReflectionSbtResource = null;
             _rtGiSbtResource = null;
@@ -2923,11 +3015,13 @@ public sealed class RendererModule : IUpdatableModule
             _gameBloomTarget = null;
             _gameRtNormalRoughness = null;
             _gameRtDepth = null;
+            _gameRtMotion = null;
             _gameRtVisibility = null;
             _gameRtRawReflection = null;
             _gameRtFilteredReflection = null;
             _gameRtSpecular = null;
             _gameRtSpecularResponse = null;
+            _gameRtDiffuseResponse = null;
             _gameRtCompositeTarget = null;
         }
         BuildGraphTopology(sceneExtent);
@@ -3014,6 +3108,11 @@ public sealed class RendererModule : IUpdatableModule
 
         _shadowProgram = _device!.CreateShaderProgram(shadowProgram);
         _pbrProgram = _device.CreateShaderProgram(pbrProgram);
+        Dictionary<string, string?> transparentDefines = PbrDefines();
+        transparentDefines["TRANSPARENT_PASS"] = "1";
+        _pbrTransparentProgram = _device.CreateShaderProgram(_compiler.CompileProgram(
+            Path.Combine(_shaderDirectory, "PBR.slang"),
+            [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")], transparentDefines));
         _tonemapProgram = _device.CreateShaderProgram(tonemapProgram);
         if (_temporalEnabled)
         {
@@ -3034,6 +3133,14 @@ public sealed class RendererModule : IUpdatableModule
             {
                 ValidateRtPushAbi(rtGiTemporalProgram.Reflection, Marshal.SizeOf<TemporalConstants>(), "RT GI temporal");
                 _rtGiTemporalProgram = _device.CreateShaderProgram(rtGiTemporalProgram);
+                _rtReflectionTemporalProgram = _device.CreateShaderProgram(_compiler.CompileProgram(
+                    Path.Combine(_shaderDirectory, "TemporalResolve.slang"), [(ShaderStage.Compute, "csMain")],
+                    new Dictionary<string, string?> { ["RT_REFLECTION_DENOISE"] = "1" }));
+                _rtReflectionTemporalPipeline = _device.CreateComputePipeline(new ComputePipelineDescription
+                {
+                    Name = "RtReflectionTemporalResolve",
+                    ShaderProgram = _rtReflectionTemporalProgram,
+                });
                 _rtGiTemporalPipeline = _device.CreateComputePipeline(new ComputePipelineDescription
                 {
                     Name = "RtGiTemporalResolve",
@@ -3058,13 +3165,13 @@ public sealed class RendererModule : IUpdatableModule
         _pbrTransparentPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             Name = "PBRForwardTransparent",
-            ShaderProgram = _pbrProgram,
+            ShaderProgram = _pbrTransparentProgram,
             VertexLayouts = [Vertex.Layout],
             CullMode = CullMode.None,
             DepthTest = true,
             DepthWrite = false,
             BlendMode = BlendMode.Alpha,
-            ColorAttachmentFormats = PbrColorFormats(),
+            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
             DepthAttachmentFormat = TextureFormat.D32Float,
         });
         _tonemapProgramHasPush = tonemapProgram.Reflection.PushConstants.Count > 0;
@@ -3376,6 +3483,10 @@ public sealed class RendererModule : IUpdatableModule
         material.AmbientOcclusionTexture = ResolveTexture(references.AmbientOcclusion, MaterialTextureSlot.AmbientOcclusion);
         material.EmissionTexture = ResolveTexture(references.Emission, MaterialTextureSlot.Emission);
         MaterialTextureSet textures = material.ResolveTextures(_defaultMaterialTextures!);
+        if (material.TransparentSet is not null)
+            WriteMaterialTextures(material.TransparentSet, textures);
+        if (material.RtTransparentSet is not null)
+            WriteMaterialTextures(material.RtTransparentSet, textures);
         material.Set!.WriteTexture(1, textures.Albedo);
         material.Set.WriteTexture(2, textures.Metallic);
         material.Set.WriteTexture(3, textures.Roughness);
@@ -3489,6 +3600,10 @@ public sealed class RendererModule : IUpdatableModule
         _rtShadowProgram = _device.CreateShaderProgram(rtShadowProgram);
         _rtReflectionProgram = _device.CreateShaderProgram(rtReflectionProgram);
         _pbrRtProgram = _device.CreateShaderProgram(pbrRtProgram);
+        rtDefines["TRANSPARENT_PASS"] = "1";
+        _pbrRtTransparentProgram = _device.CreateShaderProgram(_compiler.CompileProgram(
+            Path.Combine(_shaderDirectory, "PBR.slang"),
+            [(ShaderStage.Vertex, "vsMain"), (ShaderStage.Fragment, "psMain")], rtDefines));
         _rtPrepassPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             Name = "RtPrepass",
@@ -3497,7 +3612,7 @@ public sealed class RendererModule : IUpdatableModule
             CullMode = CullMode.None,
             DepthTest = true,
             DepthWrite = true,
-            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
+            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float, TextureFormat.R16G16B16A16Float],
             DepthAttachmentFormat = TextureFormat.D32Float,
         });
         _rtShadowPipeline = _device.CreateRayTracingPipeline(new RayTracingPipelineDescription
@@ -3558,13 +3673,13 @@ public sealed class RendererModule : IUpdatableModule
         _pbrRtTransparentPipeline = _device.CreateGraphicsPipeline(new GraphicsPipelineDescription
         {
             Name = "PBRForwardRtTransparent",
-            ShaderProgram = _pbrRtProgram,
+            ShaderProgram = _pbrRtTransparentProgram,
             VertexLayouts = [Vertex.Layout],
             CullMode = CullMode.None,
             DepthTest = true,
             DepthWrite = false,
             BlendMode = BlendMode.Alpha,
-            ColorAttachmentFormats = pbrColorFormats,
+            ColorAttachmentFormats = [TextureFormat.R16G16B16A16Float],
             DepthAttachmentFormat = TextureFormat.D32Float,
         });
         ShaderProgramDescription rtFilterProgram = _compiler.CompileProgram(
@@ -3574,6 +3689,15 @@ public sealed class RendererModule : IUpdatableModule
             Path.Combine(_shaderDirectory, "RtComposite.slang"),
             [(ShaderStage.Compute, "csMain")]);
         _rtFilterProgram = _device.CreateShaderProgram(rtFilterProgram);
+        ShaderProgramDescription rtTemporalProgram = _compiler.CompileProgram(
+            Path.Combine(_shaderDirectory, "RtTemporal.slang"), [(ShaderStage.Compute, "csMain")]);
+        ValidateRtPushAbi(rtTemporalProgram.Reflection, RtDenoiseConstants.SizeInBytes, "RT temporal denoiser");
+        _rtTemporalProgram = _device.CreateShaderProgram(rtTemporalProgram);
+        _rtTemporalPipeline = _device.CreateComputePipeline(new ComputePipelineDescription
+        {
+            Name = "RtTemporalDenoiser",
+            ShaderProgram = _rtTemporalProgram,
+        });
         _rtCompositeProgram = _device.CreateShaderProgram(rtCompositeProgram);
         _rtFilterPipeline = _device.CreateComputePipeline(new ComputePipelineDescription
         {
@@ -3616,6 +3740,7 @@ public sealed class RendererModule : IUpdatableModule
             formats.Add(TextureFormat.R16G16B16A16Float);
         if (_rayTracingEnabled)
         {
+            formats.Add(TextureFormat.R16G16B16A16Float);
             formats.Add(TextureFormat.R16G16B16A16Float);
             formats.Add(TextureFormat.R16G16B16A16Float);
         }
@@ -3800,6 +3925,10 @@ public sealed class RendererModule : IUpdatableModule
         _gameRayTracingScene = null;
         _shadowPipeline?.Dispose();
         _pbrPipeline?.Dispose();
+        _pbrTransparentProgram?.Dispose();
+        _pbrRtTransparentProgram?.Dispose();
+        _pbrTransparentProgram = null;
+        _pbrRtTransparentProgram = null;
         _pbrTransparentPipeline?.Dispose();
         _tonemapPipeline?.Dispose();
         _skyPipeline?.Dispose();
@@ -3807,6 +3936,18 @@ public sealed class RendererModule : IUpdatableModule
         _debugLinesPipeline?.Dispose();
         _bloomPipeline?.Dispose();
         _temporalPipeline?.Dispose();
+        foreach (RtDenoiserHistory denoiser in _rtDenoisers.Values)
+            denoiser.Dispose();
+        _rtDenoisers.Clear();
+        _rtDenoiserStates.Clear();
+        _rtTemporalPipeline?.Dispose();
+        _rtTemporalPipeline = null;
+        _rtTemporalProgram?.Dispose();
+        _rtTemporalProgram = null;
+        _rtReflectionTemporalPipeline?.Dispose();
+        _rtReflectionTemporalPipeline = null;
+        _rtReflectionTemporalProgram?.Dispose();
+        _rtReflectionTemporalProgram = null;
         _rtGiTemporalPipeline?.Dispose();
         _rtGiTemporalPipeline = null;
         _ssgiPipeline?.Dispose();
